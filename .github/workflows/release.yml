@@ -34,6 +34,20 @@ jobs:
             fi
           done
 
+      # On tag builds, rewrite the manifest version from the git tag so the
+      # tag is the single source of truth. Maintainer only has to `git tag vX.Y.Z`
+      # and the release zip's skin-manifest.json is auto-synced. On main pushes
+      # (dist branch deploys) the manifest stays as committed.
+      - name: Sync skin-manifest.json version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          jq --arg v "$version" '.version = $v' dist/skin-manifest.json > dist/skin-manifest.json.tmp
+          mv dist/skin-manifest.json.tmp dist/skin-manifest.json
+          echo "Synced manifest version to: $version"
+          cat dist/skin-manifest.json
+
       - name: Validate skin-manifest.json
         run: |
           set -euo pipefail

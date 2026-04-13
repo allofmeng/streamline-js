@@ -25,13 +25,26 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The action zips the staged whitelist as `streamline.js-v0.1.0.zip` and
-publishes a GitHub Release with auto-generated notes. Downstream tools
-consume this via:
+The action:
+
+1. Stages the whitelist into `./dist/`
+2. **Rewrites** `dist/skin-manifest.json` to set `version` to the tag name
+   (with the leading `v` stripped — tag `v0.1.0` → version `0.1.0`). This
+   means the git tag is the single source of truth for version and you do
+   not have to bump `skin-manifest.json` manually before tagging.
+3. Zips the staged whitelist as `streamline.js-v0.1.0.zip`
+4. Publishes a GitHub Release with auto-generated notes
+
+Downstream tools consume the release via:
 
 ```
 github_release: <owner>/streamline_project
 ```
+
+Note: the committed `skin-manifest.json` version is only rewritten inside
+the release artifact — the file on disk in `main` is untouched. The `dist`
+branch snapshot (for bleeding-edge dev) keeps the version as committed,
+because tag-based auto-sync only runs on tag builds.
 
 ## Whitelist
 
