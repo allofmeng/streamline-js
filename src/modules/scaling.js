@@ -152,6 +152,8 @@ export function initScaling() {
         viewport.style.width = `${screenWidth}px`;
         viewport.style.height = `${screenHeight}px`;
         viewport.style.margin = '0';
+
+        document.dispatchEvent(new CustomEvent('streamline:scaleupdate', { detail: { scale } }));
     }
 
     // Initial scaling with a slight delay to ensure the browser has settled the viewport dimensions
@@ -175,16 +177,21 @@ export function initScaling() {
     
     // Add resize listener with debounce to prevent excessive recalculations
     let resizeTimer;
-    window.addEventListener('resize', () => {
+    const onResize = () => {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
-            console.log('Resize event detected, recalculating scale...');
             updateScale();
-            updateRotationPrompt(); // Check if rotation prompt should be shown/hidden
-            // Force another update after a short delay to catch any late dimension changes
+            updateRotationPrompt();
             setTimeout(updateScale, 200);
-        }, 150); // Increased debounce to 150ms for better stability
-    });
+        }, 150);
+    };
+    window.addEventListener('resize', onResize);
+
+    // visualViewport fires reliably on iOS/Android when the soft keyboard appears/hides,
+    // which doesn't always trigger window.resize in tablet WebViews.
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onResize);
+    }
     
     // Also listen for orientation changes which can affect viewport dimensions
     window.addEventListener('orientationchange', () => {

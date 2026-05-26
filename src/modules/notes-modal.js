@@ -11,6 +11,7 @@ let editorScaledEl = null; // absolutely-positioned, inverse-scaled inner div
 let easyMDE = null;
 let onConfirmCallback = null;
 let subjectContainerEl = null;
+let scaleUpdateHandler = null;
 
 function getAppScale() {
     const content = document.getElementById('scaled-content');
@@ -204,6 +205,16 @@ export function openNotesModal(currentText, onConfirm, options = {}) {
         subjectContainerEl.style.display = 'none';
     }
 
+    // Re-layout whenever the app scale changes (e.g. soft keyboard appears/hides).
+    if (scaleUpdateHandler) {
+        document.removeEventListener('streamline:scaleupdate', scaleUpdateHandler);
+    }
+    scaleUpdateHandler = () => {
+        applyInverseScale();
+        easyMDE?.codemirror?.refresh();
+    };
+    document.addEventListener('streamline:scaleupdate', scaleUpdateHandler);
+
     // Wait a frame for the overlay to be visible and laid out,
     // then compute inverse scale and init EasyMDE
     requestAnimationFrame(() => {
@@ -234,4 +245,8 @@ function closeModal() {
     if (!overlayEl) return;
     overlayEl.classList.remove('active');
     onConfirmCallback = null;
+    if (scaleUpdateHandler) {
+        document.removeEventListener('streamline:scaleupdate', scaleUpdateHandler);
+        scaleUpdateHandler = null;
+    }
 }
