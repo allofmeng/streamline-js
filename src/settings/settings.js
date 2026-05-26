@@ -1,11 +1,15 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, reconnectDevice, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
 import { openNotesModal } from '../modules/notes-modal.js';
-import { openDB, getSetting, setSetting } from '../modules/idb.js';
+import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
+
+function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 let screensaverImagesCache = [];
 
@@ -1152,11 +1156,11 @@ export function renderTalkToDecentSettings() {
                             Your message goes directly to Decent's support team, linked to your registered machine.
                         </p>
                     </div>
-                    <div class="flex gap-[12px] w-full max-w-[520px]">
+                    <div class="flex flex-col gap-[12px] w-full max-w-[520px] mx-auto">
                         <input id="talkdecent-email-input" type="email" placeholder="your@email.com"
-                               class="flex-1 h-[60px] px-[20px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none">
+                               class="w-full h-[60px] px-[20px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none">
                         <input id="talkdecent-password-input" type="password" placeholder="Password"
-                               class="flex-1 h-[60px] px-[20px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none">
+                               class="w-full h-[60px] px-[20px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none">
                     </div>
                     <div class="flex items-center gap-[16px]">
                         <button onclick="window.talkDecentLogin()"
@@ -1189,22 +1193,36 @@ export function renderTalkToDecentSettings() {
                     </button>
                 </div>
 
-                <!-- Compose -->
-                <div class="flex flex-col gap-[28px] w-full">
-                    <div class="flex flex-col gap-[12px]">
-                        <label class="text-[22px] font-bold text-[#385a92]">Subject</label>
-                        <input id="talkdecent-subject" type="text"
-                               placeholder="What can we help you with?"
-                               class="h-[64px] px-[24px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none w-full">
+                <!-- Chat thread -->
+                <div class="flex flex-col gap-[12px] w-full">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[22px] font-bold text-[#385a92]">Conversation History</p>
+                        <button id="talkdecent-refresh-btn"
+                                onclick="window.talkDecentRefresh()"
+                                class="h-[38px] px-[20px] rounded-[38px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[18px] flex items-center gap-[8px] transition-opacity hover:opacity-80 disabled:opacity-40">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M1 4V10H7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M3.51 15a9 9 0 1 0 .49-4.17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Refresh
+                        </button>
                     </div>
-                    <div class="flex flex-col gap-[12px]">
-                        <label class="text-[22px] font-bold text-[#385a92]">Message</label>
-                        <textarea id="talkdecent-message" class="hidden"></textarea>
-                        <div id="talkdecent-message-preview"
-                             onclick="window.openTalkDecentMessageEditor()"
-                             class="cursor-pointer rounded-[14px] p-[20px] text-[21px] bg-[var(--box-color)] border-2 border-[#385a92] w-full min-h-[110px] whitespace-pre-wrap select-none text-[var(--low-contrast-white)]">
-                            Tap to write message…
-                        </div>
+                    <div id="talkdecent-thread-messages"
+                         class="flex flex-col gap-[14px] max-h-[480px] overflow-y-auto p-[20px] bg-[var(--box-color)] rounded-[16px] border border-[var(--profile-button-outline-color)]">
+                        <p class="text-center text-[18px] text-[var(--low-contrast-white)] py-[16px]">Loading messages…</p>
+                    </div>
+                    <p id="talkdecent-thread-status" class="text-[18px] text-[var(--low-contrast-white)] text-center hidden"></p>
+                </div>
+
+                <!-- New message compose -->
+                <div class="flex flex-col gap-[24px] w-full">
+                    <p class="text-[22px] font-bold text-[#385a92]">New Message</p>
+                    <input id="talkdecent-subject" type="hidden" value="">
+                    <textarea id="talkdecent-message" class="hidden"></textarea>
+                    <div id="talkdecent-compose-preview"
+                         onclick="window.openTalkDecentMessageEditor()"
+                         class="cursor-pointer rounded-[14px] p-[20px] bg-[var(--box-color)] border-2 border-[#385a92] w-full min-h-[90px] select-none transition-colors hover:border-blue-400">
+                        <p class="text-[20px] text-[var(--low-contrast-white)]">Tap to compose a message…</p>
                     </div>
                     <!-- Attach machine info toggle -->
                     <div class="flex items-center justify-between p-[20px] rounded-[12px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)]">
@@ -1223,18 +1241,6 @@ export function renderTalkToDecentSettings() {
                         </button>
                         <span id="talkdecent-send-status" class="text-[22px] leading-[1.4]"></span>
                     </div>
-                </div>
-
-                <!-- Previous messages note -->
-                <div class="p-[20px] rounded-[12px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] flex items-start gap-[14px]">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" class="flex-shrink-0 mt-[2px]" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="12" cy="12" r="10" stroke="#385a92" stroke-width="2"/>
-                        <path d="M12 7V13M12 16V17" stroke="#385a92" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <p class="text-[20px] text-[var(--low-contrast-white)] leading-[1.4]">
-                        Replies will be sent to your Decent account email. You can view your full conversation history at
-                        <a href="https://decentespresso.com/support/" target="_blank" class="text-[#385a92] underline">decentespresso.com/support/</a>.
-                    </p>
                 </div>
             </div>
 
@@ -4030,27 +4036,42 @@ export async function initializeSettings() {
             if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
             const serialEl = document.getElementById('talkdecent-account-serial');
             if (serialEl) serialEl.textContent = serial ? `Serial: ${serial}` : '';
+            window.talkDecentFetchEmails();
         } else {
             loggedIn.classList.add('hidden');
             loggedOut.classList.remove('hidden');
         }
     };
 
+    function updateTalkDecentComposePreview(subject, body) {
+        const tile = document.getElementById('talkdecent-compose-preview');
+        if (!tile) return;
+        if (!subject && !body) {
+            tile.innerHTML = '<p class="text-[20px] text-[var(--low-contrast-white)]">Tap to compose a message…</p>';
+            return;
+        }
+        let html = '';
+        if (subject) html += `<p class="text-[19px] font-semibold text-[var(--text-primary)] leading-tight mb-[6px]">${escapeHtml(subject)}</p>`;
+        if (body) {
+            const snippet = body.length > 120 ? body.substring(0, 120) + '…' : body;
+            html += `<p class="text-[18px] text-[var(--low-contrast-white)] leading-snug whitespace-pre-wrap">${escapeHtml(snippet)}</p>`;
+        }
+        tile.innerHTML = html;
+    }
+
     window.openTalkDecentMessageEditor = function() {
-        const hiddenTA = document.getElementById('talkdecent-message');
-        const currentText = hiddenTA ? hiddenTA.value : '';
-        openNotesModal(currentText, (text) => {
-            const ta = document.getElementById('talkdecent-message');
-            if (ta) ta.value = text;
-            const preview = document.getElementById('talkdecent-message-preview');
-            if (!preview) return;
-            if (text) {
-                preview.textContent = text;
-                preview.style.color = 'var(--text-primary)';
-            } else {
-                preview.textContent = 'Tap to write message…';
-                preview.style.color = 'var(--low-contrast-white)';
-            }
+        const currentSubject = document.getElementById('talkdecent-subject')?.value || '';
+        const currentBody    = document.getElementById('talkdecent-message')?.value || '';
+        openNotesModal(currentBody, ({ subject, body }) => {
+            const subjectEl = document.getElementById('talkdecent-subject');
+            const bodyEl    = document.getElementById('talkdecent-message');
+            if (subjectEl) subjectEl.value = subject || '';
+            if (bodyEl)    bodyEl.value    = body    || '';
+            updateTalkDecentComposePreview(subject, body);
+        }, {
+            title: 'New Message',
+            subject: currentSubject,
+            subjectPlaceholder: 'What can we help you with?',
         });
     };
 
@@ -4107,16 +4128,118 @@ export async function initializeSettings() {
                 <span class="text-[20px] text-[var(--low-contrast-white)] ml-[8px]">Decent support will reply to your email.</span>`;
             document.getElementById('talkdecent-subject').value = '';
             document.getElementById('talkdecent-message').value = '';
-            const msgPreview = document.getElementById('talkdecent-message-preview');
-            if (msgPreview) {
-                msgPreview.textContent = 'Tap to write message…';
-                msgPreview.style.color = 'var(--low-contrast-white)';
-            }
+            updateTalkDecentComposePreview('', '');
+            window.talkDecentFetchEmails();
         } catch (err) {
             if (statusEl) statusEl.innerHTML = `<span class="text-red-500 text-[22px]">Error: ${err.message}</span>`;
         } finally {
             if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send Message'; }
         }
+    };
+
+    window.talkDecentRefresh = async function() {
+        await window.talkDecentFetchEmails();
+    };
+
+    window.talkDecentFetchEmails = async function() {
+        const email   = localStorage.getItem('decentEmail');
+        const cryptpw = localStorage.getItem('decentCryptpw');
+        if (!email || !cryptpw) return;
+
+        const statusEl   = document.getElementById('talkdecent-thread-status');
+        const refreshBtn = document.getElementById('talkdecent-refresh-btn');
+        if (refreshBtn) refreshBtn.disabled = true;
+
+        try {
+            const since = await getLatestEmailTimestamp();
+            const url = new URL('https://decentespresso.com/support/api/emails');
+            if (since) url.searchParams.set('since', String(since));
+
+            const res = await fetch(url.toString(), {
+                headers: { 'Authorization': 'Basic ' + btoa(`${email}:${cryptpw}`) }
+            });
+            const text = await res.text();
+            if (!res.ok || text.trim() === '0') throw new Error(`Failed to load messages`);
+
+            const sanitized = text.replace(/"(\w+)":\s*,/g, '"$1": null,');
+            const newEmails = JSON.parse(sanitized);
+            if (Array.isArray(newEmails) && newEmails.length > 0) {
+                await addEmails(newEmails);
+            }
+            await window.talkDecentRenderThread();
+            if (statusEl) { statusEl.textContent = ''; statusEl.classList.add('hidden'); }
+        } catch (err) {
+            if (statusEl) {
+                statusEl.textContent = `Could not load messages: ${err.message}`;
+                statusEl.classList.remove('hidden');
+            }
+            await window.talkDecentRenderThread();
+        } finally {
+            if (refreshBtn) refreshBtn.disabled = false;
+        }
+    };
+
+    window.talkDecentRenderThread = async function() {
+        const container = document.getElementById('talkdecent-thread-messages');
+        if (!container) return;
+
+        let emails;
+        try {
+            emails = await getAllEmails();
+        } catch (_) {
+            emails = [];
+        }
+
+        if (!emails.length) {
+            container.innerHTML = '<p class="text-center text-[18px] text-[var(--low-contrast-white)] py-[24px]">No messages yet. Send one below to start!</p>';
+            return;
+        }
+
+        container.innerHTML = emails.map(msg => {
+            const isDecent = msg.from_user && String(msg.from_user).trim();
+            const date = msg.now
+                ? new Date(msg.now * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : '';
+            const bodyText = escapeHtml(msg.body || msg.message || msg.subject || '');
+            const subjectText = msg.subject ? escapeHtml(msg.subject) : '';
+
+            if (isDecent) {
+                const name = String(msg.from_user).trim();
+                const avatarUrl = `https://decentespresso.com/img/cartoon_${encodeURIComponent(name)}_small.png`;
+                return `
+                    <div class="flex gap-[12px] items-start">
+                        <img src="${avatarUrl}"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+                             class="w-[40px] h-[40px] rounded-full flex-shrink-0 object-cover"
+                             alt="${escapeHtml(name)}">
+                        <div style="display:none" class="w-[40px] h-[40px] rounded-full bg-[#385a92] flex-shrink-0 items-center justify-center text-white text-[16px] font-bold">${escapeHtml(name[0].toUpperCase())}</div>
+                        <div class="flex flex-col gap-[4px] max-w-[80%]">
+                            <div class="flex items-center gap-[8px] flex-wrap">
+                                <span class="text-[16px] font-semibold text-[#385a92]">${escapeHtml(name)}</span>
+                                ${msg.automsg ? '<span class="text-[12px] px-[6px] py-[1px] rounded-full bg-[var(--button-grey)] text-[var(--low-contrast-white)]">auto</span>' : ''}
+                                <span class="text-[14px] text-[var(--low-contrast-white)] opacity-60">${date}</span>
+                            </div>
+                            <div class="bg-[var(--bg-color,white)] border border-[var(--profile-button-outline-color)] rounded-[16px] rounded-tl-[4px] overflow-hidden">
+                                ${subjectText ? `<div class="px-[16px] pt-[10px] pb-[8px] border-b border-[var(--profile-button-outline-color)]"><p class="text-[15px] font-semibold text-[var(--low-contrast-white)]">${subjectText}</p></div>` : ''}
+                                <div class="px-[16px] py-[12px] text-[19px] text-[var(--text-primary)] whitespace-pre-wrap leading-[1.5]">${bodyText}</div>
+                            </div>
+                        </div>
+                    </div>`;
+            } else {
+                return `
+                    <div class="flex gap-[12px] items-start justify-end">
+                        <div class="flex flex-col gap-[4px] max-w-[80%] items-end">
+                            <span class="text-[14px] text-[var(--low-contrast-white)] opacity-60">${date}</span>
+                            <div class="bg-[#385a92] rounded-[16px] rounded-tr-[4px] overflow-hidden">
+                                ${subjectText ? `<div class="px-[16px] pt-[10px] pb-[8px] border-b border-white/20"><p class="text-[15px] font-semibold text-white/70">${subjectText}</p></div>` : ''}
+                                <div class="px-[16px] py-[12px] text-[19px] text-white whitespace-pre-wrap leading-[1.5]">${bodyText}</div>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+        }).join('');
+
+        container.scrollTop = container.scrollHeight;
     };
 
     window.decentLogin = async function() {
@@ -4442,7 +4565,42 @@ export async function initializeSettings() {
         }
     };
 
-    ui.initResizablePanels('separator');
+    const mainSeparator = document.getElementById('separator');
+    const leftPanel     = document.getElementById('left-panel');
+    const rightPanel    = document.getElementById('right-panel');
+
+    if (mainSeparator && leftPanel && rightPanel) {
+        let isDragging = false;
+
+        mainSeparator.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            document.body.style.cursor    = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            const startX         = e.clientX;
+            const startLeftWidth = leftPanel.offsetWidth;
+
+            function doDrag(e) {
+                if (!isDragging) return;
+                const dx           = e.clientX - startX;
+                const newLeftWidth = startLeftWidth + dx;
+                if (newLeftWidth > 200 && newLeftWidth < 1600) {
+                    leftPanel.style.width = `${newLeftWidth}px`;
+                }
+            }
+
+            function stopDrag() {
+                isDragging = false;
+                document.body.style.cursor     = '';
+                document.body.style.userSelect  = '';
+                document.removeEventListener('mousemove', doDrag);
+                document.removeEventListener('mouseup',   stopDrag);
+            }
+
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('mouseup',   stopDrag);
+        });
+    }
 }
 
 // Set up search functionality for settings
@@ -4762,7 +4920,6 @@ export function initDisplayWebSocket() {
         const brightnessSlider = document.querySelector('input[type="range"][onchange*="handleBrightnessChange"]');
         if (brightnessSlider && data.brightness !== undefined) {
             brightnessSlider.value = data.brightness;
-            previousBrightnessState = data.brightness;
         }
 
         // Update wake-lock toggle if it exists
@@ -4830,8 +4987,6 @@ window.scanAndConnectScale = async function() {
     }
 };
 
-let previousBrightnessState = null;
-
 window.handleBrightnessChange = async function(value) {
     try {
         const brightnessValue = parseInt(value);
@@ -4847,7 +5002,6 @@ window.handleBrightnessChange = async function(value) {
             command: 'setBrightness',
             brightness: brightnessValue
         });
-        previousBrightnessState = brightnessValue;
     } catch (error) {
         console.error('Error adjusting brightness:', error);
     }
@@ -4999,47 +5153,14 @@ window.handleDeleteSchedule = async function(scheduleId) {
 window.handleMachineStateChange = async function(newState) {
     try {
         if (newState === MachineState.SLEEPING) {
-            await dimDisplay();
+            dimDisplay();
         } else if (newState === MachineState.IDLE) {
-            await restoreDisplay();
+            restoreDisplay();
         }
     } catch (error) {
         console.error('Error auto-adjusting display based on machine state:', error);
     }
 };
-
-// Function to connect to a specific device
-async function connectToDevice(deviceId) {
-    if (!deviceId) {
-        ui.showToast('Please select a device first', 3000, 'error');
-        return false;
-    }
-
-    try {
-        ui.showToast('Connecting to device...', 2000, 'info');
-
-        // Attempt to connect to the device using the imported function
-        await reconnectDevice(deviceId);
-
-        ui.showToast('Successfully connected to device', 3000, 'success');
-
-        // Update UI to reflect connection status
-        updateConnectionStatus(deviceId, true);
-
-        return true;
-    } catch (error) {
-        console.error('Error connecting to device:', error);
-        ui.showToast(`Failed to connect: ${error.message}`, 5000, 'error');
-        return false;
-    }
-}
-
-// Function to update UI with connection status
-function updateConnectionStatus(deviceId, isConnected) {
-    // In a real implementation, we would update the UI to show connection status
-    // For now, we'll just log the status
-    console.log(`Device ${deviceId} connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
-}
 
 // Function to start auto-connect functionality
 window.startAutoConnect = async function() {
@@ -5434,7 +5555,7 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '') {
 window.handleDeviceConnection = async function(deviceId, action) {
     if (action === 'connect') {
         try {
-            await sendDeviceCommand({ command: 'connect', deviceId });
+            sendDeviceCommand({ command: 'connect', deviceId });
             ui.showToast(`Connected to device ${deviceId}`, 3000, 'success');
             // Device list will update automatically via WebSocket onData callback
         } catch (error) {
@@ -5443,7 +5564,7 @@ window.handleDeviceConnection = async function(deviceId, action) {
         }
     } else if (action === 'disconnect') {
         try {
-            await sendDeviceCommand({ command: 'disconnect', deviceId });
+            sendDeviceCommand({ command: 'disconnect', deviceId });
             ui.showToast(`Disconnected from device ${deviceId}`, 3000, 'info');
             // Device list will update automatically via WebSocket onData callback
         } catch (error) {

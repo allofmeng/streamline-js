@@ -10,6 +10,7 @@ let editorWrapEl = null;   // flex slot (position: relative)
 let editorScaledEl = null; // absolutely-positioned, inverse-scaled inner div
 let easyMDE = null;
 let onConfirmCallback = null;
+let subjectContainerEl = null;
 
 function getAppScale() {
     const content = document.getElementById('scaled-content');
@@ -30,6 +31,7 @@ function buildModal() {
         overlayEl = null;
         editorWrapEl = null;
         editorScaledEl = null;
+        subjectContainerEl = null;
     }
     if (overlayEl) return;
 
@@ -67,6 +69,17 @@ function buildModal() {
     header.appendChild(title);
     header.appendChild(actions);
 
+    // ── Subject row (hidden by default) ─────────────────────────────────────
+    subjectContainerEl = document.createElement('div');
+    subjectContainerEl.className = 'notes-modal-subject';
+    subjectContainerEl.style.display = 'none';
+
+    const subjectInput = document.createElement('input');
+    subjectInput.type = 'text';
+    subjectInput.id = 'notes-modal-subject-input';
+    subjectInput.className = 'notes-modal-subject-input';
+    subjectContainerEl.appendChild(subjectInput);
+
     // ── Editor area ─────────────────────────────────────────────────────────
     // Outer wrapper: flex slot that takes remaining space, acts as position anchor
     editorWrapEl = document.createElement('div');
@@ -83,6 +96,7 @@ function buildModal() {
 
     // ── Assemble ────────────────────────────────────────────────────────────
     container.appendChild(header);
+    container.appendChild(subjectContainerEl);
     container.appendChild(editorWrapEl);
     overlayEl.appendChild(container);
 
@@ -92,6 +106,28 @@ function buildModal() {
         scaledContent.appendChild(overlayEl);
     } else {
         document.body.appendChild(overlayEl);
+    }
+
+    // ── Inject subject input styles once ────────────────────────────────────
+    if (!document.getElementById('notes-modal-subject-styles')) {
+        const style = document.createElement('style');
+        style.id = 'notes-modal-subject-styles';
+        style.textContent = `
+            .notes-modal-subject { padding: 0 24px 12px; }
+            .notes-modal-subject-input {
+                width: 100%;
+                height: 56px;
+                padding: 0 20px;
+                border-radius: 12px;
+                border: 2px solid #385a92;
+                background: var(--box-color, #fff);
+                color: var(--text-primary, #000);
+                font-size: 22px;
+                outline: none;
+                box-sizing: border-box;
+            }
+        `;
+        document.head.appendChild(style);
     }
 }
 
@@ -149,10 +185,24 @@ function initEasyMDE() {
 
 // ── Open / Close ────────────────────────────────────────────────────────────
 
-export function openNotesModal(currentText, onConfirm) {
+export function openNotesModal(currentText, onConfirm, options = {}) {
     buildModal();
     onConfirmCallback = onConfirm;
     overlayEl.classList.add('active');
+
+    // Update title if provided
+    const titleEl = overlayEl.querySelector('.notes-modal-title');
+    if (titleEl) titleEl.textContent = options.title || 'Notes';
+
+    // Show/hide subject field
+    const subjectInputEl = document.getElementById('notes-modal-subject-input');
+    if (options.subject !== undefined && subjectContainerEl && subjectInputEl) {
+        subjectContainerEl.style.display = 'block';
+        subjectInputEl.value = options.subject || '';
+        subjectInputEl.placeholder = options.subjectPlaceholder || 'Subject…';
+    } else if (subjectContainerEl) {
+        subjectContainerEl.style.display = 'none';
+    }
 
     // Wait a frame for the overlay to be visible and laid out,
     // then compute inverse scale and init EasyMDE
@@ -169,7 +219,13 @@ export function openNotesModal(currentText, onConfirm) {
 
 function handleConfirm() {
     if (onConfirmCallback && easyMDE) {
-        onConfirmCallback(easyMDE.value());
+        const subjectInputEl = document.getElementById('notes-modal-subject-input');
+        const showingSubject = subjectContainerEl && subjectContainerEl.style.display !== 'none';
+        if (showingSubject && subjectInputEl) {
+            onConfirmCallback({ subject: subjectInputEl.value, body: easyMDE.value() });
+        } else {
+            onConfirmCallback(easyMDE.value());
+        }
     }
     closeModal();
 }

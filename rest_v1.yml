@@ -180,6 +180,10 @@ paths:
           description: State change successful
         "400":
           description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineStateError"
   /api/v1/machine/profile:
     post:
       summary: Set Machine Profile
@@ -608,7 +612,7 @@ paths:
                 $ref: "#/components/schemas/ReaSettings"
     post:
       summary: Update Decent settings
-      tags: [REA Settings]
+      tags: [Decent Settings]
       requestBody:
         required: true
         content:
@@ -3843,6 +3847,15 @@ components:
         → treated as black (`000000000000`).
       example: FFFF80000000
 
+    MachineStateError:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [block_no_scale]
+        details:
+          type: string
+
     ScaleSnapshot:
       type: object
       properties:
@@ -3964,18 +3977,118 @@ components:
           type: string
         beverage_type:
           type: string
+          enum: [espresso, calibrate, cleaning, manual, pourover]
         steps:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/ProfileStep'
         target_volume:
           type: number
+          nullable: true
         target_weight:
           type: number
+          nullable: true
         target_volume_count_start:
           type: integer
         tank_temperature:
           type: number
+
+    ProfileStep:
+      type: object
+      description: |
+        A single step in a brewing profile. Discriminated by the `pump` field:
+        - `pump: "pressure"` → pressure-controlled step (has `pressure` field)
+        - `pump: "flow"` → flow-controlled step (has `flow` field)
+      required:
+        - name
+        - pump
+        - transition
+        - volume
+        - seconds
+        - temperature
+        - sensor
+      properties:
+        name:
+          type: string
+          description: Step name/identifier
+        pump:
+          type: string
+          enum: [pressure, flow]
+          description: Step type discriminator. Determines whether `pressure` or `flow` field is used.
+        transition:
+          type: string
+          enum: [fast, smooth]
+          description: How the machine transitions to this step's target
+        exit:
+          $ref: '#/components/schemas/StepExitCondition'
+        volume:
+          type: number
+          format: double
+          description: Volume limit in ml
+        seconds:
+          type: number
+          format: double
+          description: Maximum duration in seconds
+        weight:
+          type: number
+          format: double
+          nullable: true
+          description: Weight limit in grams (optional)
+        temperature:
+          type: number
+          format: double
+          description: Target temperature in °C
+        sensor:
+          type: string
+          enum: [coffee, water]
+          description: Which temperature sensor to use for this step
+        pressure:
+          type: number
+          format: double
+          description: Target pressure in bar (present when pump=pressure)
+        flow:
+          type: number
+          format: double
+          description: Target flow rate in ml/s (present when pump=flow)
+        limiter:
+          $ref: '#/components/schemas/StepLimiter'
+
+    StepExitCondition:
+      type: object
+      description: Condition that triggers an early exit from a step
+      required:
+        - type
+        - condition
+        - value
+      properties:
+        type:
+          type: string
+          enum: [pressure, flow]
+          description: Which measurement to evaluate
+        condition:
+          type: string
+          enum: [over, under]
+          description: Whether to exit when measurement goes over or under the value
+        value:
+          type: number
+          format: double
+          description: Threshold value for the exit condition
+
+    StepLimiter:
+      type: object
+      description: Safety limiter for a step (caps the non-controlled variable)
+      required:
+        - value
+        - range
+      properties:
+        value:
+          type: number
+          format: double
+          description: Limiter target value
+        range:
+          type: number
+          format: double
+          description: Acceptable range around the limiter value
     ShotSettings:
       type: object
       properties:
@@ -4216,6 +4329,9 @@ components:
           enum: ["disabled", "displayOff", "disconnect"]
           nullable: true
           example: "disabled"
+        blockOnNoScale:
+          description: When true, shots will be blocked from starting if no scale is connected.
+          type: boolean
         preferredMachineId:
           description: Device ID of the preferred machine for auto-connect on startup. When set, REA will automatically connect to this machine when it's discovered during device scan. Set to null to clear the preference.
           type: string
@@ -4297,6 +4413,9 @@ components:
           type: string
           enum: ["disabled", "displayOff", "disconnect"]
           example: "disabled"
+        blockOnNoScale:
+          description: When true, shots will be blocked from starting if no scale is connected.
+          type: boolean
         preferredMachineId:
           description: Device ID of the preferred machine for auto-connect on startup. Returns null if no preferred device is set.
           type: string

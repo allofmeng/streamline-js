@@ -1,9 +1,10 @@
 import { logger } from './logger.js';
 
 const DB_NAME = 'shot_history';
-const DB_VERSION = 5;
+const DB_VERSION = 7;
 const SHOTS_STORE_NAME = 'shots';
 const SETTINGS_STORE_NAME = 'settings';
+const EMAILS_STORE_NAME = 'decent_emails';
 
 let db;
 let openPromise = null;
@@ -71,6 +72,11 @@ export function openDB() {
                 logger.info('Creating settings object store');
                 tempDb.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'id' });
             }
+            if (tempDb.objectStoreNames.contains(EMAILS_STORE_NAME)) {
+                tempDb.deleteObjectStore(EMAILS_STORE_NAME);
+            }
+            logger.info('Creating decent_emails object store');
+            tempDb.createObjectStore(EMAILS_STORE_NAME, { keyPath: 'emailid' });
         };
     });
     return openPromise;
@@ -236,5 +242,46 @@ export function clearShots() {
             logger.error('Error clearing shot history from IndexedDB:', event.target.error);
             reject('Error clearing shot history.');
         };
+    });
+}
+
+export function addEmails(emails) {
+    return new Promise((resolve, reject) => {
+        if (!db) return reject('DB not open');
+        const transaction = db.transaction([EMAILS_STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(EMAILS_STORE_NAME);
+        emails.forEach(email => store.put(email));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = (event) => reject(event.target.error);
+    });
+}
+
+export function getAllEmails() {
+    return new Promise((resolve, reject) => {
+        if (!db) return reject('DB not open');
+        const transaction = db.transaction([EMAILS_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(EMAILS_STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = (event) => {
+            const emails = event.target.result || [];
+            emails.sort((a, b) => (a.now || 0) - (b.now || 0));
+            resolve(emails);
+        };
+        request.onerror = (event) => reject(event.target.error);
+    });
+}
+
+export function getLatestEmailTimestamp() {
+    return new Promise((resolve, reject) => {
+        if (!db) return reject('DB not open');
+        const transaction = db.transaction([EMAILS_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(EMAILS_STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = (event) => {
+            const emails = event.target.result || [];
+            if (!emails.length) return resolve(null);
+            resolve(Math.max(...emails.map(e => e.now || 0)));
+        };
+        request.onerror = (event) => reject(event.target.error);
     });
 }
