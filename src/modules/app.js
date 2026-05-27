@@ -118,6 +118,8 @@ let previousState = {}; // Track previous machine state object {state, substate}
 let currentActiveProfile = null; // Track active profile for shot-end reason detection
 
 let latestScaleWeight = 0;
+let latestScaleBattery = null;
+window.getLatestScaleBattery = () => latestScaleBattery;
 let heatingStartTime = null;
 let heatingStartTemp = 0;
 let isConnectingScale = false;
@@ -161,21 +163,10 @@ function handleDeviceConnectionError(err) {
 // Sets a timer. If no data is received within 5 seconds, it assumes a stale connection.
 function resetDataTimeout() {
     clearTimeout(dataTimeout);
-    dataTimeout = setTimeout(async () => {
+    dataTimeout = setTimeout(() => {
         logger.warn('No WebSocket data received for 5 seconds. Assuming REA or WebSocket disconnection.');
         ui.updateMachineStatus({ status: "disconnected" });
         isDe1Connected = false;
-        try {
-            const devices = await scanForDevices();
-            const de1Machine = devices.find(d => d.type === 'machine');
-            if (de1DeviceId) {
-                logger.info('DE1 machine connected no need to reconnect.');
-            } else {
-                reconnectDevice(de1DeviceId);
-            }
-        } catch (error) {
-            logger.error('Error during device reconnection attempt:', error);
-        }
     }, 5000); // 5-second timeout
 }
 
@@ -450,6 +441,14 @@ function handleScaleData(data) {
     const scaleInfoContainer = document.getElementById('scale-info-container');
     const currentWeight = data.weight;
     latestScaleWeight = currentWeight;
+    const batteryValue = data.batteryLevel ?? data.battery;
+    if (batteryValue !== null && batteryValue !== undefined) {
+        const wasNull = latestScaleBattery === null;
+        latestScaleBattery = batteryValue;
+        if (wasNull && document.getElementById('bluetooth-scale-devices-container')) {
+            window.renderDeviceListFromCache?.();
+        }
+    }
 
     // Receiving any message means the websocket and BLE link are up.
     // The timeout in api.js will trigger a disconnect if data stops flowing.

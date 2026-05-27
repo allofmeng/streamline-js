@@ -1,5 +1,5 @@
 import { logger } from './logger.js';
-// src/modules/i18n.js
+import { openDB, getSetting, setSetting } from './idb.js';
 
 const translations = {};
 export let supportedLanguages = [];
@@ -110,7 +110,9 @@ export function getCurrentLanguage() {
 export function setLanguage(lang) {
     if (supportedLanguages.includes(lang)) {
         currentLanguage = lang;
+        // Write to both — IDB survives WebView process kills on iOS, localStorage is sync fallback
         localStorage.setItem('language', lang);
+        setSetting('language', lang).catch(() => {});
         logger.info(`Language set to: ${lang}`);
     } else {
         console.warn(`Language '${lang}' not supported. Defaulting to 'en'.`);
@@ -125,16 +127,25 @@ export function setLanguage(lang) {
  */
 export async function initI18n() {
     await loadTranslations();
-    const savedLang = localStorage.getItem('language');
-    const browserLang = navigator.language.split('-')[0]; // e.g., 'en-US' -> 'en'
-    
-    // Determine the initial language
+
+    // IDB is primary (survives WebView process kills on iOS/Android).
+    // localStorage is fallback for first run or when IDB hasn't been written yet.
+    let savedLang = null;
+    try {
+        await openDB();
+        savedLang = await getSetting('language');
+    } catch (_) {}
+    if (!savedLang) {
+        savedLang = localStorage.getItem('language');
+    }
+
+    const browserLang = navigator.language.split('-')[0];
     let initialLang = 'en';
     if (savedLang && supportedLanguages.includes(savedLang)) {
         initialLang = savedLang;
     } else if (supportedLanguages.includes(browserLang)) {
         initialLang = browserLang;
     }
-    
+
     setLanguage(initialLang);
 }

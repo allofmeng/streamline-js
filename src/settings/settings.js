@@ -269,6 +269,9 @@ async function _loadSettingsInternal() {
             if (Array.isArray(stored) && stored.length > 0) screensaverImagesCache = stored;
         } catch (e) { /* non-fatal */ }
 
+        // Silently re-push any settings Rea may have lost (e.g. after a reset/reinstall)
+        reconcileSettingsWithBackup();
+
         return { reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData };
     } catch (error) {
         console.error('Error loading settings:', error);
@@ -293,6 +296,7 @@ export async function updateReaSetting(key, value) {
         const payload = { [key]: value };
         await setReaSettings(payload);
         settingsCache.rea[key] = value;
+        saveSettingsBackup();
         ui.showToast('decent.app setting updated successfully', 3000, 'success');
         if (activeSettingsCategory) { // Re-render the current view to reflect changes
             updateSettingsContentArea(activeSettingsCategory);
@@ -309,6 +313,7 @@ export async function updateDe1Setting(key, value) {
         const payload = { [key]: value };
         await setDe1Settings(payload);
         settingsCache.de1[key] = value;
+        saveSettingsBackup();
         ui.showToast('DE1 setting updated successfully', 3000, 'success');
         if (activeSettingsCategory) { // Re-render the current view to reflect changes
             updateSettingsContentArea(activeSettingsCategory);
@@ -325,6 +330,7 @@ export async function updateDe1AdvancedSetting(key, value) {
         const payload = { [key]: value };
         await setDe1AdvancedSettings(payload);
         settingsCache.de1Advanced[key] = value;
+        saveSettingsBackup();
         ui.showToast('DE1 advanced setting updated successfully', 3000, 'success');
         if (activeSettingsCategory) { // Re-render the current view to reflect changes
             updateSettingsContentArea(activeSettingsCategory);
@@ -341,13 +347,9 @@ export async function updateSteamSetting(key, value) {
         const steamSettings = { ...(settingsCache.workflow?.steamSettings || {}) };
         steamSettings[key] = value;
         await updateWorkflow({ steamSettings });
-        
-        // Update local cache
-        if (!settingsCache.workflow) {
-            settingsCache.workflow = {};
-        }
+        if (!settingsCache.workflow) settingsCache.workflow = {};
         settingsCache.workflow.steamSettings = steamSettings;
-        
+        saveSettingsBackup();
         ui.showToast('Steam setting updated successfully', 3000, 'success');
     } catch (error) {
         console.error('Error updating steam setting:', error);
@@ -361,13 +363,9 @@ export async function updateHotWaterSetting(key, value) {
         const hotWaterData = { ...(settingsCache.workflow?.hotWaterData || {}) };
         hotWaterData[key] = value;
         await updateWorkflow({ hotWaterData });
-        
-        // Update local cache
-        if (!settingsCache.workflow) {
-            settingsCache.workflow = {};
-        }
+        if (!settingsCache.workflow) settingsCache.workflow = {};
         settingsCache.workflow.hotWaterData = hotWaterData;
-        
+        saveSettingsBackup();
         ui.showToast('Hot water setting updated successfully', 3000, 'success');
     } catch (error) {
         console.error('Error updating hot water setting:', error);
@@ -376,7 +374,99 @@ export async function updateHotWaterSetting(key, value) {
 }
 
 
-// Render settings content based on selected category
+// ── Settings backup / reconcile ─────────────────────────────────────────────
+
+async function saveSettingsBackup() {
+    try {
+        await openDB();
+        await setSetting('settingsBackup', {
+            ts: Date.now(),
+            rea:         settingsCache.rea         ? { ...settingsCache.rea }         : null,
+            de1:         settingsCache.de1         ? { ...settingsCache.de1 }         : null,
+            de1Advanced: settingsCache.de1Advanced ? { ...settingsCache.de1Advanced } : null,
+            steamSettings: settingsCache.workflow?.steamSettings
+                ? { ...settingsCache.workflow.steamSettings } : null,
+            hotWaterData:  settingsCache.workflow?.hotWaterData
+                ? { ...settingsCache.workflow.hotWaterData }  : null,
+        });
+    } catch (e) {
+        console.warn('saveSettingsBackup failed:', e);
+    }
+}
+
+// Returns keys where backup has a value that differs from current.
+function diffSettings(backup, current) {
+    const diff = {};
+    for (const key of Object.keys(backup)) {
+        if (backup[key] !== null && backup[key] !== undefined &&
+            key in current && backup[key] !== current[key]) {
+            diff[key] = backup[key];
+        }
+    }
+    return diff;
+}
+
+export async function reconcileSettingsWithBackup() {
+    try {
+        await openDB();
+        const backup = await getSetting('settingsBackup');
+        // Skip if no backup, or backup is older than 30 days (avoid re-applying ancient data)
+        if (!backup?.ts || (Date.now() - backup.ts) > 30 * 24 * 60 * 60 * 1000) return;
+
+        const restored = [];
+
+        if (backup.rea && settingsCache.rea) {
+            const diff = diffSettings(backup.rea, settingsCache.rea);
+            if (Object.keys(diff).length) {
+                await setReaSettings(diff);
+                Object.assign(settingsCache.rea, diff);
+                restored.push('app settings');
+            }
+        }
+        if (backup.de1 && settingsCache.de1) {
+            const diff = diffSettings(backup.de1, settingsCache.de1);
+            if (Object.keys(diff).length) {
+                await setDe1Settings(diff);
+                Object.assign(settingsCache.de1, diff);
+                restored.push('DE1 settings');
+            }
+        }
+        if (backup.de1Advanced && settingsCache.de1Advanced) {
+            const diff = diffSettings(backup.de1Advanced, settingsCache.de1Advanced);
+            if (Object.keys(diff).length) {
+                await setDe1AdvancedSettings(diff);
+                Object.assign(settingsCache.de1Advanced, diff);
+                restored.push('advanced settings');
+            }
+        }
+        if (backup.steamSettings && settingsCache.workflow?.steamSettings) {
+            const diff = diffSettings(backup.steamSettings, settingsCache.workflow.steamSettings);
+            if (Object.keys(diff).length) {
+                const merged = { ...settingsCache.workflow.steamSettings, ...diff };
+                await updateWorkflow({ steamSettings: merged });
+                settingsCache.workflow.steamSettings = merged;
+                restored.push('steam settings');
+            }
+        }
+        if (backup.hotWaterData && settingsCache.workflow?.hotWaterData) {
+            const diff = diffSettings(backup.hotWaterData, settingsCache.workflow.hotWaterData);
+            if (Object.keys(diff).length) {
+                const merged = { ...settingsCache.workflow.hotWaterData, ...diff };
+                await updateWorkflow({ hotWaterData: merged });
+                settingsCache.workflow.hotWaterData = merged;
+                restored.push('hot water settings');
+            }
+        }
+
+        if (restored.length) {
+            ui.showToast(`Settings restored from backup: ${restored.join(', ')}`, 6000, 'info');
+        }
+    } catch (e) {
+        console.warn('reconcileSettingsWithBackup failed:', e);
+    }
+}
+
+// ── Render settings content based on selected category
 export function renderSettingsContent(category) {
     // Determine loading state for the specific category
     let isLoading = false;
@@ -4936,6 +5026,8 @@ export function initDisplayWebSocket() {
 /**
  * Render device lists from WebSocket cache
  */
+window.renderDeviceListFromCache = function() { renderDeviceListFromCache(); };
+
 function renderDeviceListFromCache() {
     const machines = deviceStateCache.devices.filter(device =>
         device.type === 'machine' ||
@@ -5482,7 +5574,7 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
     if (!container) return;
 
     if (devices.length > 0) {
-        container.innerHTML = renderSingleDeviceList(devices, preferredId, settingKey);
+        container.innerHTML = renderSingleDeviceList(devices, preferredId, settingKey, type);
     } else {
         container.innerHTML = `
             <div class="flex items-center gap-[16px] w-full bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[18px] px-[28px] py-[24px] opacity-60">
@@ -5493,7 +5585,21 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
 }
 
 // Helper function to render a single list of devices with connection controls
-function renderSingleDeviceList(devices, preferredId = '', settingKey = '') {
+function renderBatteryBadge(level) {
+    const pct  = Math.round(level);
+    const color = pct <= 20 ? '#ef4444' : pct <= 50 ? '#eab308' : '#22c55e';
+    const fill  = Math.round((pct / 100) * 20);
+    return `<div class="flex items-center gap-[6px] mt-[4px]">
+        <svg width="26" height="14" viewBox="0 0 26 14" fill="none">
+            <rect x="0.5" y="0.5" width="22" height="13" rx="2.5" stroke="${color}" stroke-width="1.2"/>
+            <rect x="23" y="4" width="3" height="6" rx="1" fill="${color}"/>
+            <rect x="2" y="2" width="${fill}" height="10" rx="1.5" fill="${color}"/>
+        </svg>
+        <span class="text-[18px] font-mono" style="color:${color}">${pct}%</span>
+    </div>`;
+}
+
+function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type = '') {
     // Null/empty check - return empty string if no devices
     if (!devices || !Array.isArray(devices) || devices.length === 0) {
         return '';
@@ -5525,6 +5631,13 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '') {
                     </div>
                 </div>
                 <div class="flex items-center gap-[20px] flex-shrink-0 ml-[24px]">
+                    ${(() => {
+                        if (type === 'Scale' && isConnected) {
+                            const batt = window.getLatestScaleBattery?.();
+                            return batt !== null && batt !== undefined ? renderBatteryBadge(batt) : '';
+                        }
+                        return '';
+                    })()}
                     ${settingKey ? `
                     <div class="flex flex-col items-center gap-[4px]">
                         <span class="text-[16px] text-[var(--text-primary)] opacity-50">Preferred</span>
