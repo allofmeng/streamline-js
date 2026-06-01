@@ -209,46 +209,35 @@ export async function loadPage(pageUrl, containerSelector = '#scaled-content') {
                 // Check if the loaded page has a specific initialization function
                 // For profile selector, try to import and call the initialization function
                 if (pageUrl.includes('profile_selector.html') || pageUrl.endsWith('profile_selector.html')) {
-                    console.log('Router: Initializing profile selector...');
+                    mainContainer.classList.add('scaled');
                     try {
-                        // Import the module and call its initialization function
-                        // Using absolute path that works in browser environment
                         const { initializeProfileSelector } = await import('./profile_selector.js');
                         if (initializeProfileSelector) {
-                            await initializeProfileSelector();
-                            console.log('Router: Profile selector initialized successfully.');
+                            initializeProfileSelector().catch(e => console.error('Router: Profile selector init error:', e));
                         }
                     } catch (e) {
                         console.error('Router: Error initializing profile selector:', e);
                     }
-                    mainContainer.classList.add('scaled');
                 } else if (pageUrl.includes('profile_editor.html') || pageUrl.endsWith('profile_editor.html')) {
-                    console.log('Router: Initializing profile editor...');
+                    mainContainer.classList.add('scaled');
                     try {
                         const { initializeProfileEditor } = await import('./profile_editor.js');
-                        if (initializeProfileEditor) {
-                            await initializeProfileEditor();
-                            console.log('Router: Profile editor initialized successfully.');
-                        }
+                        if (initializeProfileEditor) await initializeProfileEditor();
                     } catch (e) {
                         console.error('Router: Error initializing profile editor:', e);
                     }
-                    mainContainer.classList.add('scaled');
                 } else if (pageUrl.includes('settings.html') || pageUrl.endsWith('settings.html')) {
-                    console.log('Router: Initializing settings page...');
+                    mainContainer.classList.add('scaled');
                     try {
-                        // Import the settings module and call its initialization function
                         const { initializeSettings } = await import('../settings/settings.js');
                         if (initializeSettings) {
-                            await initializeSettings();
-                            console.log('Router: Settings page initialized successfully.');
+                            initializeSettings().catch(e => console.error('Router: Settings init error:', e));
                         } else {
                             console.error('Router: initializeSettings not exported from settings.js');
                         }
                     } catch (e) {
-                        console.error('Router: Error initializing settings page:', e);
+                        console.error('Router: Error importing settings page:', e);
                     }
-                    mainContainer.classList.add('scaled');
                 } else {
                     // Reinitialize main index page components
                     try {
@@ -267,28 +256,13 @@ export async function loadPage(pageUrl, containerSelector = '#scaled-content') {
                         ]);
                         const { showScaleInfo } = uiModule;
 
+                        // Fast sync setup — no API calls yet
                         await i18nModule.initI18n();
                         uiModule.initUI({ onWeightClick: window.handleWeightClick || (() => {}) });
                         scalingModule.initScaling();
                         shotDataModule.clearShotData();
                         showScaleInfo();
-
-                        // Parallel API calls — history + profiles independent of each other
-                        await Promise.all([
-                            historyModule.initHistory(),
-                            profileManagerModule.init(),
-                        ]);
-
                         chartModule.initChart();
-                        waterTankMod.initWaterTankSocket();
-
-                        if (numpadModule.resetNumpadModal) numpadModule.resetNumpadModal();
-                        if (numpadModule.initNumpadModal) {
-                            numpadModule.initNumpadModal();
-                            if (numpadModule.attachToNumericInputs) numpadModule.attachToNumericInputs();
-                        }
-
-                        if (appModule.initMobileValueInputs) appModule.initMobileValueInputs();
 
                         // Reattach click handlers to value elements
                         const valueElements = [
@@ -352,42 +326,59 @@ export async function loadPage(pageUrl, containerSelector = '#scaled-content') {
                             newBtn.addEventListener('click', () => loadPage('src/settings/settings.html'));
                         }
 
-                        // Load data — profileManager already initialized above so assignments are ready
-                        if (appModule.resetDataTimeout) appModule.resetDataTimeout();
-                        if (appModule.loadInitialData) {
-                            await appModule.loadInitialData();
-                            appModule.handleWeightClick();
-                            appModule.handleScaleData();
-                        } else if (window.loadInitialData) {
-                            await window.loadInitialData();
-                        }
+                        // Show skeleton now — data fills in below async
+                        mainContainer.classList.add('scaled');
 
-                        // Reconnect WebSockets only if not already open
-                        try {
-                            if (window.handleData && typeof apiModule.connectWebSocket === 'function') {
-                                if (!apiModule.reconnectingWebSocket || apiModule.reconnectingWebSocket.readyState !== WebSocket.OPEN) {
-                                    apiModule.connectWebSocket(window.handleData, () => {
-                                        if (window.isDe1Connected !== undefined) window.isDe1Connected = false;
-                                    });
+                        // Fire API calls + WebSocket reconnects without blocking paint
+                        (async () => {
+                            try {
+                                if (numpadModule.resetNumpadModal) numpadModule.resetNumpadModal();
+                                if (numpadModule.initNumpadModal) {
+                                    numpadModule.initNumpadModal();
+                                    if (numpadModule.attachToNumericInputs) numpadModule.attachToNumericInputs();
                                 }
+                                if (appModule.initMobileValueInputs) appModule.initMobileValueInputs();
+
+                                await Promise.all([
+                                    historyModule.initHistory(),
+                                    profileManagerModule.init(),
+                                ]);
+                                waterTankMod.initWaterTankSocket();
+
+                                if (appModule.resetDataTimeout) appModule.resetDataTimeout();
+                                if (appModule.loadInitialData) {
+                                    await appModule.loadInitialData();
+                                    appModule.handleWeightClick();
+                                    appModule.handleScaleData();
+                                } else if (window.loadInitialData) {
+                                    await window.loadInitialData();
+                                }
+
+                                if (window.handleData && typeof apiModule.connectWebSocket === 'function') {
+                                    if (!apiModule.reconnectingWebSocket || apiModule.reconnectingWebSocket.readyState !== WebSocket.OPEN) {
+                                        apiModule.connectWebSocket(window.handleData, () => {
+                                            if (window.isDe1Connected !== undefined) window.isDe1Connected = false;
+                                        });
+                                    }
+                                }
+                                if (window.handleScaleData && typeof apiModule.connectScaleWebSocket === 'function') {
+                                    apiModule.connectScaleWebSocket(window.handleScaleData, window.onScaleReconnect || (() => {}), window.onScaleDisconnect || (() => {}));
+                                }
+                                if (window.handleShotSettingsData && typeof apiModule.connectShotSettingsWebSocket === 'function') {
+                                    apiModule.connectShotSettingsWebSocket(window.handleShotSettingsData);
+                                }
+                                if (window.handleTimeToReadyData && typeof apiModule.connectTimeToReadyWebSocket === 'function') {
+                                    apiModule.connectTimeToReadyWebSocket(window.handleTimeToReadyData);
+                                }
+                            } catch (e) {
+                                console.error('Router: Error loading index data:', e);
                             }
-                            if (window.handleScaleData && typeof apiModule.connectScaleWebSocket === 'function') {
-                                apiModule.connectScaleWebSocket(window.handleScaleData, window.onScaleReconnect || (() => {}), window.onScaleDisconnect || (() => {}));
-                            }
-                            if (window.handleShotSettingsData && typeof apiModule.connectShotSettingsWebSocket === 'function') {
-                                apiModule.connectShotSettingsWebSocket(window.handleShotSettingsData);
-                            }
-                            if (window.handleTimeToReadyData && typeof apiModule.connectTimeToReadyWebSocket === 'function') {
-                                apiModule.connectTimeToReadyWebSocket(window.handleTimeToReadyData);
-                            }
-                        } catch (wsError) {
-                            console.error('Error re-establishing WebSocket connections:', wsError);
-                        }
+                        })();
 
                     } catch (e) {
                         console.error('Router: Error reinitializing main page components:', e);
+                        mainContainer.classList.add('scaled');
                     }
-                    mainContainer.classList.add('scaled');
                 }
             })();
         } else {
