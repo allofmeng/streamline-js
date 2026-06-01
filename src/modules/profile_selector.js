@@ -1118,26 +1118,6 @@ export async function initializeProfileSelector() {
         showToast('Error: Could not load any profiles.', 3000, 'error');
     }
 
-    // Load user-created profiles from KV store and merge into availableProfiles
-    try {
-        const kvKeys = await getKVKeys('streamline');
-        if (kvKeys && kvKeys.length > 0) {
-            await Promise.all(kvKeys.map(async (key) => {
-                try {
-                    const kvRecord = await getKVValue('streamline', key);
-                    if (kvRecord && kvRecord.profile) {
-                        availableProfiles[kvRecord.id || `kv:${key}`] = kvRecord;
-                    }
-                } catch (e) {
-                    logger.warn(`Failed to load KV profile ${key}:`, e);
-                }
-            }));
-            logger.info(`Loaded ${kvKeys.length} user profile(s) from KV store.`);
-        }
-    } catch (e) {
-        logger.warn('Could not load KV profiles:', e);
-    }
-
     console.log('initializeProfileSelector: Rendering profiles...');
     renderProfiles();
 

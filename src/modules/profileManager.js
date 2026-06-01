@@ -1,5 +1,5 @@
 import { logger } from './logger.js';
-import { updateWorkflow,sendProfile, getWorkflow, getValueFromStore, setValueInStore, getProfiles, deleteProfile, updateProfileVisibility, uploadProfile, updateProfile, updateProfileMetadata, getShots } from './api.js';
+import { updateWorkflow,sendProfile, getWorkflow, getValueFromStore, setValueInStore, getProfiles, deleteProfile, updateProfileVisibility, uploadProfile, updateProfile, updateProfileMetadata, getShots, getKVKeys, getKVValue } from './api.js';
 import { updateProfileName, updateTemperatureDisplay, updateDrinkOut, updateDrinkRatio, updateDoseInDisplay, updateGrindDisplay, updateSteamDisplay, updateHotWaterDisplay, updateFlushDisplay, showToast} from './ui.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { loadPage } from './router.js'; // Singular and correctly formatted import
@@ -103,6 +103,27 @@ export function translateProfileTitle(title) {
     return translatedTitle === title ? title : translatedTitle;
 }
 
+async function mergeKVProfiles() {
+    try {
+        const kvKeys = await getKVKeys('streamline');
+        if (!kvKeys || kvKeys.length === 0) return;
+        await Promise.all(kvKeys.map(async (key) => {
+            try {
+                const kvRecord = await getKVValue('streamline', key);
+                if (kvRecord && kvRecord.profile) {
+                    availableProfiles[kvRecord.id || `kv:${key}`] = kvRecord;
+                }
+            } catch (e) {
+                logger.warn(`Failed to load KV profile ${key}:`, e);
+            }
+        }));
+        logger.info(`Merged ${kvKeys.length} user profile(s) from KV store.`);
+        await setSetting(PROFILES_CACHE_KEY, availableProfiles);
+    } catch (e) {
+        logger.warn('Could not load KV profiles:', e);
+    }
+}
+
 export async function loadAvailableProfiles() {
     try {
         logger.info('Attempting to load profiles from API...');
@@ -120,6 +141,8 @@ export async function loadAvailableProfiles() {
         await setSetting(PROFILES_CACHE_KEY, availableProfiles);
         logger.info('Successfully synced profiles to IndexedDB cache.');
 
+        await mergeKVProfiles();
+
         return { profilesFrom: 'API' };
 
     } catch (apiError) {
@@ -130,15 +153,18 @@ export async function loadAvailableProfiles() {
             if (profilesFromCache && Object.keys(profilesFromCache).length > 0) {
                 availableProfiles = profilesFromCache;
                 logger.info(`Successfully loaded ${Object.keys(availableProfiles).length} profiles from IndexedDB cache.`);
+                await mergeKVProfiles();
                 return { profilesFrom: 'IDB_CACHE' };
             } else {
                 logger.error('API failed and IndexedDB cache is empty. No profiles could be loaded.');
                 availableProfiles = {};
+                await mergeKVProfiles();
                 return { profilesFrom: 'NONE' };
             }
         } catch (idbError) {
             logger.error('CRITICAL: API failed and also failed to read from IndexedDB cache.', idbError);
             availableProfiles = {};
+            await mergeKVProfiles();
             return { profilesFrom: 'NONE' };
         }
     }
@@ -510,7 +536,7 @@ export async function assignProfile(buttonIndex, profileKey) {
     favoriteAssignments[buttonIndex] = profileKey;
     await saveAssignments();
     updateButtonUI();
-    document.getElementById('profile_modal').close();
+    document.getElementById('profile_modal')?.close();
 }
 
 function openProfileSelectionModal(buttonIndex) {

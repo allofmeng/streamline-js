@@ -303,15 +303,24 @@ function handleData(data) {
 
     // Detect DE1 reconnection
     if (state !== MachineState.ERROR && !isDe1Connected) {
-        logger.info('DE1 machine reconnected. Loading initial data.');
         isDe1Connected = true;
         ui.updateMachineStatus({ status: statusString }); // Update status to reflect actual machine state
-        loadInitialData(); // Refresh all configuration data
+        if (state !== MachineState.SLEEPING) {
+            logger.info('DE1 machine reconnected. Loading initial data.');
+            loadInitialData(); // Refresh all configuration data
+        }
         // Do not clear chart or reset shotStartTime as per user request
     } else if (state === MachineState.ERROR && isDe1Connected) {
         logger.warn('DE1 machine connected with error status.');
         isDe1Connected = false;
         ui.updateMachineStatus({ status: "Disconnected" }); // Show disconnected when in error state
+    }
+
+    // Reload data when machine wakes from sleep
+    const wasSleeping = previousState.state === MachineState.SLEEPING;
+    if (wasSleeping && state !== MachineState.SLEEPING && state !== MachineState.ERROR) {
+        logger.info('Machine woke from sleep. Reloading initial data.');
+        loadInitialData();
     }
 
     // Check if the machine is in an error state that indicates disconnection
@@ -592,15 +601,9 @@ async function handleShotSettingsData(data) {
 async function loadInitialData() {
     logger.debug("loadInitialData triggered.");
     try {
-        // Wait for DOM to be fully updated when called from router
-        await new Promise(resolve => {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', resolve);
-            } else {
-                // Small delay to ensure DOM updates from router are complete
-                setTimeout(resolve, 100);
-            }
-        });
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve));
+        }
 
         const workflow = await getWorkflow();
         logger.debug("Workflow data received:", workflow);
@@ -764,6 +767,11 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         if (doseInValue !== undefined) ui.updateDoseInDisplay(doseInValue);
         if (doseOutValue !== undefined) ui.updateDrinkOut(doseOutValue);
         ui.updateDrinkRatio();
+
+        const hotwatersettings = workflow?.hotWaterData;
+        const steamsettings = workflow?.steamSettings;
+        if (hotwatersettings) ui.updateHotWaterDisplay(hotwatersettings);
+        if (steamsettings) ui.updateSteamDisplay(steamsettings);
 
         // Show GHC machine controls column only for non-GHC machines
         try {
