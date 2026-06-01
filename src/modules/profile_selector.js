@@ -2,7 +2,7 @@ import { init as initProfileManager, unhideProfile,availableProfiles, assignProf
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler } from './ui.js';
-import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, verifyVisualizerCredentials, getKVKeys, getKVValue, deleteKVValue } from './api.js';
+import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, getKVKeys, getKVValue, setKVValue, deleteKVValue, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
 import { initChart, plotProfile } from './chart.js';
 import { initI18n } from './i18n.js';
 import { loadPage } from './router.js';
@@ -368,8 +368,11 @@ async function handleConfirm() {
         return;
     }
     const profile = profileRecord.profile;
-    const savedGrind = profileRecord.metadata?.grinderSetting ?? null;
+    const meta = profileRecord.metadata || {};
+    const savedGrind = meta.grinderSetting ?? null;
     const grindContext = savedGrind != null ? { grinderSetting: savedGrind } : { grinderSetting: null };
+    const effectiveDose  = meta.targetDoseWeight  ?? (profile.dose_weight   || 18);
+    const effectiveYield = meta.targetYield        ?? parseFloat(profile.target_weight);
 
     logger.info(`Confirming and sending profile: ${profile.title}`);
     try {
@@ -400,8 +403,8 @@ async function handleConfirm() {
             const workflowUpdate = {
                 profile,
                 context: {
-                    targetDoseWeight: profile.dose_weight || 18,
-                    targetYield: parseFloat(profile.target_weight),
+                    targetDoseWeight: effectiveDose,
+                    targetYield: effectiveYield,
                     ...grindContext
                 }
             };
@@ -1302,7 +1305,83 @@ export async function initializeProfileSelector() {
         });
     }
 
+    await initAiGenerateButton();
     console.log('initializeProfileSelector: Initialization complete');
+}
+
+async function initAiGenerateButton() {
+    const link = document.getElementById('ai_generate_profile');
+    if (!link) return;
+
+    try {
+        const resp = await fetch(`${API_BASE_URL}/plugins`);
+        if (!resp.ok) throw new Error('plugins fetch failed');
+        const plugins = await resp.json();
+        const plugin = plugins.find(p => p.id === 'decent-profile.reaplugin');
+        if (!plugin?.loaded) { link.style.display = 'none'; return; }
+    } catch {
+        link.style.display = 'none';
+        return;
+    }
+
+    connectProfileGeneratedWebSocket(handleGeneratedProfile);
+
+    const newLink = link.cloneNode(true);
+    link.parentNode.replaceChild(newLink, link);
+
+    newLink.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+            await setPluginSettings('decent-profile.reaplugin', { profileFormat: 'json-v2' });
+        } catch (err) {
+            logger.warn('Could not set profileFormat=json-v2:', err);
+            showToast('Could not configure plugin format; generated profile may not import.', 4000, 'warning');
+        }
+        window.open(newLink.href, '_blank');
+    });
+}
+
+async function handleGeneratedProfile(data) {
+    if (data.format !== 'json-v2') {
+        logger.warn(`Ignoring profileGenerated event: format=${data.format} (expected json-v2)`);
+        showToast(`Plugin returned ${data.format}; cannot import. Set Output format to json-v2.`, 5000, 'warning');
+        return;
+    }
+
+    let profileJson;
+    try {
+        profileJson = typeof data.profile === 'string' ? JSON.parse(data.profile) : data.profile;
+    } catch (e) {
+        logger.error('Could not parse generated profile JSON:', e);
+        showToast('AI profile import failed (bad JSON).', 4000, 'error');
+        return;
+    }
+
+    if (data.title && !profileJson.title) profileJson.title = data.title;
+
+    const kvKey = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const kvRecord = {
+        id: `kv:${kvKey}`,
+        profile: profileJson,
+        isDefault: false,
+        isFavorite: false,
+        visibility: 'visible',
+        parentId: null,
+        createdAt: now,
+        updatedAt: now,
+        _kvKey: kvKey,
+    };
+
+    try {
+        await setKVValue('streamline', kvKey, kvRecord);
+        availableProfiles[kvRecord.id] = kvRecord;
+        document.dispatchEvent(new CustomEvent('profiles-updated'));
+        showToast(`AI profile "${profileJson.title || 'Untitled'}" imported.`, 4000, 'success');
+    } catch (e) {
+        logger.error('Failed to save generated profile to KV:', e);
+        showToast('Failed to save AI profile.', 4000, 'error');
+    }
 }
 
 // Call initialization when DOM is ready for traditional page loads

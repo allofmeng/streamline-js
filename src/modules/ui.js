@@ -86,6 +86,11 @@ function updateDoseValue(type, newValue) {
 
     updateWorkflow(payload).then(() => {
         logger.debug(`Dose ${type} value updated via workflow:`, newValue);
+        if (type === 'in') {
+            window.app?.saveContextToActiveProfile?.({ targetDoseWeight: parseFloat(newValue) });
+        } else {
+            window.app?.saveContextToActiveProfile?.({ targetYield: parseFloat(newValue) });
+        }
     }).catch(error => {
         logger.error(`Failed to update dose ${type} value via workflow:`, error);
     });

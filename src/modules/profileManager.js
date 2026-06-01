@@ -144,13 +144,17 @@ export async function loadAvailableProfiles() {
     }
 }
 
+function isValidAssignments(v) {
+    return v && typeof v === 'object' && !Array.isArray(v);
+}
+
 export async function loadAssignments() {
     logger.info('Loading assignments...');
     try {
         // 1. Try to fetch from the primary source (REA store)
         const reaAssignments = await getValueFromStore(SETTINGS_NAMESPACE, FAVORITES_KEY);
 
-        if (reaAssignments) {
+        if (isValidAssignments(reaAssignments)) {
             logger.info('Loaded assignments from REA store.');
             favoriteAssignments = reaAssignments;
             validateButtonIndices();
@@ -164,7 +168,7 @@ export async function loadAssignments() {
         logger.warn('No assignments in REA store, checking IndexedDB backup...');
         const idbAssignments = await getSetting(FAVORITES_KEY);
 
-        if (idbAssignments) {
+        if (isValidAssignments(idbAssignments)) {
             logger.info('Loaded assignments from IndexedDB backup.');
             favoriteAssignments = idbAssignments;
             validateButtonIndices();
@@ -174,33 +178,30 @@ export async function loadAssignments() {
             return favoriteAssignments;
         }
 
-        // 3. If neither source has data, create and save defaults.
-        logger.info('No assignments found anywhere. Creating defaults.');
+        // 3. If neither source has data, leave slots null so init() auto-populates from history/fallbacks.
+        logger.info('No assignments found in REA or IDB. Deferring to auto-populate.');
         favoriteAssignments = {};
-        const profileKeys = Object.keys(availableProfiles);
         for (let i = 0; i < FAV_COUNT; i++) {
-            favoriteAssignments[i] = profileKeys[i] || null;
+            favoriteAssignments[i] = null;
         }
-        await saveAssignments(); // Saves to both REA and IndexedDB
 
     } catch (error) {
         // This catch block handles network failures when trying to reach the REA store.
         logger.error('Failed to load from REA store. Falling back to IndexedDB.', error);
         try {
             const idbAssignments = await getSetting(FAVORITES_KEY);
-            if (idbAssignments) {
+            if (isValidAssignments(idbAssignments)) {
                 logger.info('Successfully loaded from IndexedDB backup during fallback.');
                 favoriteAssignments = idbAssignments;
                 validateButtonIndices();
                 await setValueInStore(SETTINGS_NAMESPACE, FAVORITES_KEY, favoriteAssignments);
                 await setSetting(FAVORITES_KEY, favoriteAssignments);
             } else {
-                 // Even the backup failed, so create defaults (but they will only be saved locally for now)
-                 logger.warn('IndexedDB backup is also empty. Creating defaults.');
+                 // Both stores empty — leave slots null so init() auto-populates.
+                 logger.warn('IndexedDB backup is also empty. Deferring to auto-populate.');
                  favoriteAssignments = {};
-                 const profileKeys = Object.keys(availableProfiles);
                  for (let i = 0; i < FAV_COUNT; i++) {
-                     favoriteAssignments[i] = profileKeys[i] || null;
+                     favoriteAssignments[i] = null;
                  }
             }
         } catch (idbError) {
@@ -236,19 +237,23 @@ export function setActiveProfile(profileId) {
     activeProfileId = profileId;
 }
 
-export async function saveGrindToActiveProfile(grindValue) {
-    console.log(`[saveGrindToActiveProfile] grindValue=${grindValue} activeProfileId=${activeProfileId} profileFound=${!!availableProfiles[activeProfileId]}`);
+export async function saveContextToActiveProfile(fields) {
     if (!activeProfileId || !availableProfiles[activeProfileId]) return;
     const profileRecord = availableProfiles[activeProfileId];
-    const updatedMetadata = { ...(profileRecord.metadata || {}), grinderSetting: String(grindValue) };
+    const updatedMetadata = { ...(profileRecord.metadata || {}), ...fields };
     try {
         const updatedRecord = await updateProfileMetadata(activeProfileId, updatedMetadata);
         availableProfiles[activeProfileId] = updatedRecord;
         await setSetting(PROFILES_CACHE_KEY, availableProfiles);
-        logger.info(`Saved grind ${grindValue} to profile ${activeProfileId}`);
+        logger.info(`Saved context to profile ${activeProfileId}:`, fields);
     } catch (error) {
-        logger.error('Failed to save grind to profile:', error);
+        logger.error('Failed to save context to profile:', error);
     }
+}
+
+export async function saveGrindToActiveProfile(grindValue) {
+    console.log(`[saveGrindToActiveProfile] grindValue=${grindValue} activeProfileId=${activeProfileId} profileFound=${!!availableProfiles[activeProfileId]}`);
+    return saveContextToActiveProfile({ grinderSetting: String(grindValue) });
 }
 
 const FAV_MAX_FONT = 22;
@@ -415,8 +420,11 @@ async function handleProfileClick(index) {
 
     logger.info(`Sending profile '${profile.title}' to REA (callId: ${callId})...`);
     let profileSuccessfullySet = false;
-    const savedGrind = profileRecord.metadata?.grinderSetting ?? null;
+    const meta = profileRecord.metadata || {};
+    const savedGrind = meta.grinderSetting ?? null;
     const grindContext = savedGrind != null ? { grinderSetting: savedGrind } : { grinderSetting: null };
+    const effectiveDose  = meta.targetDoseWeight  ?? (profile.dose_weight   || 18);
+    const effectiveYield = meta.targetYield        ?? parseFloat(profile.target_weight);
     try {
         // Skip the sendProfile call since updateWorkflow can handle sending the profile
         logger.info(`Skipping sendProfile call, using updateWorkflow directly (callId: ${callId})`);
@@ -426,14 +434,14 @@ async function handleProfileClick(index) {
             const workflowUpdate = {
                 profile: profile,
                 context: {
-                    targetDoseWeight: profile.dose_weight || 18,
-                    targetYield: parseFloat(profile.target_weight),
+                    targetDoseWeight: effectiveDose,
+                    targetYield: effectiveYield,
                     ...grindContext
                 }
             };
             workflowResponse = await updateWorkflow(workflowUpdate);
-            updateDrinkOut(profile.target_weight);
-            updateDoseInDisplay(profile.dose_weight || 18);
+            updateDrinkOut(effectiveYield);
+            updateDoseInDisplay(effectiveDose);
             updateDrinkRatio();
         } else {
             workflowResponse = await updateWorkflow({ profile, context: { ...grindContext } });
@@ -750,7 +758,7 @@ export function getHiddenProfiles() {
 const FALLBACK_PROFILE_TITLES = [
     'Default',
     'Best practice (light roast)',
-    '80s_Espresso',
+    "80's Espresso",
     'Rao Allongé',
     'Gentle and sweet',
 ];
@@ -762,17 +770,6 @@ function findProfileKeyByTitle(title) {
     ) || null;
 }
 
-function fillRemainingWithFallbacks(orderedKeys, usedKeys) {
-    for (const title of FALLBACK_PROFILE_TITLES) {
-        if (orderedKeys.length >= FAV_COUNT) break;
-        const key = findProfileKeyByTitle(title);
-        if (key && !usedKeys.has(key)) {
-            usedKeys.add(key);
-            orderedKeys.push(key);
-        }
-    }
-}
-
 async function autoPopulateFavoritesFromHistory() {
     const THREE_WEEKS_MS = 21 * 24 * 60 * 60 * 1000;
     const cutoff = new Date(Date.now() - THREE_WEEKS_MS).toISOString();
@@ -782,48 +779,50 @@ async function autoPopulateFavoritesFromHistory() {
         const data = await getShots({ limit: 200, order: 'desc' });
         shots = (data.items ?? []).filter(s => s.timestamp >= cutoff);
     } catch (e) {
-        logger.warn('autoPopulateFavoritesFromHistory: could not fetch shots', e);
+        logger.warn('autoPopulateFavoritesFromHistory: could not fetch shots, using fallbacks', e);
+        shots = [];
+    }
+    shots = [];  // TEMP: force no-history branch
+
+    if (shots.length === 0) {
+        logger.info('autoPopulateFavoritesFromHistory: no history, assigning FALLBACK_PROFILE_TITLES by position');
+        for (let i = 0; i < FAV_COUNT; i++) {
+            const title = FALLBACK_PROFILE_TITLES[i];
+            favoriteAssignments[i] = title ? (findProfileKeyByTitle(title) || null) : null;
+        }
+        await saveAssignments();
+        updateButtonUI();
         return;
     }
 
-    const usedKeys = new Set();
-    const orderedKeys = [];
-
-    if (shots.length === 0) {
-        logger.info('autoPopulateFavoritesFromHistory: no recent shots, using fallback profiles');
-    } else {
-        // Walk shots newest-first, collect up to FAV_COUNT distinct profile keys
-        for (const shot of shots) {
-            const title = shot.workflow?.profile?.title;
-            if (!title) continue;
-            const profileKey = Object.keys(availableProfiles).find(
-                k => availableProfiles[k]?.profile?.title === title
-            );
-            if (profileKey && !usedKeys.has(profileKey)) {
-                usedKeys.add(profileKey);
-                orderedKeys.push(profileKey);
-            }
-            if (orderedKeys.length >= FAV_COUNT) break;
-        }
+    // Count frequency by profile key from shot history.
+    const freq = new Map();
+    for (const shot of shots) {
+        const title = shot.workflow?.profile?.title;
+        if (!title) continue;
+        const key = findProfileKeyByTitle(title);
+        if (!key) continue;
+        freq.set(key, (freq.get(key) || 0) + 1);
     }
 
-    // Fill any remaining slots with preferred fallback profiles
-    if (orderedKeys.length < FAV_COUNT) {
-        fillRemainingWithFallbacks(orderedKeys, usedKeys);
-    }
+    const topKeys = [...freq.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, FAV_COUNT)
+        .map(([k]) => k);
+
+    logger.info('autoPopulateFavoritesFromHistory: top by frequency',
+        topKeys.map(k => ({ key: k, title: availableProfiles[k]?.profile?.title, count: freq.get(k) })));
 
     for (let i = 0; i < FAV_COUNT; i++) {
-        favoriteAssignments[i] = orderedKeys[i] || null;
+        favoriteAssignments[i] = topKeys[i] || null;
     }
 
     await saveAssignments();
     updateButtonUI();
 
-    // Pre-populate recipe sidebar from the most recent shot
+    // Best-effort: recipe sidebar pre-fill from the most recent shot.
     const latest = shots[0];
-    if (latest?.workflow) {
-        _applyRecipeFromShot(latest.workflow);
-    }
+    if (latest?.workflow) _applyRecipeFromShot(latest.workflow);
 }
 
 function _applyRecipeFromShot(workflow) {

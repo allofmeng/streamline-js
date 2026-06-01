@@ -963,6 +963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             logger.info('App DOMContentLoaded: Awaiting Profile Manager module...');
             await profileManager.init();
             window.app.saveGrindToActiveProfile = (val) => profileManager.saveGrindToActiveProfile(val);
+            window.app.saveContextToActiveProfile = (fields) => profileManager.saveContextToActiveProfile(fields);
             logger.info('App DOMContentLoaded: Profile Manager module finished.');
 
             logger.info('App DOMContentLoaded: Awaiting initial data...');

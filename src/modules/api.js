@@ -326,6 +326,40 @@ export function connectTimeToReadyWebSocket(onData) {
     };
 }
 
+let profileGeneratedWebSocket = null;
+
+export function connectProfileGeneratedWebSocket(onData) {
+    if (profileGeneratedWebSocket) return profileGeneratedWebSocket;
+    profileGeneratedWebSocket = new ReconnectingWebSocket(
+        `${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/plugins/decent-profile.reaplugin/profileGenerated`,
+        [],
+        { debug: false, reconnectInterval: 3000 }
+    );
+
+    profileGeneratedWebSocket.onopen = () => {
+        logger.info('profileGenerated WebSocket connected');
+    };
+
+    profileGeneratedWebSocket.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            onData(data);
+        } catch (error) {
+            logger.error('Error parsing profileGenerated WebSocket message:', error);
+        }
+    };
+
+    profileGeneratedWebSocket.onclose = () => {
+        logger.info('profileGenerated WebSocket disconnected. Attempting to reconnect...');
+    };
+
+    profileGeneratedWebSocket.onerror = (error) => {
+        logger.error('profileGenerated WebSocket error:', error);
+    };
+
+    return profileGeneratedWebSocket;
+}
+
 let deviceWebSocket = null; // Module-level variable to track device WebSocket connection
 
 export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onError) {
@@ -917,7 +951,7 @@ export async function getDe1Settings() {
         
         // Check if this is a 500 error and re-throw with status info
         if (error.status === 500) {
-            ui.showToast('Unable to load settings, check connection status of De1, returned to home page.', 5000, 'error');
+            ui.showToast('Unable to load settings, check connection status of De1, returned to home page.', 2000, 'error');
             throw error; // Re-throw so calling code can handle 500 specifically
         }
         
