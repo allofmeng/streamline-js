@@ -147,8 +147,8 @@ body {
 /* New classes for status messages */
 .status-msg-green {
     font-family: 'Inter', sans-serif;
-    font-weight: 800; /* Inter-HeavyBold24 */
-    font-size: 24px;
+    font-weight: 700;
+    font-size: 30px;
     color: var(--status-green-color);
 }
 
