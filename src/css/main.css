@@ -11,6 +11,11 @@
     transition: opacity 0.15s ease-out;
 }
 
+#subpage-host {
+    width: 1920px;
+    height: 1200px;
+}
+
 #scaled-content.scaled {
     visibility: visible;
     opacity: 1;
