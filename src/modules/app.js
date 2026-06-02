@@ -942,6 +942,44 @@ async function initVisualizer() {
     }
 }
 
+let mainPageInitialized = false;
+let mainPageInitPromise = null;
+async function initMainPageOnce() {
+    if (mainPageInitialized) return;
+    if (mainPageInitPromise) return mainPageInitPromise;
+    mainPageInitPromise = (async () => {
+        logger.info('initMainPageOnce: starting.');
+        await history.initHistory();
+        await profileManager.init();
+        window.app.saveGrindToActiveProfile = (val) => profileManager.saveGrindToActiveProfile(val);
+        window.app.saveContextToActiveProfile = (fields) => profileManager.saveContextToActiveProfile(fields);
+        await loadInitialData();
+        await initializeDe1Connection();
+        await initVisualizer();
+        connectWebSocket(handleData, () => {
+            logger.info('WebSocket reconnected. Resetting DE1 connection status.');
+            isDe1Connected = false;
+        });
+        connectScaleWebSocket(handleScaleData, onScaleReconnect, onScaleDisconnect);
+        initWaterTankSocket();
+        connectTimeToReadyWebSocket(handleTimeToReadyData);
+        connectDisplayWebSocket((data) => logger.debug('Display state updated:', data));
+        ensureGatewayModeTracking();
+        resetDataTimeout();
+        connectShotSettingsWebSocket(handleShotSettingsData);
+        getDe1AdvancedSettings();
+        getDe1Settings();
+        mainPageInitialized = true;
+        logger.info('initMainPageOnce: finished.');
+    })().catch(err => {
+        mainPageInitPromise = null; // allow retry on next showMainPage
+        logger.error('initMainPageOnce failed:', err);
+        throw err;
+    });
+    return mainPageInitPromise;
+}
+window.app.initMainPageOnce = initMainPageOnce;
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         setDebug(true);
@@ -962,53 +1000,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         await initRouter();
         logger.info('App DOMContentLoaded: Router initialized.');
 
-        // Only run main page initializations if NOT on a sub-page (settings, profile_selector, etc.)
+        // Run main-page init unless we booted on a sub-page; sub-page returns will
+        // trigger it lazily via window.app.initMainPageOnce() from the router.
         if (!isSubPage()) {
-            logger.info('App DOMContentLoaded: Awaiting History module...');
-            await history.initHistory();
-            logger.info('App DOMContentLoaded: History module finished.');
-
-            logger.info('App DOMContentLoaded: Awaiting Profile Manager module...');
-            await profileManager.init();
-            window.app.saveGrindToActiveProfile = (val) => profileManager.saveGrindToActiveProfile(val);
-            window.app.saveContextToActiveProfile = (fields) => profileManager.saveContextToActiveProfile(fields);
-            logger.info('App DOMContentLoaded: Profile Manager module finished.');
-
-            logger.info('App DOMContentLoaded: Awaiting initial data...');
-            await loadInitialData();
-            logger.info('App DOMContentLoaded: Initial data finished.');
-
-            logger.info('App DOMContentLoaded: Awaiting DE1 connection...');
-            await initializeDe1Connection();
-            logger.info('App DOMContentLoaded: DE1 connection finished.');
-
-            logger.info('App DOMContentLoaded: Initializing Visualizer...');
-            await initVisualizer();
-            logger.info('App DOMContentLoaded: Visualizer initialized.');
-
-            logger.info('App DOMContentLoaded: Setting up WebSockets and timers...');
-            connectWebSocket(handleData, () => {
-                logger.info('WebSocket reconnected. Resetting DE1 connection status.');
-                isDe1Connected = false; // Reset DE1 connection status so handleData can detect reconnection
-            });
-            connectScaleWebSocket(
-                handleScaleData,
-                onScaleReconnect,
-                onScaleDisconnect
-            );
-            initWaterTankSocket();
-            connectTimeToReadyWebSocket(handleTimeToReadyData);
-            connectDisplayWebSocket((data) => {
-                logger.debug('Display state updated:', data);
-            });
-            ensureGatewayModeTracking();
-            resetDataTimeout(); // Start the timeout timer initially.
-            connectShotSettingsWebSocket(handleShotSettingsData);
-            getDe1AdvancedSettings();
-            getDe1Settings();
-            logger.info('App DOMContentLoaded: WebSockets and timers set up.');
-
-        } // End of if (!isSubPage())
+            await initMainPageOnce();
+        }
 
         logger.info('App initialization finished successfully.');
 

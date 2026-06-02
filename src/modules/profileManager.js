@@ -365,8 +365,13 @@ export function updateButtonUI() {
             button.textContent = translatedTitle || 'Untitled';
             button.style.fontSize = '';
             fitButtonText(button);
-            button.classList.remove('text-white', 'bg-[var(--mimoja-blue-v2)]');
-            button.classList.add('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
+            if (activeProfileId && profileKey === activeProfileId) {
+                button.classList.remove('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
+                button.classList.add('text-white', 'bg-[var(--mimoja-blue-v2)]');
+            } else {
+                button.classList.remove('text-white', 'bg-[var(--mimoja-blue-v2)]');
+                button.classList.add('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
+            }
         }
         else if (button) {
             button.textContent = '';
@@ -535,6 +540,19 @@ export async function assignProfile(buttonIndex, profileKey) {
         logger.error(`Invalid button index ${buttonIndex} passed to assignProfile - must be between 0 and ${FAV_COUNT - 1}`);
         return;
     }
+
+    // Reject if profileKey already assigned to another favorite button.
+    if (profileKey) {
+        for (let i = 0; i < FAV_COUNT; i++) {
+            if (i !== buttonIndex && favoriteAssignments[i] === profileKey) {
+                logger.info(`Rejecting assign: profile '${profileKey}' already on button ${i}.`);
+                showToast(`Profile already assigned to favorite ${i + 1}`, 3000, 'error');
+                document.getElementById('profile_modal')?.close();
+                return;
+            }
+        }
+    }
+
     logger.info(`Assigning profile '${profileKey}' to button ${buttonIndex}`);
     favoriteAssignments[buttonIndex] = profileKey;
     await saveAssignments();

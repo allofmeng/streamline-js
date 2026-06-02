@@ -380,6 +380,26 @@ export function updateHotWaterSetting(key, value) {
 
 // ── Settings backup / reconcile ─────────────────────────────────────────────
 
+async function preSeedFromIDB() {
+    try {
+        await openDB();
+        const backup = await getSetting('settingsBackup');
+        if (!backup?.ts || (Date.now() - backup.ts) > 30 * 24 * 60 * 60 * 1000) return false;
+        if (backup.rea)         { settingsCache.rea         = backup.rea;         settingsCache.reaLoading         = false; }
+        if (backup.de1)         { settingsCache.de1         = backup.de1;         settingsCache.de1Loading         = false; }
+        if (backup.de1Advanced) { settingsCache.de1Advanced = backup.de1Advanced; settingsCache.de1AdvancedLoading = false; }
+        if (backup.steamSettings || backup.hotWaterData) {
+            settingsCache.workflow = settingsCache.workflow || {};
+            if (backup.steamSettings) settingsCache.workflow.steamSettings = backup.steamSettings;
+            if (backup.hotWaterData)  settingsCache.workflow.hotWaterData  = backup.hotWaterData;
+        }
+        return true;
+    } catch (e) {
+        console.warn('preSeedFromIDB failed:', e);
+        return false;
+    }
+}
+
 async function saveSettingsBackup() {
     try {
         await openDB();
@@ -1054,10 +1074,13 @@ export function renderUsbChargerModeSettings(settings) {
                         Controls whether the USB port provides power for charging devices
                     </p>
                 </div>
-                <input type="checkbox" id="usbChargerModeToggle"
-                       class="toggle toggle-lg toggle-primary"
-                       ${settings.usb ? 'checked' : ''}
-                       onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="usbChargerModeToggle"
+                           class="sr-only peer"
+                           ${settings.usb ? 'checked' : ''}
+                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
+                    <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                </label>
             </div>
         </div>
     `;
@@ -2909,7 +2932,10 @@ export function renderSkinSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]">Theme</p>
                         </div>
-                        <input type="checkbox" id="theme-toggle" class="toggle toggle-lg toggle-primary">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="theme-toggle" class="sr-only peer">
+                            <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                        </label>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
                         Toggle between light and dark themes
@@ -3072,7 +3098,7 @@ export function renderExtensionsSettings() {
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="visualizer-enabled" class="sr-only peer">
-                            <div class="w-[100px] h-[50px] bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-[#385a92]"></div>
+                            <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
                         </label>
                     </div>
 
@@ -3548,38 +3574,68 @@ function initResizableSubNav() {
 
     let isDragging = false;
 
-    separator.addEventListener('mousedown', (e) => {
+    function thickenSeparator() {
+        separator.classList.remove('w-px');
+        separator.classList.add('w-2');
+    }
+
+    function restoreSeparator() {
+        separator.classList.remove('w-2');
+        separator.classList.add('w-px');
+    }
+
+    function beginDrag(clientX) {
         isDragging = true;
+        thickenSeparator();
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
 
-        const startX = e.clientX;
+        const startX = clientX;
         const startMainWidth = mainCategoriesPanel.offsetWidth;
         const startSubWidth = subCategoriesPanel.offsetWidth;
 
-        function doDrag(e) {
+        function applyDelta(cx) {
             if (!isDragging) return;
-            const dx = e.clientX - startX;
+            const dx = cx - startX;
             const newMainWidth = startMainWidth + dx;
             const newSubWidth = startSubWidth - dx;
-
             if (newMainWidth > 150 && newSubWidth > 150) {
                 mainCategoriesPanel.style.width = `${newMainWidth}px`;
                 subCategoriesPanel.style.width = `${newSubWidth}px`;
             }
         }
 
-        function stopDrag() {
-            isDragging = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            document.removeEventListener('mousemove', doDrag);
-            document.removeEventListener('mouseup', stopDrag);
+        function onMouseMove(e) { applyDelta(e.clientX); }
+        function onTouchMove(e) {
+            if (e.touches[0]) {
+                applyDelta(e.touches[0].clientX);
+                e.preventDefault(); // block scroll while dragging
+            }
         }
 
-        document.addEventListener('mousemove', doDrag);
+        function stopDrag() {
+            isDragging = false;
+            restoreSeparator();
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', stopDrag);
+            document.removeEventListener('touchmove', onTouchMove);
+            document.removeEventListener('touchend', stopDrag);
+            document.removeEventListener('touchcancel', stopDrag);
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', stopDrag);
-    });
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
+        document.addEventListener('touchend', stopDrag);
+        document.addEventListener('touchcancel', stopDrag);
+    }
+
+    separator.addEventListener('mousedown', (e) => beginDrag(e.clientX));
+    separator.addEventListener('touchstart', (e) => {
+        if (e.touches[0]) beginDrag(e.touches[0].clientX);
+    }, { passive: true });
 }
 
 
@@ -3600,10 +3656,10 @@ export async function preloadSettings() {
 // Internal function to preload all settings
 async function _preloadSettingsInternal() {
     try {
-        // Set loading flags
-        settingsCache.reaLoading = true;
-        settingsCache.de1Loading = true;
-        settingsCache.de1AdvancedLoading = true;
+        // Only show "Loading" state if we have no stale IDB data to display
+        if (!settingsCache.rea)         settingsCache.reaLoading         = true;
+        if (!settingsCache.de1)         settingsCache.de1Loading         = true;
+        if (!settingsCache.de1Advanced) settingsCache.de1AdvancedLoading = true;
         settingsCache.appInfoLoading = true;
 
         // Reset error flags
@@ -3780,8 +3836,11 @@ function getCategoryTitle(category) {
 // Initialize the settings page
 export async function initializeSettings() {
     resetPendingChanges();
-    // Preload all settings in the background before initializing the UI
-    await preloadSettings();
+    // Pre-seed cache from IDB backup for instant render, then fetch from network in background
+    await preSeedFromIDB();
+    preloadSettings().then(() => {
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
+    });
 
     // Initialize WebSocket for live device state updates
     initDeviceWebSocket();
@@ -3812,6 +3871,7 @@ export async function initializeSettings() {
                 ui.showToast(`Failed to save settings: ${error.message}`, 5000, 'error');
                 return;
             }
+            ui.showToast('decent.app settings updated', 3000, 'success');
             loadPage('index.html');
         });
     }
@@ -4641,34 +4701,64 @@ export async function initializeSettings() {
     if (mainSeparator && leftPanel && rightPanel) {
         let isDragging = false;
 
-        mainSeparator.addEventListener('mousedown', (e) => {
+        function thicken() {
+            mainSeparator.classList.remove('w-px');
+            mainSeparator.classList.add('w-2');
+        }
+        function restore() {
+            mainSeparator.classList.remove('w-2');
+            mainSeparator.classList.add('w-px');
+        }
+
+        function beginDrag(clientX) {
             isDragging = true;
+            thicken();
             document.body.style.cursor    = 'col-resize';
             document.body.style.userSelect = 'none';
 
-            const startX         = e.clientX;
+            const startX         = clientX;
             const startLeftWidth = leftPanel.offsetWidth;
 
-            function doDrag(e) {
+            function applyDelta(cx) {
                 if (!isDragging) return;
-                const dx           = e.clientX - startX;
+                const dx           = cx - startX;
                 const newLeftWidth = startLeftWidth + dx;
                 if (newLeftWidth > 200 && newLeftWidth < 1600) {
                     leftPanel.style.width = `${newLeftWidth}px`;
                 }
             }
 
-            function stopDrag() {
-                isDragging = false;
-                document.body.style.cursor     = '';
-                document.body.style.userSelect  = '';
-                document.removeEventListener('mousemove', doDrag);
-                document.removeEventListener('mouseup',   stopDrag);
+            function onMouseMove(e) { applyDelta(e.clientX); }
+            function onTouchMove(e) {
+                if (e.touches[0]) {
+                    applyDelta(e.touches[0].clientX);
+                    e.preventDefault();
+                }
             }
 
-            document.addEventListener('mousemove', doDrag);
+            function stopDrag() {
+                isDragging = false;
+                restore();
+                document.body.style.cursor     = '';
+                document.body.style.userSelect  = '';
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup',   stopDrag);
+                document.removeEventListener('touchmove', onTouchMove);
+                document.removeEventListener('touchend',  stopDrag);
+                document.removeEventListener('touchcancel', stopDrag);
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup',   stopDrag);
-        });
+            document.addEventListener('touchmove', onTouchMove, { passive: false });
+            document.addEventListener('touchend',  stopDrag);
+            document.addEventListener('touchcancel', stopDrag);
+        }
+
+        mainSeparator.addEventListener('mousedown', (e) => beginDrag(e.clientX));
+        mainSeparator.addEventListener('touchstart', (e) => {
+            if (e.touches[0]) beginDrag(e.touches[0].clientX);
+        }, { passive: true });
     }
 }
 
@@ -5355,8 +5445,8 @@ export function renderBluetoothScaleSettings(settings) {
                     </p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                    <input type="checkbox" id="block-on-no-scale-toggle" class="toggle toggle-lg toggle-info sr-only peer border border-blue-600 bg-white" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked)">
-                    <div class="w-11 h-6 bg-[var(--box-color)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-blue-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#385a92]"></div>
+                    <input type="checkbox" id="block-on-no-scale-toggle" class="sr-only peer" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked)">
+                    <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
                 </label>
             </div>
 

@@ -72,7 +72,16 @@ function showMainPage() {
     const scaledContent = document.getElementById('scaled-content');
     if (scaledContent) scaledContent.classList.add('scaled');
 
+    // Force rescale — keyboard use on the previous page may have left a stale transform
+    window.dispatchEvent(new Event('resize'));
+
     window.history.pushState({ pageUrl: null }, 'Streamline', '?page=index');
+
+    // Ensure main-page data init has run — booting on a sub-page URL skips it,
+    // so without this the main page would render static HTML with no data.
+    if (window.app?.initMainPageOnce) {
+        window.app.initMainPageOnce().catch(e => console.error('initMainPageOnce error:', e));
+    }
 
     // Re-render favorite buttons now that they're visible — avoids stale font-size
     // from any updateButtonUI calls that fired while #main-page was display:none.

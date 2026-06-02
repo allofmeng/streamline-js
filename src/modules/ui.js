@@ -1997,8 +1997,18 @@ export function initResizablePanels(separatorId) {
     let initialX = 0;
     let initialLeftWidth = 0;
 
+    const thicken = () => {
+        separator.classList.remove('w-px');
+        separator.classList.add('w-2');
+    };
+    const restore = () => {
+        separator.classList.remove('w-2');
+        separator.classList.add('w-px');
+    };
+
     const startDrag = (e) => {
         isDragging = true;
+        thicken();
 
         const clientX = e.clientX || e.touches[0].clientX;
         initialX = clientX;
@@ -2042,6 +2052,7 @@ export function initResizablePanels(separatorId) {
 
     const stopDrag = () => {
         isDragging = false;
+        restore();
 
         document.body.style.cursor = '';
         document.body.style.userSelect = '';

@@ -5,6 +5,7 @@ export function initScaling() {
     const content = document.getElementById('scaled-content');
     const designWidth = 1920;
     const designHeight = 1200;
+    let baselineHeight = window.innerHeight;
 
     // Detect if device is mobile
     function isMobileDevice() {
@@ -92,14 +93,15 @@ export function initScaling() {
     function updateScale() {
         if (!viewport || !content) return;
 
-        // Get actual viewport dimensions
+        // Get actual viewport dimensions — guard against keyboard shrinking innerHeight
         const screenWidth = window.innerWidth;
-        const screenHeight = window.innerHeight;
-
-        // DEBUG: Log scaling calculations
-        // console.log('[DEBUG] updateScale called');
-        // console.log('[DEBUG] screenWidth:', screenWidth, 'screenHeight:', screenHeight);
-        // console.log('[DEBUG] designWidth:', designWidth, 'designHeight:', designHeight);
+        const rawHeight = window.innerHeight;
+        const activeEl = document.activeElement;
+        const inputFocused = activeEl &&
+            (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+        const keyboardShrunk = inputFocused && rawHeight < baselineHeight * 0.85;
+        const screenHeight = keyboardShrunk ? baselineHeight : rawHeight;
+        if (!keyboardShrunk) baselineHeight = rawHeight;
 
         // Calculate aspect ratios
         const screenAspectRatio = screenWidth / screenHeight;
