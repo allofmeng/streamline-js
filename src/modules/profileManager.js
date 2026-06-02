@@ -294,6 +294,7 @@ function fitButtonText(button) {
     const padY = 8;
     const maxWidth = button.offsetWidth - padX;
     const maxHeight = button.offsetHeight - padY;
+    if (maxWidth <= 0 || maxHeight <= 0) return; // button not visible, skip measurement
     const wordCount = text.trim().split(/\s+/).length;
 
     const span = document.createElement('span');
@@ -341,6 +342,8 @@ function fitButtonText(button) {
 }
 
 export function updateButtonUI() {
+    const mainPage = document.getElementById('main-page');
+    if (mainPage && mainPage.style.display === 'none') return;
     for (let i = 0; i < FAV_COUNT; i++) {
         const button = favoriteButtons[i];
         const profileKey = favoriteAssignments[i];

@@ -73,6 +73,12 @@ function showMainPage() {
     if (scaledContent) scaledContent.classList.add('scaled');
 
     window.history.pushState({ pageUrl: null }, 'Streamline', '?page=index');
+
+    // Re-render favorite buttons now that they're visible — avoids stale font-size
+    // from any updateButtonUI calls that fired while #main-page was display:none.
+    import('./profileManager.js').then(m => {
+        if (m.updateButtonUI) m.updateButtonUI();
+    }).catch(() => {});
 }
 
 export async function loadPage(pageUrl) {
