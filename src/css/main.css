@@ -204,9 +204,10 @@ body {
 }
 
 .no-select {
-  -webkit-user-select: none; /* Safari */
-  -ms-user-select: none;     /* IE 10+ and Edge */
-  user-select: none;         /* Standard syntax */
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 @keyframes button-flash {

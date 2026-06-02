@@ -1124,9 +1124,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const profileNameEl = document.getElementById('profile-name');
         if (profileNameEl) {
-            profileNameEl.onclick = () => {
+            profileNameEl.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+            }, { passive: false });
+            profileNameEl.addEventListener('touchend', (e) => {
+                e.preventDefault();
                 loadPage('src/profiles/profile_selector.html');
-            };
+            }, { passive: false });
+            profileNameEl.addEventListener('click', () => {
+                loadPage('src/profiles/profile_selector.html');
+            });
         }
 
         // Add event listener for the settings button

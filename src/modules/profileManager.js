@@ -268,7 +268,15 @@ export async function saveContextToActiveProfile(fields) {
     const profileRecord = availableProfiles[activeProfileId];
     const updatedMetadata = { ...(profileRecord.metadata || {}), ...fields };
     try {
-        const updatedRecord = await updateProfileMetadata(activeProfileId, updatedMetadata);
+        let updatedRecord;
+        if (activeProfileId.startsWith('kv:')) {
+            // KV-store profile — save back via KV API, not /profiles REST.
+            const kvKey = activeProfileId.slice(3);
+            updatedRecord = { ...profileRecord, metadata: updatedMetadata };
+            await setValueInStore('streamline', kvKey, updatedRecord);
+        } else {
+            updatedRecord = await updateProfileMetadata(activeProfileId, updatedMetadata);
+        }
         availableProfiles[activeProfileId] = updatedRecord;
         await setSetting(PROFILES_CACHE_KEY, availableProfiles);
         logger.info(`Saved context to profile ${activeProfileId}:`, fields);
@@ -479,6 +487,10 @@ async function handleProfileClick(index) {
             updateDrinkRatio();
         } else {
             workflowResponse = await updateWorkflow({ profile, context: { ...grindContext } });
+            const displayYield = isNaN(effectiveYield) ? 0 : effectiveYield;
+            updateDrinkOut(displayYield);
+            updateDoseInDisplay(effectiveDose);
+            updateDrinkRatio();
         }
 
         // Use the response from updateWorkflow to confirm the profile was set

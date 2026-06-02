@@ -39,11 +39,6 @@
     color: var(--mimoja-blue-v2);
 }
 
-[data-theme="dark"] #fav-profile-btn-0 {
-    background-color: #415996;
-    color: white;
-}
-
 [data-theme="dark"] .btn {
     background-color: #292c38;
     color: white;
