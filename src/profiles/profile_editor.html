@@ -8,17 +8,17 @@
             <input id="editor-title-input" type="text" class="text-[28px] font-bold text-[var(--text-primary)] bg-transparent border-b-2 border-[var(--mimoja-blue)] outline-none hidden w-[400px]" />
         </div>
         <div class="flex items-center gap-[22px]">
-            <button id="editor-cancel-btn" class="settings-button flex justify-center items-center min-h-0 w-[240px] h-[82px] px-[67.5px] py-[26px] border border-solid border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] rounded-[67.5px] font-bold text-[24px]">CANCEL</button>
-            <button id="editor-save-btn" class="settings-button flex justify-center items-center bg-[var(--mimoja-blue)] text-white min-h-0 w-[240px] h-[82px] px-[67.5px] py-[26px] font-bold text-[24px] rounded-[67.5px]">SAVE</button>
+            <button id="editor-cancel-btn" class="settings-button flex justify-center items-center min-h-0 w-[240px] h-[82px] px-[67.5px] py-[26px] border border-solid border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] rounded-[67.5px] font-bold text-[24px]" data-i18n-key="Cancel">CANCEL</button>
+            <button id="editor-save-btn" class="settings-button flex justify-center items-center bg-[var(--mimoja-blue)] text-white min-h-0 w-[240px] h-[82px] px-[67.5px] py-[26px] font-bold text-[24px] rounded-[67.5px]" data-i18n-key="Save">SAVE</button>
         </div>
     </div>
 
     <!-- Tab bar -->
     <div class="flex items-center px-6 h-[82px] border-b border-base-300 bg-[var(--box-color)]">
         <div class="flex items-center gap-[12px] bg-white border-2 border-[#e8e8e8] rounded-[60px] px-[16px] h-[58px]">
-            <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="0">GRID</button>
-            <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="2">TEXT</button>
-            <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="1">SETTINGS</button>
+            <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="0" data-i18n-key="GRID">GRID</button>
+            <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="2" data-i18n-key="TEXT">TEXT</button>
+            <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="1" data-i18n-key="SETTINGS">SETTINGS</button>
         </div>
     </div>
 
@@ -44,18 +44,18 @@
             <div class="flex h-full bg-white rounded-[20px] mx-[30px] my-[20px] border-2 border-[#e8e8e8] overflow-hidden">
                 <!-- Left: Steps Review -->
                 <div id="review-steps-col" class="flex-1 border-r-2 border-[#e8e8e8] overflow-y-auto p-[30px] flex flex-col gap-[20px]">
-                    <p class="text-[24px] font-semibold text-[#121212]">Text Review</p>
+                    <p class="text-[24px] font-semibold text-[#121212]" data-i18n-key="Text Review">Text Review</p>
                     <div id="review-steps-list" class="flex gap-[30px]"></div>
                 </div>
                 <!-- Right: Graph + Settings -->
                 <div id="review-right-col" class="flex-1 overflow-y-auto p-[30px] flex flex-col gap-[20px]">
                     <div class="flex flex-col gap-[14px]">
-                        <p class="text-[24px] font-semibold text-[#121212]">Graph Preview</p>
+                        <p class="text-[24px] font-semibold text-[#121212]" data-i18n-key="Graph Preview">Graph Preview</p>
                         <div id="review-graph" class="w-full h-[450px]"></div>
                     </div>
                     <div class="h-[2px] bg-[#e8e8e8]"></div>
                     <div class="flex flex-col gap-[14px]">
-                        <p class="text-[24px] font-semibold text-[#121212]">Profile settings</p>
+                        <p class="text-[24px] font-semibold text-[#121212]" data-i18n-key="Profile settings">Profile settings</p>
                         <ul id="review-settings-list" class="flex flex-col gap-[10px] list-disc list-inside text-[20px] text-[#121212]"></ul>
                     </div>
                 </div>

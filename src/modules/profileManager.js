@@ -811,39 +811,47 @@ async function autoPopulateFavoritesFromHistory() {
         logger.warn('autoPopulateFavoritesFromHistory: could not fetch shots, using fallbacks', e);
         shots = [];
     }
-    shots = [];  // TEMP: force no-history branch
-
     if (shots.length === 0) {
         logger.info('autoPopulateFavoritesFromHistory: no history, assigning FALLBACK_PROFILE_TITLES by position');
         for (let i = 0; i < FAV_COUNT; i++) {
             const title = FALLBACK_PROFILE_TITLES[i];
             favoriteAssignments[i] = title ? (findProfileKeyByTitle(title) || null) : null;
         }
-        await saveAssignments();
-        updateButtonUI();
-        return;
+    } else {
+        // Count frequency by profile key from shot history.
+        const freq = new Map();
+        for (const shot of shots) {
+            const title = shot.workflow?.profile?.title;
+            if (!title) continue;
+            const key = findProfileKeyByTitle(title);
+            if (!key) continue;
+            freq.set(key, (freq.get(key) || 0) + 1);
+        }
+
+        const topKeys = [...freq.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, FAV_COUNT)
+            .map(([k]) => k);
+
+        logger.info('autoPopulateFavoritesFromHistory: top by frequency',
+            topKeys.map(k => ({ key: k, title: availableProfiles[k]?.profile?.title, count: freq.get(k) })));
+
+        for (let i = 0; i < FAV_COUNT; i++) {
+            favoriteAssignments[i] = topKeys[i] || null;
+        }
     }
 
-    // Count frequency by profile key from shot history.
-    const freq = new Map();
-    for (const shot of shots) {
-        const title = shot.workflow?.profile?.title;
-        if (!title) continue;
-        const key = findProfileKeyByTitle(title);
-        if (!key) continue;
-        freq.set(key, (freq.get(key) || 0) + 1);
-    }
-
-    const topKeys = [...freq.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, FAV_COUNT)
-        .map(([k]) => k);
-
-    logger.info('autoPopulateFavoritesFromHistory: top by frequency',
-        topKeys.map(k => ({ key: k, title: availableProfiles[k]?.profile?.title, count: freq.get(k) })));
-
-    for (let i = 0; i < FAV_COUNT; i++) {
-        favoriteAssignments[i] = topKeys[i] || null;
+    // Secondary fallback: if all assignments are still null (named profiles not found,
+    // or history profiles unresolvable), fill with first FAV_COUNT profiles alphabetically.
+    const allStillNull = Object.values(favoriteAssignments).every(v => v === null || v === undefined);
+    if (allStillNull) {
+        logger.warn('autoPopulateFavoritesFromHistory: named/history profiles not found, falling back to first available profiles');
+        const sortedKeys = Object.keys(availableProfiles)
+            .filter(k => availableProfiles[k]?.profile?.title)
+            .sort((a, b) => (availableProfiles[a].profile.title).localeCompare(availableProfiles[b].profile.title));
+        for (let i = 0; i < FAV_COUNT; i++) {
+            favoriteAssignments[i] = sortedKeys[i] || null;
+        }
     }
 
     await saveAssignments();

@@ -2,6 +2,7 @@ import { loadPage } from './router.js';
 import { showToast, flashPlusMinusButton } from './ui.js';
 import { openModal, shouldUseNumpad, resetNumpadModal } from './numpad-modal.js';
 import { openNotesModal } from './notes-modal.js';
+import { getTranslation } from './i18n.js';
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -379,10 +380,10 @@ function renderStepCards() {
     }
 
     mkLabel(R.HEADER,  '');
-    mkLabel(R.TEMP,    'Temp');
-    mkLabel(R.PUMP,    'Pump');
-    mkLabel(R.MAX,     'Max');
-    mkLabel(R.EXIT,    'Exit if');
+    mkLabel(R.TEMP,    getTranslation('Temp'));
+    mkLabel(R.PUMP,    getTranslation('Pump'));
+    mkLabel(R.MAX,     getTranslation('Max'));
+    mkLabel(R.EXIT,    getTranslation('Exit if'));
     mkLabel(R.FOOTER,  '');
 
     // ── Step columns ──────────────────────────────────────────────────────────
@@ -424,10 +425,10 @@ function renderStepCards() {
             const sensorBtn = document.createElement('button');
             sensorBtn.type = 'button';
             sensorBtn.className = 'text-[var(--text-primary) border border-[var(--secondary-button-outline)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
-            sensorBtn.textContent = sensorValue === 'coffee' ? 'Coffee' : 'Water';
+            sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
             sensorBtn.addEventListener('click', () => {
                 sensorValue = sensorValue === 'coffee' ? 'water' : 'coffee';
-                sensorBtn.textContent = sensorValue === 'coffee' ? 'Coffee' : 'Water';
+                sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
                 editorState.profile.steps[index].sensor = sensorValue;
             });
 
@@ -580,11 +581,11 @@ function renderStepCards() {
             const transBtn = document.createElement('button');
             transBtn.type = 'button';
             transBtn.className = ' border border-[var(--secondary-button-outline)] text-black rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
-            transBtn.textContent = transValue === 'fast' ? 'Quick' : 'Smooth';
+            transBtn.textContent = transValue === 'fast' ? getTranslation('Quick') : getTranslation('Smooth');
 
             const rampText = document.createElement('span');
             rampText.className = 'text-[20px] text-[var(--text-primary)] select-none';
-            rampText.textContent = 'ramp';
+            rampText.textContent = getTranslation('ramp');
 
             const targetDisplay = document.createElement('span');
             targetDisplay.className = 'font-bold text-[20px] text-white px-[8px] py-[2px] cursor-pointer select-none';
@@ -665,7 +666,7 @@ function renderStepCards() {
 
             transBtn.addEventListener('click', () => {
                 transValue = transValue === 'fast' ? 'smooth' : 'fast';
-                transBtn.textContent = transValue === 'fast' ? 'Quick' : 'Smooth';
+                transBtn.textContent = transValue === 'fast' ? getTranslation('Quick') : getTranslation('Smooth');
                 editorState.profile.steps[index].transition = transValue;
             });
 
@@ -780,7 +781,7 @@ function renderStepCards() {
 
             const withText = document.createElement('span');
             withText.className = 'text-[20px] text-[var(--text-primary)] select-none';
-            withText.textContent = 'Limit to';
+            withText.textContent = getTranslation('Limit to');
 
             const limDisplay = document.createElement('span');
             limDisplay.textContent = `${roundTo(limValue, lStep)}`;
@@ -1172,7 +1173,7 @@ function renderStepCards() {
 
             const maxPlaceholder = document.createElement('span');
             maxPlaceholder.className = grayDisplayClass;
-            maxPlaceholder.textContent = 'None';
+            maxPlaceholder.textContent = getTranslation('None');
             maxTopRow.appendChild(maxPlaceholder);
 
             function collapseMaxSpinner() {
@@ -1480,12 +1481,12 @@ function renderSettingsTab() {
     // ── Left column: Target Weight, Tank Temperature, Beverage Type, Author ──
 
     // Target Weight
-    addFieldTo(leftCol, 'Target Weight (g)', createSpinner(
+    addFieldTo(leftCol, getTranslation('Target Weight (g)'), createSpinner(
         profile.target_weight || 0, 0.1, 'g', (val) => { editorState.profile.target_weight = val; }, { min: 0, max: 500 }
     ));
 
     // Tank Temperature
-    addFieldTo(leftCol, 'Tank Temperature (\u00b0c)', createSpinner(
+    addFieldTo(leftCol, getTranslation('Tank Temperature (\u00b0c)'), createSpinner(
         profile.tank_temperature || 0, 1, '\u00b0c', (val) => { editorState.profile.tank_temperature = val; }, { min: 0, max: 110 }
     ));
 
@@ -1496,7 +1497,7 @@ function renderSettingsTab() {
         const pressurePumpStep = steps.find(s => s.pump === 'pressure');
 
         const barRange = parseFloat(flowPumpStep?.limiter?.range ?? 0.6);
-        addFieldTo(leftCol, 'Limiter Tolerance (bar)', createSpinner(
+        addFieldTo(leftCol, getTranslation('Limiter Tolerance (bar)'), createSpinner(
             barRange, 0.1, 'bar', (val) => {
                 (editorState.profile.steps || []).forEach(step => {
                     if (step.pump === 'flow') {
@@ -1508,7 +1509,7 @@ function renderSettingsTab() {
         ));
 
         const mlsRange = parseFloat(pressurePumpStep?.limiter?.range ?? 0.6);
-        addFieldTo(leftCol, 'Limiter Tolerance (mL/s)', createSpinner(
+        addFieldTo(leftCol, getTranslation('Limiter Tolerance (mL/s)'), createSpinner(
             mlsRange, 0.1, 'mL/s', (val) => {
                 (editorState.profile.steps || []).forEach(step => {
                     if (step.pump === 'pressure') {
@@ -1531,7 +1532,7 @@ function renderSettingsTab() {
         select.appendChild(opt);
     });
     select.addEventListener('change', () => { editorState.profile.beverage_type = select.value; });
-    addFieldTo(leftCol, 'Beverage Type', select);
+    addFieldTo(leftCol, getTranslation('Beverage type'), select);
 
     // Author (text input)
     const authorInput = document.createElement('input');
@@ -1539,7 +1540,7 @@ function renderSettingsTab() {
     authorInput.value = profile.author || '';
     authorInput.className = 'text-[24px] text-[var(--text-primary)] bg-white border border-gray-300 rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
     authorInput.addEventListener('change', () => { editorState.profile.author = authorInput.value; });
-    addFieldTo(leftCol, 'Author', authorInput);
+    addFieldTo(leftCol, getTranslation('Author'), authorInput);
 
     // ── Middle column: Preinfusion ends after, After preinfusion stop the shot at ──
 
@@ -1553,7 +1554,7 @@ function renderSettingsTab() {
 
         const noneOpt = document.createElement('option');
         noneOpt.value = '0';
-        noneOpt.textContent = 'None';
+        noneOpt.textContent = getTranslation('None');
         if (countStart === 0) noneOpt.selected = true;
         preinfSelect.appendChild(noneOpt);
 
@@ -1569,11 +1570,11 @@ function renderSettingsTab() {
             editorState.profile.target_volume_count_start = parseInt(preinfSelect.value, 10);
         });
 
-        addFieldTo(middleCol, 'Preinfusion ends after', preinfSelect);
+        addFieldTo(middleCol, getTranslation('Preinfusion ends after'), preinfSelect);
     }
 
     // Target Volume (stop shot after preinfusion)
-    addFieldTo(middleCol, 'After preinfusion stop the shot at', createSpinner(
+    addFieldTo(middleCol, getTranslation('After preinfusion stop the shot at'), createSpinner(
         profile.target_volume || 0, 1, 'ml', (val) => { editorState.profile.target_volume = val; }, { min: 0, max: 500 }
     ));
 
@@ -1587,7 +1588,7 @@ function renderSettingsTab() {
             notesPreview.textContent = text;
             notesPreview.style.color = '';
         } else {
-            notesPreview.textContent = 'Tap to edit notes\u2026';
+            notesPreview.textContent = getTranslation('Tap to edit notes\u2026');
             notesPreview.style.color = '#959595';
         }
     }
@@ -1598,7 +1599,7 @@ function renderSettingsTab() {
             updateNotesPreview();
         });
     });
-    const notesWrapper = addFieldTo(rightCol, 'Notes', notesPreview);
+    const notesWrapper = addFieldTo(rightCol, getTranslation('Notes'), notesPreview);
     notesWrapper.className = 'flex flex-col gap-[12px] flex-1';
 }
 
@@ -1788,10 +1789,10 @@ function describeStep(step, index) {
     {
         let sensorValue = step.sensor || 'coffee';
         const sensorToggle = makeToggle(
-            sensorValue === 'water' ? 'Water' : 'Coffee',
+            sensorValue === 'water' ? getTranslation('Water') : getTranslation('Coffee'),
             (span) => {
                 sensorValue = sensorValue === 'coffee' ? 'water' : 'coffee';
-                span.textContent = sensorValue === 'coffee' ? 'Coffee' : 'Water';
+                span.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
                 editorState.profile.steps[index].sensor = sensorValue;
                 renderReviewGraph();
             }
@@ -1802,17 +1803,17 @@ function describeStep(step, index) {
             (val) => { editorState.profile.steps[index].temperature = val; renderReviewGraph(); }
         );
 
-        lines.push(makeLine([sensorToggle, 'to', tempSpinner]));
+        lines.push(makeLine([sensorToggle, getTranslation('to'), tempSpinner]));
     }
 
     // Line 2 — Pump target
     {
         let transValue = step.transition || 'fast';
         const transToggle = makeToggle(
-            transValue === 'fast' ? 'Quickly' : 'Slowly',
+            transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly'),
             (span) => {
                 transValue = transValue === 'fast' ? 'smooth' : 'fast';
-                span.textContent = transValue === 'fast' ? 'Quickly' : 'Slowly';
+                span.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
                 editorState.profile.steps[index].transition = transValue;
                 renderReviewGraph();
             }
@@ -1823,13 +1824,13 @@ function describeStep(step, index) {
                 step.flow ?? 0, 0.1, 'mL/s', 0, 15,
                 (val) => { editorState.profile.steps[index].flow = val; renderReviewGraph(); }
             );
-            lines.push(makeLine(['Ramp', transToggle, 'to', flowSpinner]));
+            lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), flowSpinner]));
         } else {
             const pressureSpinner = makeNumericSpinner(
                 step.pressure ?? 0, 0.1, 'bar', 0, 16,
                 (val) => { editorState.profile.steps[index].pressure = val; renderReviewGraph(); }
             );
-            lines.push(makeLine(['Ramp', transToggle, 'to', pressureSpinner]));
+            lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), pressureSpinner]));
         }
     }
 
@@ -1847,7 +1848,7 @@ function describeStep(step, index) {
                     renderReviewGraph();
                 }
             );
-            lines.push(makeLine(['Limit to', limSpinner]));
+            lines.push(makeLine([getTranslation('Limit to'), limSpinner]));
         }
     }
 
@@ -1881,7 +1882,7 @@ function describeStep(step, index) {
         // ── Static text nodes (moved, never recreated) ────────────────────────
         const upToText = document.createElement('span');
         upToText.className = PROSE_CLASS;
-        upToText.textContent = 'Up to';
+        upToText.textContent = getTranslation('Up to');
 
         const placeholder = document.createElement('span');
         placeholder.className = PILL_ACTIVE;
@@ -2130,7 +2131,7 @@ function describeStep(step, index) {
                 }
             );
 
-            lines.push(makeLine(['Move on if', exitTypeToggle, 'is', exitCondToggle, exitSpinner]));
+            lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle, getTranslation('is'), exitCondToggle, exitSpinner]));
         }
     }
 
@@ -2284,11 +2285,11 @@ function renderReviewTab() {
             li.innerHTML = `${label} <span class="font-semibold text-[var(--button-primary-bg)]">${val}</span>`;
             settingsList.appendChild(li);
         };
-        if (profile.tank_temperature != null) s('Preheat water tank at', `${profile.tank_temperature} \u00b0C`);
-        if (profile.target_volume_count_start != null) s('Track water volume after step', profile.target_volume_count_start);
-        if (profile.target_weight != null && profile.target_weight > 0) s('Stop at weight', `${profile.target_weight} g`);
-        if (profile.target_volume != null && profile.target_volume > 0) s('Stop at volume', `${profile.target_volume} ml`);
-        if (profile.beverage_type) s('Beverage type', profile.beverage_type);
+        if (profile.tank_temperature != null) s(getTranslation('Preheat water tank at'), `${profile.tank_temperature} \u00b0C`);
+        if (profile.target_volume_count_start != null) s(getTranslation('Track water volume after step'), profile.target_volume_count_start);
+        if (profile.target_weight != null && profile.target_weight > 0) s(getTranslation('Stop at weight'), `${profile.target_weight} g`);
+        if (profile.target_volume != null && profile.target_volume > 0) s(getTranslation('Stop at volume'), `${profile.target_volume} ml`);
+        if (profile.beverage_type) s(getTranslation('Beverage type'), profile.beverage_type);
     }
 
     // ── Graph preview ───────────────────────────────────────────────────────

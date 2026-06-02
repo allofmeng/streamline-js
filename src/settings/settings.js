@@ -43,6 +43,26 @@ let settingsCache = {
 
 let activeSettingsCategory = null; // New global variable to track the currently active category
 
+let pendingChanges = { rea: {}, de1: {}, de1Advanced: {}, workflow: {} };
+function resetPendingChanges() { pendingChanges = { rea: {}, de1: {}, de1Advanced: {}, workflow: {} }; }
+function hasPendingChanges() {
+    return Object.keys(pendingChanges.rea).length > 0 ||
+        Object.keys(pendingChanges.de1).length > 0 ||
+        Object.keys(pendingChanges.de1Advanced).length > 0 ||
+        Object.keys(pendingChanges.workflow).length > 0;
+}
+async function flushPendingChanges() {
+    const tasks = [];
+    if (Object.keys(pendingChanges.rea).length) tasks.push(setReaSettings(pendingChanges.rea));
+    if (Object.keys(pendingChanges.de1).length) tasks.push(setDe1Settings(pendingChanges.de1));
+    if (Object.keys(pendingChanges.de1Advanced).length) tasks.push(setDe1AdvancedSettings(pendingChanges.de1Advanced));
+    if (pendingChanges.workflow.steamSettings) tasks.push(updateWorkflow({ steamSettings: pendingChanges.workflow.steamSettings }));
+    if (pendingChanges.workflow.hotWaterData) tasks.push(updateWorkflow({ hotWaterData: pendingChanges.workflow.hotWaterData }));
+    if (tasks.length) await Promise.all(tasks);
+    saveSettingsBackup();
+    resetPendingChanges();
+}
+
 // Live device state cache from WebSocket
 let deviceStateCache = {
     devices: [],
@@ -248,8 +268,11 @@ export async function loadSettings() {
 // Internal function to actually load settings
 async function _loadSettingsInternal() {
     try {
-        // Fetch all settings in parallel
-        const [reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData] = await Promise.all([
+        await openDB();
+    } catch (e) { /* non-fatal — IDB unavailable, fallback skipped */ }
+
+    try {
+        const [reaResult, de1Result, de1AdvancedResult, appInfoResult, workflowResult] = await Promise.allSettled([
             getReaSettings(),
             getDe1Settings(),
             getDe1AdvancedSettings(),
@@ -257,14 +280,37 @@ async function _loadSettingsInternal() {
             getWorkflow()
         ]);
 
+        const idbKeys = ['settings-rea', 'settings-de1', 'settings-de1Advanced', 'settings-appInfo', 'settings-workflow'];
+        const results = [reaResult, de1Result, de1AdvancedResult, appInfoResult, workflowResult];
+        const resolved = [];
+        let usedCache = false;
+
+        for (let i = 0; i < results.length; i++) {
+            if (results[i].status === 'fulfilled') {
+                resolved.push(results[i].value);
+                try { await setSetting(idbKeys[i], results[i].value); } catch (e) { /* non-fatal */ }
+            } else {
+                console.warn(`Settings fetch failed for ${idbKeys[i]}:`, results[i].reason);
+                let cached = null;
+                try { cached = await getSetting(idbKeys[i]); } catch (e) { /* non-fatal */ }
+                resolved.push(cached);
+                if (cached !== null) usedCache = true;
+            }
+        }
+
+        const [reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData] = resolved;
+
         settingsCache.rea = reaSettings;
         settingsCache.de1 = de1Settings;
         settingsCache.de1Advanced = de1AdvancedSettings;
         settingsCache.appInfo = appInfoData;
         settingsCache.workflow = workflowData;
 
+        if (usedCache) {
+            ui.showToast('Some settings loaded from cache — connection issue', 4000, 'warning');
+        }
+
         try {
-            await openDB();
             const stored = await getSetting('screensaverImages');
             if (Array.isArray(stored) && stored.length > 0) screensaverImagesCache = stored;
         } catch (e) { /* non-fatal */ }
@@ -278,7 +324,6 @@ async function _loadSettingsInternal() {
         ui.showToast('Failed to load settings', 5000, 'error');
         return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, workflowData: null };
     } finally {
-        // Clear the loading promise after completion
         settingsLoadingPromise = null;
     }
 }
@@ -291,86 +336,45 @@ function areSettingsLoaded() {
 }
 
 // Update decent.app settings
-export async function updateReaSetting(key, value) {
-    try {
-        const payload = { [key]: value };
-        await setReaSettings(payload);
-        settingsCache.rea[key] = value;
-        saveSettingsBackup();
-        ui.showToast('decent.app setting updated successfully', 3000, 'success');
-        if (activeSettingsCategory) { // Re-render the current view to reflect changes
-            updateSettingsContentArea(activeSettingsCategory);
-        }
-    } catch (error) {
-        console.error('Error updating decent.app setting:', error);
-        ui.showToast(`Failed to update decent.app setting: ${error.message}`, 5000, 'error');
-    }
+export function updateReaSetting(key, value) {
+    if (!settingsCache.rea) settingsCache.rea = {};
+    settingsCache.rea[key] = value;
+    pendingChanges.rea[key] = value;
+    if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
 }
 
 // Update DE1 settings
-export async function updateDe1Setting(key, value) {
-    try {
-        const payload = { [key]: value };
-        await setDe1Settings(payload);
-        settingsCache.de1[key] = value;
-        saveSettingsBackup();
-        ui.showToast('DE1 setting updated successfully', 3000, 'success');
-        if (activeSettingsCategory) { // Re-render the current view to reflect changes
-            updateSettingsContentArea(activeSettingsCategory);
-        }
-    } catch (error) {
-        console.error('Error updating DE1 setting:', error);
-        ui.showToast(`Failed to update DE1 setting: ${error.message}`, 5000, 'error');
-    }
+export function updateDe1Setting(key, value) {
+    if (!settingsCache.de1) settingsCache.de1 = {};
+    settingsCache.de1[key] = value;
+    pendingChanges.de1[key] = value;
+    if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
 }
 
 // Update DE1 advanced settings
-export async function updateDe1AdvancedSetting(key, value) {
-    try {
-        const payload = { [key]: value };
-        await setDe1AdvancedSettings(payload);
-        settingsCache.de1Advanced[key] = value;
-        saveSettingsBackup();
-        ui.showToast('DE1 advanced setting updated successfully', 3000, 'success');
-        if (activeSettingsCategory) { // Re-render the current view to reflect changes
-            updateSettingsContentArea(activeSettingsCategory);
-        }
-    } catch (error) {
-        console.error('Error updating DE1 advanced setting:', error);
-        ui.showToast(`Failed to update DE1 advanced setting: ${error.message}`, 5000, 'error');
-    }
+export function updateDe1AdvancedSetting(key, value) {
+    if (!settingsCache.de1Advanced) settingsCache.de1Advanced = {};
+    settingsCache.de1Advanced[key] = value;
+    pendingChanges.de1Advanced[key] = value;
+    if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
 }
 
 // Update steam settings via workflow API
-export async function updateSteamSetting(key, value) {
-    try {
-        const steamSettings = { ...(settingsCache.workflow?.steamSettings || {}) };
-        steamSettings[key] = value;
-        await updateWorkflow({ steamSettings });
-        if (!settingsCache.workflow) settingsCache.workflow = {};
-        settingsCache.workflow.steamSettings = steamSettings;
-        saveSettingsBackup();
-        ui.showToast('Steam setting updated successfully', 3000, 'success');
-    } catch (error) {
-        console.error('Error updating steam setting:', error);
-        ui.showToast(`Failed to update steam setting: ${error.message}`, 5000, 'error');
-    }
+export function updateSteamSetting(key, value) {
+    if (!settingsCache.workflow) settingsCache.workflow = {};
+    if (!settingsCache.workflow.steamSettings) settingsCache.workflow.steamSettings = {};
+    settingsCache.workflow.steamSettings[key] = value;
+    if (!pendingChanges.workflow.steamSettings) pendingChanges.workflow.steamSettings = { ...(settingsCache.workflow.steamSettings) };
+    pendingChanges.workflow.steamSettings[key] = value;
 }
 
 // Update hot water settings via workflow API
-export async function updateHotWaterSetting(key, value) {
-    try {
-        const hotWaterData = { ...(settingsCache.workflow?.hotWaterData || {}) };
-        hotWaterData[key] = value;
-        await updateWorkflow({ hotWaterData });
-        if (!settingsCache.workflow) settingsCache.workflow = {};
-        settingsCache.workflow.hotWaterData = hotWaterData;
-        saveSettingsBackup();
-        ui.showToast('Hot water setting updated successfully', 3000, 'success');
-    } catch (error) {
-        console.error('Error updating hot water setting:', error);
-        ui.showToast(`Failed to update hot water setting: ${error.message}`, 5000, 'error');
-    }
+export function updateHotWaterSetting(key, value) {
+    if (!settingsCache.workflow) settingsCache.workflow = {};
+    if (!settingsCache.workflow.hotWaterData) settingsCache.workflow.hotWaterData = {};
+    settingsCache.workflow.hotWaterData[key] = value;
+    if (!pendingChanges.workflow.hotWaterData) pendingChanges.workflow.hotWaterData = { ...(settingsCache.workflow.hotWaterData) };
+    pendingChanges.workflow.hotWaterData[key] = value;
 }
 
 
@@ -655,12 +659,8 @@ export function renderFlowMultiplierSettings(settings) {
                             <input type="number" id="weightFlowMultiplierInput" aria-labelledby="weight-flow-multiplier-label"
                                    class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
                                    value="${settings.weightFlowMultiplier !== undefined ? settings.weightFlowMultiplier : 1.0}"
-                                   step="0.1" min="0" max="5">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    aria-label="Save weight flow multiplier setting"
-                                    onclick="window.updateReaSetting('weightFlowMultiplier', parseFloat(document.getElementById('weightFlowMultiplierInput').value))">
-                                Save
-                            </button>
+                                   step="0.1" min="0" max="5"
+                                   onchange="window.updateReaSetting('weightFlowMultiplier', parseFloat(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[220px]">
@@ -684,11 +684,8 @@ export function renderFlowMultiplierSettings(settings) {
                             <input type="number" id="volumeFlowMultiplierInput" aria-labelledby="volume-flow-multiplier-label"
                                    class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
                                    value="${settings.volumeFlowMultiplier !== undefined ? settings.volumeFlowMultiplier : 0.3}"
-                                   step="0.05" min="0" max="2">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateReaSetting('volumeFlowMultiplier', parseFloat(document.getElementById('volumeFlowMultiplierInput').value))">
-                                Save
-                            </button>
+                                   step="0.05" min="0" max="2"
+                                   onchange="window.updateReaSetting('volumeFlowMultiplier', parseFloat(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[220px]">
@@ -1017,17 +1014,11 @@ export function renderFanThresholdSettings(settings) {
                 </div>
             </div>
 
-            <!-- Description + Save -->
-            <div class="flex items-center justify-between w-full gap-[24px]">
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.5] text-[var(--text-primary)] text-[24px] flex-1">
-                    The fan activates when the machine's internal temperature exceeds this threshold.
-                    Lower values run the fan more often; higher values keep it quieter during operation.
-                </p>
-                <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex-shrink-0"
-                        onclick="window.updateDe1Setting('fan', parseInt(document.getElementById('fanThresholdInput').value))">
-                    Save
-                </button>
-            </div>
+            <!-- Description -->
+            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.5] text-[var(--text-primary)] text-[24px] w-full">
+                The fan activates when the machine's internal temperature exceeds this threshold.
+                Lower values run the fan more often; higher values keep it quieter during operation.
+            </p>
         </div>
     `;
 }
@@ -1105,11 +1096,8 @@ export function renderDe1AdvancedSettingsForm(settings) {
                         <div class="flex items-center gap-4">
                             <input type="number" id="heaterPh1FlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
                                    value="${settings.heaterPh1Flow !== undefined ? settings.heaterPh1Flow : ''}"
-                                   step="0.1" min="0" max="10">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateDe1AdvancedSetting('heaterPh1Flow', parseFloat(document.getElementById('heaterPh1FlowInput').value))">
-                                Save
-                            </button>
+                                   step="0.1" min="0" max="10"
+                                   onchange="window.updateDe1AdvancedSetting('heaterPh1Flow', parseFloat(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -1132,11 +1120,8 @@ export function renderDe1AdvancedSettingsForm(settings) {
                         <div class="flex items-center gap-4">
                             <input type="number" id="heaterPh2FlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
                                    value="${settings.heaterPh2Flow !== undefined ? settings.heaterPh2Flow : ''}"
-                                   step="0.1" min="0" max="10">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateDe1AdvancedSetting('heaterPh2Flow', parseFloat(document.getElementById('heaterPh2FlowInput').value))">
-                                Save
-                            </button>
+                                   step="0.1" min="0" max="10"
+                                   onchange="window.updateDe1AdvancedSetting('heaterPh2Flow', parseFloat(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2288,11 +2273,8 @@ export function renderSteamSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="steamTempInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${targetTemp}" step="1" min="130" max="170">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateSteamSetting('targetTemperature', parseInt(document.getElementById('steamTempInput').value))">
-                                Save
-                            </button>
+                                   value="${targetTemp}" step="1" min="130" max="170"
+                                   onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2310,11 +2292,8 @@ export function renderSteamSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="steamDurationInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${duration}" step="5" min="10" max="120">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateSteamSetting('duration', parseInt(document.getElementById('steamDurationInput').value))">
-                                Save
-                            </button>
+                                   value="${duration}" step="5" min="10" max="120"
+                                   onchange="window.updateSteamSetting('duration', parseInt(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2332,11 +2311,8 @@ export function renderSteamSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="steamFlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${flow.toFixed(1)}" step="0.1" min="0.1" max="2.5">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateSteamSetting('flow', parseFloat(document.getElementById('steamFlowInput').value))">
-                                Save
-                            </button>
+                                   value="${flow.toFixed(1)}" step="0.1" min="0.1" max="2.5"
+                                   onchange="window.updateSteamSetting('flow', parseFloat(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2403,11 +2379,8 @@ export function renderHotWaterSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="hotWaterTempInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${targetTemp}" step="1" min="50" max="95">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateHotWaterSetting('targetTemperature', parseInt(document.getElementById('hotWaterTempInput').value))">
-                                Save
-                            </button>
+                                   value="${targetTemp}" step="1" min="50" max="95"
+                                   onchange="window.updateHotWaterSetting('targetTemperature', parseInt(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2425,11 +2398,8 @@ export function renderHotWaterSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="hotWaterVolumeInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${volume}" step="10" min="10" max="500">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateHotWaterSetting('volume', parseInt(document.getElementById('hotWaterVolumeInput').value))">
-                                Save
-                            </button>
+                                   value="${volume}" step="10" min="10" max="500"
+                                   onchange="window.updateHotWaterSetting('volume', parseInt(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2447,11 +2417,8 @@ export function renderHotWaterSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="hotWaterDurationInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${duration}" step="5" min="5" max="120">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateHotWaterSetting('duration', parseInt(document.getElementById('hotWaterDurationInput').value))">
-                                Save
-                            </button>
+                                   value="${duration}" step="5" min="5" max="120"
+                                   onchange="window.updateHotWaterSetting('duration', parseInt(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2469,11 +2436,8 @@ export function renderHotWaterSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" id="hotWaterFlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${flow.toFixed(1)}" step="0.1" min="0.1" max="8">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold"
-                                    onclick="window.updateHotWaterSetting('flow', parseFloat(document.getElementById('hotWaterFlowInput').value))">
-                                Save
-                            </button>
+                                   value="${flow.toFixed(1)}" step="0.1" min="0.1" max="8"
+                                   onchange="window.updateHotWaterSetting('flow', parseFloat(this.value))">
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2563,9 +2527,6 @@ export function renderQuickAdjustmentsSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center" value="1.0" step="0.1">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold">
-                                Save
-                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2587,9 +2548,6 @@ export function renderQuickAdjustmentsSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center" value="120" step="1">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold">
-                                Save
-                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2611,9 +2569,6 @@ export function renderQuickAdjustmentsSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center" value="80" step="1">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold">
-                                Save
-                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -2635,9 +2590,6 @@ export function renderQuickAdjustmentsSettings() {
                         </div>
                         <div class="flex items-center gap-4">
                             <input type="number" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center" value="30" step="1">
-                            <button class="bg-[#385a92] h-[72px] px-[36px] rounded-[72px] text-white text-[24px] font-bold">
-                                Save
-                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -3661,15 +3613,15 @@ async function _preloadSettingsInternal() {
         settingsCache.appInfoError = null;
 
         // Fetch all settings in parallel using Promise.allSettled to handle individual failures
-        // Fetch all settings in parallel using Promise.allSettled to handle individual failures
-        const [reaSettingsResult, de1SettingsResult, de1AdvancedSettingsResult, appInfoResult, machineInfoResult, skinInfoResult, allSkinsResult] = await Promise.allSettled([
+        const [reaSettingsResult, de1SettingsResult, de1AdvancedSettingsResult, appInfoResult, machineInfoResult, skinInfoResult, allSkinsResult, workflowResult] = await Promise.allSettled([
             getReaSettings(),
             getDe1Settings(),
             getDe1AdvancedSettings(),
             getAppInfo(),
             getMachineInfo(),
             getDefaultSkin(),
-            getAllSkins()
+            getAllSkins(),
+            getWorkflow()
         ]);
 
         // Process results and handle errors appropriately
@@ -3767,6 +3719,13 @@ async function _preloadSettingsInternal() {
             settingsCache.allSkinsError = allSkinsResult.reason?.message || 'Failed to load skins';
         }
 
+        // Handle Workflow result
+        if (workflowResult.status === 'fulfilled') {
+            settingsCache.workflow = workflowResult.value;
+        } else {
+            console.error('Error loading workflow data:', workflowResult.reason);
+        }
+
         // Update cache with results
         settingsCache.rea = reaSettings;
         settingsCache.de1 = de1Settings;
@@ -3820,6 +3779,7 @@ function getCategoryTitle(category) {
 
 // Initialize the settings page
 export async function initializeSettings() {
+    resetPendingChanges();
     // Preload all settings in the background before initializing the UI
     await preloadSettings();
 
@@ -3833,7 +3793,7 @@ export async function initializeSettings() {
     const cancelBtn = document.getElementById('cancel-settings-btn');
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
-            // Navigate back to main page using router
+            resetPendingChanges();
             loadPage('index.html');
         });
     }
@@ -3841,12 +3801,17 @@ export async function initializeSettings() {
     const saveBtn = document.getElementById('save-settings-btn');
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            ui.showToast('Saving all settings...', 3000, 'info');
             const visualizerAutoUpload = document.getElementById('visualizer-auto-upload');
             if (visualizerAutoUpload) {
                 localStorage.setItem('visualizerAutoUpload', visualizerAutoUpload.checked.toString());
             }
-            // Implementation would save all modified settings
+            try {
+                await flushPendingChanges();
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                ui.showToast(`Failed to save settings: ${error.message}`, 5000, 'error');
+                return;
+            }
             loadPage('index.html');
         });
     }
@@ -4642,6 +4607,20 @@ export async function initializeSettings() {
             newValue = Math.max(0, Math.min(100, newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.stepFanThreshold = function(change) {
+        const input = document.getElementById('fanThresholdInput');
+        const display = document.getElementById('fan-display');
+        const fill = document.getElementById('fan-track-fill');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(0, Math.min(100, newValue));
+            input.value = newValue;
+            if (display) display.textContent = newValue;
+            if (fill) fill.style.width = newValue + '%';
+            window.updateDe1Setting('fan', newValue);
         }
     };
 

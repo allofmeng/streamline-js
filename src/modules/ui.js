@@ -226,15 +226,26 @@ function makeEditable(element, onCommit) {
         input.name = element.id; // Recommended for accessibility and autofill
         input.setAttribute('aria-label', element.getAttribute('data-i18n-key') || element.id);
 
-        // Position the input field exactly where the original element is
+        // Position the input field exactly where the original element is.
+        // Use getBoundingClientRect so CSS transforms (translate-x/y on the span,
+        // scale on the #scaled-content container) are accounted for.
         const elementRect = element.getBoundingClientRect();
         const parentRect = element.parentNode.getBoundingClientRect();
 
+        // Derive the container scale so we can convert viewport px → design-space px.
+        const scaledContent = document.getElementById('scaled-content');
+        const scale = (scaledContent && scaledContent.offsetWidth > 0)
+            ? scaledContent.getBoundingClientRect().width / scaledContent.offsetWidth
+            : 1;
+
+        const relLeft = (elementRect.left - parentRect.left) / scale;
+        const relTop  = (elementRect.top  - parentRect.top)  / scale;
+
         input.style.position = 'absolute';
-        input.style.left = (element.offsetLeft - 5) + 'px'; // Add some padding
-        input.style.top = (element.offsetTop - 5) + 'px';   // Add some padding
-        input.style.width = (element.offsetWidth + 20) + 'px';  // Increase width
-        input.style.height = (element.offsetHeight + 20) + 'px'; // Increase height
+        input.style.left   = (relLeft - 5) + 'px';
+        input.style.top    = (relTop  - 5) + 'px';
+        input.style.width  = (elementRect.width  / scale + 20) + 'px';
+        input.style.height = (elementRect.height / scale + 20) + 'px';
         input.style.display = 'flex';
         input.style.alignItems = 'center';
         input.style.justifyContent = 'center';

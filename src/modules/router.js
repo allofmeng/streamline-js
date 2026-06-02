@@ -110,6 +110,9 @@ export async function loadPage(pageUrl) {
 
         subpageHost.innerHTML = newContent.innerHTML;
 
+        // Apply current language to freshly injected HTML before page init runs
+        import('./i18n.js').then(m => m.translatePage()).catch(() => {});
+
         const cleanUrl = getCleanUrl(pageUrl);
         window.history.pushState({ pageUrl }, cleanUrl.split('/').pop() || 'Streamline', cleanUrl);
 

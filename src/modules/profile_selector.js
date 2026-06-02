@@ -4,7 +4,7 @@ import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler } from './ui.js';
 import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, getKVKeys, getKVValue, setKVValue, deleteKVValue, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
 import { initChart, plotProfile } from './chart.js';
-import { initI18n } from './i18n.js';
+import { translatePage } from './i18n.js';
 import { loadPage } from './router.js';
 
 // Visualizer credentials storage
@@ -1087,8 +1087,8 @@ export async function initializeProfileSelector() {
     // Reset the selected profile key to ensure first profile gets selected on page load
     selectedProfileKey = null;
 
-    await initI18n();
-    console.log('initializeProfileSelector: i18n initialized');
+    translatePage();
+    console.log('initializeProfileSelector: i18n translated');
 
     // Initialize chart — wait until the element is in the DOM before calling initChart
     await new Promise((resolve) => {

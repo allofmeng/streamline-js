@@ -8,6 +8,12 @@ const STEP_MARKER_COLORS = {
 
 // Function to get or update the chart element reference
 function getChartElement() {
+    const mainPage = document.getElementById('main-page');
+    if (mainPage && mainPage.style.display === 'none') {
+        const subpageHost = document.getElementById('subpage-host');
+        const el = subpageHost?.querySelector('#plotly-chart');
+        if (el) return el;
+    }
     return document.getElementById('plotly-chart');
 }
 let currentSubstate = 'idle';
@@ -359,6 +365,8 @@ export function updateChart(shotStartTime, data, weight, filterToPouring = true)
     lastWeight = weight;
     lastTime = time;
 
+    const isFirstDataPoint = chartData.pressure.x.length === 0;
+
     chartData.pressure.x.push(time);
     chartData.pressure.y.push(pressureY);
     chartData.flow.x.push(time);
@@ -386,6 +394,11 @@ export function updateChart(shotStartTime, data, weight, filterToPouring = true)
         dtickValue = 20;
     } else {
         dtickValue = 30;
+    }
+
+    // Re-enable x autorange on shot start so extendTraces can grow past the idle [0,60] range.
+    if (isFirstDataPoint) {
+        Plotly.relayout(element, { 'xaxis.autorange': true });
     }
 
     Plotly.extendTraces(element, {
@@ -429,13 +442,15 @@ export function clearChart() {
     
     const theme = localStorage.getItem('theme') || 'light';
     const layout = theme === 'dark' ? darkLayout : lightLayout;
-    
+
     const element = getChartElement();
     if (!element) {
         console.error('clearChart: chartElement not found in DOM');
         return;
     }
     Plotly.react(element, Object.values(chartData), layout);
+    // Plotly defaults empty-trace x-axis to [-1, 6]. Force it to start at 0.
+    Plotly.relayout(element, { 'xaxis.range': [0, 60], 'xaxis.autorange': false });
 }
 
 export function plotHistoricalShot(measurements, workflow = null) {
@@ -651,6 +666,8 @@ export function plotHistoricalShot(measurements, workflow = null) {
     Plotly.react(element, Object.values(chartData), layout, {displayModeBar: false});
 
     Plotly.relayout(element, {
+        'xaxis.range': [0, maxTime || 60],
+        'xaxis.autorange': false,
         'xaxis.dtick': dtickValue
     });
 }
@@ -830,6 +847,8 @@ export function initChart() {
     console.log('initChart: About to call Plotly.newPlot');
     try {
         Plotly.newPlot(element, Object.values(chartData), layout, {displayModeBar: false});
+        // Plotly defaults empty-trace x-axis to [-1, 6]. Force it to start at 0.
+        Plotly.relayout(element, { 'xaxis.range': [0, 60], 'xaxis.autorange': false });
         console.log('initChart: Plotly.newPlot completed successfully');
     } catch (error) {
         console.error('initChart: Error in Plotly.newPlot:', error);
