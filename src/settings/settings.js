@@ -3524,7 +3524,7 @@ export function renderSubcategories(mainCategoryKey) {
         const label = prefix ? subcat.name.slice(prefix.length) : subcat.name;
         subcategoryItems += `
             <li>
-                <button class="settings-subnav-btn w-full text-left px-4 py-3 rounded-lg text-[20px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center"
+                <button class="settings-subnav-btn w-full text-left px-4 py-3 rounded-lg text-[24px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center"
                         data-category="${subcat.settingsCategory}">
                     ${prefix}<span data-i18n-key="${label}">${label}</span>
                 </button>
@@ -3844,11 +3844,11 @@ export async function initializeSettings() {
 
                         // Handle active state for subcategories
                         subCategoriesPanel.querySelectorAll('.settings-subnav-btn').forEach(sb => {
-                             sb.classList.remove('bg-[#d7dee9]', 'text-[var(--mimoja-blue)]');
+                             sb.classList.remove('text-white', 'bg-[#2c4a7a]');
                              sb.classList.add('text-[#959595]');
                         });
                         this.classList.remove('text-[#959595]');
-                        this.classList.add('bg-[#d7dee9]', 'text-[var(--mimoja-blue)]');
+                        this.classList.add('text-white', 'bg-[#2c4a7a]');
 
                         const settingsCategory = this.dataset.category;
                         activeSettingsCategory = settingsCategory; // Set the active category
@@ -4774,11 +4774,11 @@ function restoreOriginalNavigation() {
 
                         // Handle active state for subcategories
                         subCategoriesPanel.querySelectorAll('.settings-subnav-btn').forEach(sb => {
-                             sb.classList.remove('bg-[#d7dee9]', 'text-[var(--mimoja-blue)]');
+                             sb.classList.remove('text-white', 'bg-[#2c4a7a]');
                              sb.classList.add('text-[#959595]');
                         });
                         this.classList.remove('text-[#959595]');
-                        this.classList.add('bg-[#d7dee9]', 'text-[var(--mimoja-blue)]');
+                        this.classList.add('text-white', 'bg-[#2c4a7a]');
 
                         const settingsCategory = this.dataset.category;
                         activeSettingsCategory = settingsCategory; // Set the active category
@@ -4866,11 +4866,11 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
 
                         // Handle active state for subcategories
                         subCategoriesPanel.querySelectorAll('.settings-subnav-btn').forEach(sb => {
-                             sb.classList.remove('bg-[#d7dee9]', 'text-[var(--mimoja-blue)]');
+                             sb.classList.remove('text-white', 'bg-[#2c4a7a]');
                              sb.classList.add('text-[#959595]');
                         });
                         this.classList.remove('text-[#959595]');
-                        this.classList.add('bg-[#d7dee9]', 'text-[var(--mimoja-blue)]');
+                        this.classList.add('text-white', 'bg-[#2c4a7a]');
 
                         const settingsCategory = this.dataset.category;
                         activeSettingsCategory = settingsCategory; // Set the active category
@@ -4921,7 +4921,7 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
         
         subcategoryItems += `
             <li>
-                <button class="settings-subnav-btn w-full text-left px-4 py-3 rounded-lg text-[20px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center"
+                <button class="settings-subnav-btn w-full text-left px-4 py-3 rounded-lg text-[24px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center"
                         data-category="${subcat.settingsCategory}">
                     <span>${highlightedName}</span>
                 </button>
@@ -5233,94 +5233,6 @@ window.handleMachineStateChange = async function(newState) {
     }
 };
 
-// Function to start auto-connect functionality
-window.startAutoConnect = async function() {
-    try {
-        const deviceWs = getDeviceWebSocket();
-        if (!deviceWs || deviceWs.readyState !== WebSocket.OPEN) {
-            initDeviceWebSocketWithCallback(
-                () => {
-                    sendDeviceCommand({ command: 'scan', connect: true });
-                    logger.info('Auto-connect initiated via WebSocket');
-                    ui.showToast('Auto-connect started, nearby devices will be connected automatically', 4000, 'info');
-                },
-                (data) => {
-                    if (data.devices) {
-                        const connectedDevice = data.devices.find(d => d.state === 'connected');
-                        if (connectedDevice) {
-                            logger.info(`Auto-connected to device: ${connectedDevice.name} (${connectedDevice.id})`);
-                            ui.showToast(`Auto-connected to ${connectedDevice.name}`, 3000, 'success');
-                            renderAllDevices();
-                        }
-                    }
-                },
-                () => {},
-                () => {}
-            );
-        } else {
-            sendDeviceCommand({ command: 'scan', connect: true });
-            logger.info('Auto-connect initiated via WebSocket');
-            ui.showToast('Auto-connect started, nearby devices will be connected automatically', 4000, 'info');
-        }
-        
-        // Update the toggle button state
-        const autoConnectToggle = document.getElementById('auto-connect-toggle');
-        if (autoConnectToggle) {
-            autoConnectToggle.checked = true;
-        }
-    } catch (error) {
-        console.error('Error starting auto-connect:', error);
-        ui.showToast(`Auto-connect failed: ${error.message}`, 5000, 'error');
-    }
-};
-
-// Function to stop auto-connect functionality
-window.stopAutoConnect = async function() {
-    try {
-        // Update the toggle button state
-        const autoConnectToggle = document.getElementById('auto-connect-toggle');
-        if (autoConnectToggle) {
-            autoConnectToggle.checked = false;
-        }
-        ui.showToast('Auto-connect disabled', 3000, 'info');
-    } catch (error) {
-        console.error('Error stopping auto-connect:', error);
-        ui.showToast(`Error disabling auto-connect: ${error.message}`, 5000, 'error');
-    }
-};
-
-// Function to toggle auto-connect functionality
-window.toggleAutoConnect = async function(toggleType) {
-    // Determine which toggle element to check based on the type
-    let toggleId;
-    let isMachine = false;
-    
-    if (toggleType === 'machine') {
-        toggleId = 'auto-connect-machine-toggle';
-        isMachine = true;
-    } else if (toggleType === 'scale') {
-        toggleId = 'auto-connect-scale-toggle';
-    } else {
-        toggleId = 'auto-connect-toggle';  // fallback for renderAllDevices
-    }
-    
-    const autoConnectToggle = document.getElementById(toggleId);
-    if (autoConnectToggle) {
-        if (autoConnectToggle.checked) {
-            if (isMachine) {
-                // TODO: Implement startAutoConnectForMachines()
-                ui.showToast('Machine auto-connect not yet implemented', 3000, 'info');
-            } else {
-                await window.startAutoConnect();
-            }
-        } else {
-            await window.stopAutoConnect(toggleType);
-        }
-    }
-};
-
-
-
 // Render Bluetooth Machine settings
 export function renderBluetoothMachineSettings() {
     setTimeout(() => { renderDeviceListFromCache(); }, 0);
@@ -5353,26 +5265,6 @@ export function renderBluetoothMachineSettings() {
                 <div id="bluetooth-machine-devices-container" class="w-full">
                     <!-- Machine devices will be populated dynamically via WebSocket -->
                 </div>
-            </div>
-
-            <!-- Divider -->
-            <div class="h-0 relative w-full">
-                <hr class="border-t border-[#c9c9c9] w-full" />
-            </div>
-
-            <!-- Auto-Connect -->
-            <div class="flex items-center justify-between w-full">
-                <div class="flex flex-col gap-[8px]">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Auto Connect</p>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px]">
-                        Automatically connect to a nearby machine on startup.
-                    </p>
-                </div>
-                <input type="checkbox" id="auto-connect-machine-toggle"
-                       class="toggle toggle-lg toggle-primary flex-shrink-0"
-                       onclick="window.toggleAutoConnect('machine')">
             </div>
 
         </div>
@@ -5414,24 +5306,6 @@ export function renderBluetoothScaleSettings(settings) {
                 <div id="bluetooth-scale-devices-container" class="w-full">
                     <!-- Scale devices will be populated dynamically via WebSocket -->
                 </div>
-            </div>
-
-            <hr class="border-t border-[#c9c9c9] w-full" />
-
-            <!-- Auto-Connect -->
-            <div class="flex items-center justify-between w-full">
-                <div class="flex flex-col gap-[8px]">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Auto Connect</p>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px]">
-                        Automatically connect to nearby scales.
-                    </p>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                    <input type="checkbox" id="auto-connect-scale-toggle" class="toggle toggle-info sr-only peer border border-blue-600 bg-white" onclick="window.toggleAutoConnect('scale')">
-                    <div class="w-11 h-6 bg-[var(--box-color)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-blue-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#385a92]"></div>
-                </label>
             </div>
 
             <hr class="border-t border-[#c9c9c9] w-full" />
@@ -5481,7 +5355,7 @@ export function renderBluetoothScaleSettings(settings) {
                     </p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                    <input type="checkbox" id="block-on-no-scale-toggle" class="toggle toggle-info sr-only peer border border-blue-600 bg-white" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked)">
+                    <input type="checkbox" id="block-on-no-scale-toggle" class="toggle toggle-lg toggle-info sr-only peer border border-blue-600 bg-white" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked)">
                     <div class="w-11 h-6 bg-[var(--box-color)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-blue-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#385a92]"></div>
                 </label>
             </div>
