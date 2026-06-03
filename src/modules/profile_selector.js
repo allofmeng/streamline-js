@@ -1,7 +1,7 @@
 import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile } from './profileManager.js';
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
-import { initResizablePanels, showToast, initFullscreenHandler } from './ui.js';
+import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
 import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, getKVKeys, getKVValue, setKVValue, deleteKVValue, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
 import { initChart, plotProfile } from './chart.js';
 import { translatePage } from './i18n.js';
@@ -411,8 +411,8 @@ async function handleConfirm() {
 
             sentworkflow = await updateWorkflow(workflowUpdate);
         } else {
-            // Just update with the profile if no target weight is specified
-            sentworkflow = await updateWorkflow({ profile, context: { ...grindContext } });
+            const displayYield = isNaN(effectiveYield) ? 0 : effectiveYield;
+            sentworkflow = await updateWorkflow({ profile, context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext } });
         }
 
         const verified = sentworkflow.profile.title === profile.title;
@@ -648,7 +648,24 @@ async function initFavoriteButtons() {
                     }
                     const profileRecord = availableProfiles[selectedProfileKey];
                     if (profileRecord && profileRecord.profile) {
-                        showToast(`Assigned '${profileRecord.profile.title}' to favorite ${index + 1}`, 3000, 'success');
+                        const profile = profileRecord.profile;
+                        const meta = profileRecord.metadata || {};
+                        const savedGrind = meta.grinderSetting ?? null;
+                        const grindContext = savedGrind != null ? { grinderSetting: savedGrind } : { grinderSetting: null };
+                        const effectiveDose = meta.targetDoseWeight ?? (profile.dose_weight || 18);
+                        const effectiveYield = meta.targetYield ?? parseFloat(profile.target_weight);
+                        const displayYield = isNaN(effectiveYield) ? 0 : effectiveYield;
+                        try {
+                            await updateWorkflow({
+                                profile,
+                                context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext }
+                            });
+                            setActiveProfile(selectedProfileKey);
+                            updateProfileName(profile.title);
+                        } catch (e) {
+                            logger.error('Failed to send profile to machine after assignment:', e);
+                        }
+                        showToast(`Assigned '${profile.title}' to favorite ${index + 1}`, 3000, 'success');
                     }
                 } else {
                     showToast('Please select a profile from the list to assign it.', 3000, 'error');

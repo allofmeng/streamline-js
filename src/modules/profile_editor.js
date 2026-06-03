@@ -223,7 +223,7 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
 
     const minusBtn = document.createElement('button');
     minusBtn.type = 'button';
-    minusBtn.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
     minusBtn.textContent = '\u2212';
     minusBtn.setAttribute('aria-label', 'Decrease');
 
@@ -232,7 +232,7 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
 
     const plusBtn = document.createElement('button');
     plusBtn.type = 'button';
-    plusBtn.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
     plusBtn.textContent = '+';
     plusBtn.setAttribute('aria-label', 'Increase');
 
@@ -300,7 +300,7 @@ function createToggle(options, activeValue, onChange) {
             if (value === currentValue) {
                 btn.className = 'bg-[#button-primary-bg] text-white rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
             } else {
-                btn.className = 'bg-[#ededed] text-gray-600 rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
+                btn.className = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
             }
         });
     }
@@ -356,7 +356,7 @@ function renderStepCards() {
     }
 
     // ── Label column (sticky left) ────────────────────────────────────────────
-    const labelBase = 'flex items-center px-[20px] py-[8px] border-r-2 border-b border-[#e8e8e8] bg-[var(--box-color)]';
+    const labelBase = 'flex items-center px-[20px] py-[8px] border-r-2 border-b border-[var(--border-color)] bg-[var(--box-color)]';
 
     function mkLabel(row, text, tip = '') {
         const el = mkCell(row, 1, labelBase);
@@ -365,7 +365,7 @@ function renderStepCards() {
         el.style.zIndex = '2';
         if (text) {
             const span = document.createElement('span');
-            span.className = 'text-[17px] font-semibold text-gray-500 leading-tight';
+            span.className = 'text-[17px] font-semibold text-[var(--low-contrast-white)] leading-tight';
             span.textContent = text;
             el.appendChild(span);
         }
@@ -373,7 +373,7 @@ function renderStepCards() {
             const tipWrapper = document.createElement('div');
             tipWrapper.className = 'tooltip tooltip-right ml-[6px] before:text-[18px]';
             tipWrapper.setAttribute('data-tip', tip);
-            tipWrapper.innerHTML = `<button type="button" class="w-[18px] h-[18px] rounded-full bg-gray-200 text-gray-500 text-[12px] font-bold flex items-center justify-center shrink-0 focus:outline-none" tabindex="-1" aria-label="Help">i</button>`;
+            tipWrapper.innerHTML = `<button type="button" class="w-[18px] h-[18px] rounded-full bg-[var(--button-grey)] text-[var(--low-contrast-white)] text-[12px] font-bold flex items-center justify-center shrink-0 focus:outline-none" tabindex="-1" aria-label="Help">i</button>`;
             el.appendChild(tipWrapper);
         }
         return el;
@@ -387,18 +387,18 @@ function renderStepCards() {
     mkLabel(R.FOOTER,  '');
 
     // ── Step columns ──────────────────────────────────────────────────────────
-    const stepCell = 'flex items-center justify-start px-[16px] py-[8px] border-r border-b border-[#e8e8e8]';
+    const stepCell = 'flex items-center justify-start px-[16px] py-[8px] border-r border-b border-[var(--border-color)]';
 
     steps.forEach((step, index) => {
         const col = index + 2;
         const isFlow = step.pump !== 'pressure';
 
         // Header: step number + name input
-        const hCell = mkCell(R.HEADER, col, 'flex items-center justify-start px-[16px] py-[10px] border-r border-b-2 border-[#e8e8e8] bg-white');
+        const hCell = mkCell(R.HEADER, col, 'flex items-center justify-start px-[16px] py-[10px] border-r border-b-2 border-[var(--border-color)] bg-[var(--box-color)]');
         const nameWrapper = document.createElement('div');
         nameWrapper.className = 'flex items-center gap-[6px]';
         const numSpan = document.createElement('span');
-        numSpan.className = 'text-[24px] font-bold text-gray-400 shrink-0 select-none';
+        numSpan.className = 'text-[24px] font-bold text-[var(--low-contrast-white)] shrink-0 select-none';
         numSpan.textContent = `${index + 1}.`;
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
@@ -414,7 +414,7 @@ function renderStepCards() {
 
         // Temp + Sensor combined row
         {
-            const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-start px-[16px] py-[8px] border-r border-b border-[#e8e8e8] gap-[8px]');
+            const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-start px-[16px] py-[8px] border-r border-b border-[var(--border-color)] gap-[8px]');
             const isExpanded = expandedTempSteps.has(index);
 
             let tempValue = step.temperature || 93;
@@ -444,7 +444,7 @@ function renderStepCards() {
 
             const minusBtn = document.createElement('button');
             minusBtn.type = 'button';
-            minusBtn.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             minusBtn.textContent = '\u2212';
             minusBtn.style.position = 'absolute';
             minusBtn.style.right = '100%';
@@ -455,7 +455,7 @@ function renderStepCards() {
 
             const plusBtn = document.createElement('button');
             plusBtn.type = 'button';
-            plusBtn.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             plusBtn.textContent = '+';
             plusBtn.style.position = 'absolute';
             plusBtn.style.left = '100%';
@@ -563,7 +563,7 @@ function renderStepCards() {
 
         // Pump + Limit combined row — two lines
         {
-            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[#e8e8e8]');
+            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
 
             // ── Line 1: pump ─────────────────────────────────────────────────
             const pumpLine = document.createElement('div');
@@ -599,7 +599,7 @@ function renderStepCards() {
             const targetWrapper = document.createElement('div');
             targetWrapper.className = 'flex items-center rounded-[8px]';
             const wrapDivider = document.createElement('span');
-            wrapDivider.className = 'w-[1px] h-[18px] bg-white opacity-40 shrink-0 self-center';
+            wrapDivider.className = 'w-[1px] h-[18px] bg-[var(--text-primary)] opacity-40 shrink-0 self-center';
             targetWrapper.appendChild(targetDisplay);
             targetWrapper.appendChild(wrapDivider);
             targetWrapper.appendChild(unitBtn);
@@ -620,7 +620,7 @@ function renderStepCards() {
 
             const targetMinus = document.createElement('button');
             targetMinus.type = 'button';
-            targetMinus.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            targetMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             targetMinus.textContent = '\u2212';
             targetMinus.style.position = 'absolute';
             targetMinus.style.right = '100%';
@@ -631,7 +631,7 @@ function renderStepCards() {
 
             const targetPlus = document.createElement('button');
             targetPlus.type = 'button';
-            targetPlus.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            targetPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             targetPlus.textContent = '+';
             targetPlus.style.position = 'absolute';
             targetPlus.style.left = '100%';
@@ -787,7 +787,7 @@ function renderStepCards() {
             limDisplay.textContent = `${roundTo(limValue, lStep)}`;
 
             const limDivider = document.createElement('span');
-            limDivider.className = 'w-[1px] h-[18px] bg-white opacity-40 shrink-0 self-center';
+            limDivider.className = 'w-[1px] h-[18px] bg-[var(--text-primary)] opacity-40 shrink-0 self-center';
 
             const limUnitText = document.createElement('span');
             limUnitText.textContent = limUnit;
@@ -814,7 +814,7 @@ function renderStepCards() {
 
             const limMinus = document.createElement('button');
             limMinus.type = 'button';
-            limMinus.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            limMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             limMinus.textContent = '\u2212';
             limMinus.style.position = 'absolute';
             limMinus.style.right = '100%';
@@ -825,7 +825,7 @@ function renderStepCards() {
 
             const limPlus = document.createElement('button');
             limPlus.type = 'button';
-            limPlus.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            limPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             limPlus.textContent = '+';
             limPlus.style.position = 'absolute';
             limPlus.style.left = '100%';
@@ -944,7 +944,7 @@ function renderStepCards() {
         }
 
         {
-            const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[#e8e8e8]');
+            const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
 
             const exitLine = document.createElement('div');
             exitLine.className = 'flex flex-col gap-[4px]';
@@ -955,7 +955,7 @@ function renderStepCards() {
             let exitValue  = exitDef.value ?? 0;
             let exitTimer = null;
 
-            const btnGray = 'bg-gray-400 text-white rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            const btnGray = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
             const btnGrayFlash = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
 
             const typeBtn = document.createElement('button');
@@ -976,7 +976,7 @@ function renderStepCards() {
 
             const exitMinus = document.createElement('button');
             exitMinus.type = 'button';
-            exitMinus.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            exitMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             exitMinus.textContent = '\u2212';
             exitMinus.style.position = 'absolute';
             exitMinus.style.right = '100%';
@@ -987,7 +987,7 @@ function renderStepCards() {
 
             const exitPlus = document.createElement('button');
             exitPlus.type = 'button';
-            exitPlus.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            exitPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             exitPlus.textContent = '+';
             exitPlus.style.position = 'absolute';
             exitPlus.style.left = '100%';
@@ -1150,7 +1150,7 @@ function renderStepCards() {
         }
 
         {
-            const maxCell = mkCell(R.MAX, col, 'flex flex-col justify-center px-[16px] py-[4px] border-r border-b border-[#e8e8e8] gap-[6px]');
+            const maxCell = mkCell(R.MAX, col, 'flex flex-col justify-center px-[16px] py-[4px] border-r border-b border-[var(--border-color)] gap-[6px]');
 
             const maxTopRow = document.createElement('div');
             maxTopRow.className = 'flex items-center gap-[8px] flex-wrap';
@@ -1304,7 +1304,7 @@ function renderStepCards() {
 
                 const minusBtn = document.createElement('button');
                 minusBtn.type = 'button';
-                minusBtn.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+                minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
                 minusBtn.textContent = '\u2212';
                 minusBtn.style.position = 'absolute';
                 minusBtn.style.right = '100%';
@@ -1315,7 +1315,7 @@ function renderStepCards() {
 
                 const plusBtn = document.createElement('button');
                 plusBtn.type = 'button';
-                plusBtn.className = 'bg-[#ededed] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+                plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
                 plusBtn.textContent = '+';
                 plusBtn.style.position = 'absolute';
                 plusBtn.style.left = '100%';
@@ -1420,11 +1420,11 @@ function renderStepCards() {
         }
 
         // Footer: delete + insert
-        const fCell = mkCell(R.FOOTER, col, 'flex justify-center items-center gap-[40px] px-[16px] py-[8px] border-r border-[#e8e8e8]');
+        const fCell = mkCell(R.FOOTER, col, 'flex justify-center items-center gap-[40px] px-[16px] py-[8px] border-r border-[var(--border-color)]');
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
-        deleteBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-red-500 hover:bg-red-50 rounded-[10px] cursor-pointer';
+        deleteBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-blue-50 rounded-[10px] cursor-pointer';
         deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
         deleteBtn.setAttribute('aria-label', 'Delete step');
         deleteBtn.addEventListener('click', () => { editorState.profile.steps.splice(index, 1); renderStepCards(); });
@@ -1523,7 +1523,7 @@ function renderSettingsTab() {
 
     // Beverage Type (select)
     const select = document.createElement('select');
-    select.className = 'text-[24px] text-[var(--text-primary)] bg-white border border-gray-300 rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
+    select.className = 'text-[24px] text-[var(--text-primary)] bg-[var(--box-color)] border border-[var(--border-color)] rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
     ['espresso', 'manual', 'cleaning'].forEach((type) => {
         const opt = document.createElement('option');
         opt.value = type;
@@ -1538,7 +1538,7 @@ function renderSettingsTab() {
     const authorInput = document.createElement('input');
     authorInput.type = 'text';
     authorInput.value = profile.author || '';
-    authorInput.className = 'text-[24px] text-[var(--text-primary)] bg-white border border-gray-300 rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
+    authorInput.className = 'text-[24px] text-[var(--text-primary)] bg-[var(--box-color)] border border-[var(--border-color)] rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
     authorInput.addEventListener('change', () => { editorState.profile.author = authorInput.value; });
     addFieldTo(leftCol, getTranslation('Author'), authorInput);
 
@@ -1550,7 +1550,7 @@ function renderSettingsTab() {
         const countStart = profile.target_volume_count_start || 0;
 
         const preinfSelect = document.createElement('select');
-        preinfSelect.className = 'text-[24px] text-[var(--text-primary)] bg-white border border-gray-300 rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
+        preinfSelect.className = 'text-[24px] text-[var(--text-primary)] bg-[var(--box-color)] border border-[var(--border-color)] rounded-[12px] px-[16px] py-[12px] outline-none focus:border-[var(--mimoja-blue)] w-full';
 
         const noneOpt = document.createElement('option');
         noneOpt.value = '0';
@@ -1581,7 +1581,7 @@ function renderSettingsTab() {
     // ── Right column: Notes (tall textarea filling column height) ──
 
     const notesPreview = document.createElement('div');
-    notesPreview.className = 'text-[22px] text-[var(--text-primary)] bg-white border-2 border-[#e8e8e8] rounded-[12px] px-[20px] py-[16px] cursor-pointer select-none overflow-y-auto flex-1 whitespace-pre-wrap leading-[1.5] hover:border-[var(--mimoja-blue)] transition-colors';
+    notesPreview.className = 'text-[22px] text-[var(--text-primary)] bg-[var(--box-color)] border-2 border-[var(--border-color)] rounded-[12px] px-[20px] py-[16px] cursor-pointer select-none overflow-y-auto flex-1 whitespace-pre-wrap leading-[1.5] hover:border-[var(--mimoja-blue)] transition-colors';
     function updateNotesPreview() {
         const text = editorState.profile.notes || '';
         if (text) {
@@ -1609,7 +1609,7 @@ function describeStep(step, index) {
     const PROSE_CLASS = 'text-[20px] text-[#121212] select-none';
     const PILL_ACTIVE   = 'text-[var(--button-primary-bg)] text-[20px] font-semibold cursor-pointer select-none inline-flex underline decoration-dashed underline-offset-[3px] px-[4px] rounded-[4px]';
     const TOGGLE_CLASS  = 'text-[var(--button-primary-bg)] text-[20px] font-semibold cursor-pointer select-none underline decoration-dashed underline-offset-[3px] px-[4px]';
-    const BTN_CLASS     = 'bg-[#ededed] rounded-[18px] w-[40px] h-[40px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    const BTN_CLASS     = 'bg-[var(--button-grey)] rounded-[18px] w-[40px] h-[40px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
 
     function makeProseSpan(text) {
         const span = document.createElement('span');
@@ -2235,7 +2235,7 @@ function renderReviewTab() {
 
             const reviewDeleteBtn = document.createElement('button');
             reviewDeleteBtn.type = 'button';
-            reviewDeleteBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-red-500 hover:bg-red-50 rounded-[10px] cursor-pointer';
+            reviewDeleteBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-blue-50 rounded-[10px] cursor-pointer';
             reviewDeleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
             reviewDeleteBtn.setAttribute('aria-label', 'Delete step');
             reviewDeleteBtn.addEventListener('click', () => {
@@ -2373,9 +2373,14 @@ async function saveProfile() {
         const { setKVValue } = await import('./api.js');
         const { availableProfiles } = await import('./profileManager.js');
 
-        // Auto-suffix title if name already taken
+        const isUpdate = !!editorState.sourceProfileRecord?._kvKey;
+
+        // Auto-suffix title if name already taken — exclude self when updating
         const existingTitles = new Set(
-            Object.values(availableProfiles).map(r => r.profile?.title).filter(Boolean)
+            Object.values(availableProfiles)
+                .filter(r => !isUpdate || r.id !== editorState.sourceProfileRecord.id)
+                .map(r => r.profile?.title)
+                .filter(Boolean)
         );
         let finalTitle = editorState.profile.title.trim();
         if (existingTitles.has(finalTitle)) {
@@ -2383,7 +2388,6 @@ async function saveProfile() {
             while (existingTitles.has(`${finalTitle} (${n})`)) n++;
             finalTitle = `${finalTitle} (${n})`;
             editorState.profile.title = finalTitle;
-            // Update UI title display
             const titleDisplay = document.getElementById('editor-title-display');
             if (titleDisplay) titleDisplay.textContent = finalTitle;
         }
@@ -2397,21 +2401,33 @@ async function saveProfile() {
         if (editorState.profile.reference_file === undefined) editorState.profile.reference_file = '';
         if (editorState.profile.changes_since_last_espresso === undefined) editorState.profile.changes_since_last_espresso = '';
 
-        const kvKey = crypto.randomUUID();
         const now = new Date().toISOString();
+        let kvKey, kvRecord;
 
-        // Build a ProfileRecord-compatible object
-        const kvRecord = {
-            id: `kv:${kvKey}`,
-            profile: editorState.profile,
-            isDefault: false,
-            isFavorite: false,
-            visibility: 'visible',
-            parentId: editorState.sourceProfileId,
-            createdAt: now,
-            updatedAt: now,
-            _kvKey: kvKey,
-        };
+        if (isUpdate) {
+            // Update in place — reuse the original KV key and id
+            kvKey = editorState.sourceProfileRecord._kvKey;
+            kvRecord = {
+                ...editorState.sourceProfileRecord,
+                profile: editorState.profile,
+                updatedAt: now,
+                parentId: editorState.sourceProfileRecord.parentId ?? null,
+            };
+        } else {
+            // Create new KV entry (new profile or editing a built-in default)
+            kvKey = crypto.randomUUID();
+            kvRecord = {
+                id: `kv:${kvKey}`,
+                profile: editorState.profile,
+                isDefault: false,
+                isFavorite: false,
+                visibility: 'visible',
+                parentId: editorState.sourceProfileId,
+                createdAt: now,
+                updatedAt: now,
+                _kvKey: kvKey,
+            };
+        }
 
         await setKVValue('streamline', kvKey, kvRecord);
 

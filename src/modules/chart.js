@@ -98,7 +98,7 @@ const chartData = JSON.parse(JSON.stringify(baseChartData));
 const baseLayout = {
     plot_bgcolor: '#0d0e14',
     paper_bgcolor: '#0d0e14',
-    font: { color: '#606579', size: 14 },
+    font: { color: '#606579', size: 20 },
     shapes: [], // Initialize shapes array for vertical lines
     xaxis: {
         gridcolor: '#3D4255',
@@ -131,7 +131,7 @@ const lightLayout = {
     ...baseLayout,
     plot_bgcolor: 'white',
     paper_bgcolor: 'white',
-    font: { color: '#959595', size: 14 },
+    font: { color: '#959595', size: 20 },
     xaxis: {
         ...baseLayout.xaxis,
         gridcolor: '#E0E0E0',

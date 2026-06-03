@@ -92,6 +92,7 @@
     flex: 1;
     min-width: 0;
     align-items: center;
+    padding-bottom: 350px;
 }
 
 .numpad-modal-right {
@@ -99,6 +100,7 @@
     flex-direction: column;
     flex: 1;
     min-width: 0;
+    padding-bottom: 350px;
 }
 
 .numpad-modal-divider {
@@ -107,6 +109,7 @@
     flex-shrink: 0;
     position: relative;
     z-index: 1;
+    margin-bottom: -24px;
 }
 
 .numpad-modal-input-section {
@@ -156,14 +159,13 @@
 }
 
 .numpad-modal-input-cursor {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translateY(-50%);
+    display: inline-block;
     width: 3px;
-    height: 58%;
+    height: 0.75em;
     background-color: #1867d6;
     border-radius: 2px;
+    vertical-align: middle;
+    margin: 0 3px;
     animation: blink 1s infinite;
 }
 
@@ -183,28 +185,28 @@
     line-height: 1;
     white-space: nowrap;
     color: #121212;
+    display: flex;
+    align-items: center;
 }
 
 .numpad-modal-previous-values {
     margin-bottom: 16px;
-    flex: 1;
 }
 
 .numpad-previous-divider {
     width: 100%;
     height: 1px;
     background-color: #121212;
-    margin: 16px 0;
+    margin-top: auto;
+    margin-bottom: 90px;
     flex-shrink: 0;
 }
 
 .numpad-modal-previous-container {
-    width: 750px;
-    height: 370px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    gap: 45px;
 }
 
 .numpad-modal-previous-title {
@@ -213,25 +215,33 @@
     font-size: 30px;
     color: #666;
     text-align: center;
-    margin-bottom: 12px;
+    margin-bottom: 0;
+    transform: translateY(-30px);
 }
 
 .numpad-modal-previous-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 52.5px;
-    row-gap: 52.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 45px;
+    align-items: center;
+}
+
+.numpad-previous-row {
+    display: flex;
+    gap: 60px;
     justify-content: center;
 }
 
 .numpad-modal-previous-btn {
-    padding: 22.5px 37.5px;
-    border-radius: 20px;
+    min-width: 240px;
+    padding: 32px 80px;
+    border-radius: 60px;
     background: transparent;
     border: 1px solid #121212;
     cursor: pointer;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 30px;
+    font-size: 36px;
+    font-weight: 400;
     color: #121212;
     transition: background-color 0.2s;
 }
@@ -245,7 +255,7 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 52px;
     flex: 1;
-    align-content: center;
+    align-content: end;
 }
 
 .numpad-modal-numpad-btn {
@@ -295,34 +305,42 @@
 }
 
 .numpad-modal-cancel {
-    flex: 1;
-    padding: 14px;
-    border-radius: 12px;
+    width: 240px;
+    height: 82px;
+    padding: 26px 67.5px;
+    border-radius: 67.5px;
     background: transparent;
-    border: 1px solid #121212;
+    border: 1.5px solid var(--mimoja-blue);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 600;
-    font-size: 16px;
-    color: #121212;
+    font-weight: 700;
+    font-size: 24px;
+    color: var(--mimoja-blue);
     cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     transition: background-color 0.2s;
 }
 
 .numpad-modal-cancel:active {
-    background-color: #f3f4f6;
+    background-color: rgba(56, 90, 146, 0.08);
 }
 
 .numpad-modal-confirm {
-    flex: 1.5;
-    padding: 14px;
-    border-radius: 12px;
-    background-color: #385a92;
+    width: 240px;
+    height: 82px;
+    padding: 26px 67.5px;
+    border-radius: 67.5px;
+    background-color: var(--mimoja-blue);
     border: none;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     font-weight: 700;
-    font-size: 16px;
+    font-size: 24px;
     color: white;
     cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     transition: background-color 0.2s;
 }
 
@@ -348,7 +366,8 @@
     color: #ffffff;
 }
 
-[data-theme='dark'] .numpad-modal-divider {
+[data-theme='dark'] .numpad-modal-divider,
+[data-theme='dark'] .numpad-modal-header-divider {
     background-color: rgba(255, 255, 255, 0.12);
 }
 

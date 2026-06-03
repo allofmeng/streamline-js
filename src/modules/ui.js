@@ -2130,6 +2130,40 @@ export function hideGhcControls() {
     }
 }
 
+const SIDEBAR_GROUPS = {
+    grind:    ['grind-section'],
+    dose:     ['dose-section'],
+    drink:    ['drink-section', 'drink-out-presets'],
+    brew:     ['brew-section', 'temp-presets'],
+    steam:    ['steam-section', 'steam-presets', 'steam-flow-presets'],
+    flush:    ['flush-section', 'flush-presets'],
+    hotwater: ['hotwater-section', 'hotwater-presets'],
+};
+
+const ALL_GROUPS = Object.keys(SIDEBAR_GROUPS);
+
+const STATE_DIM_MAP = {
+    'espresso':   ALL_GROUPS,
+    'steam':      ALL_GROUPS.filter(g => g !== 'steam'),
+    'steamRinse': ALL_GROUPS.filter(g => g !== 'steam'),
+    'hotWater':   ALL_GROUPS.filter(g => g !== 'hotwater'),
+    'flush':      ALL_GROUPS.filter(g => g !== 'flush'),
+};
+
+export function updateSidebarOverlay(state) {
+    const groupsToDim = STATE_DIM_MAP[state] || [];
+    for (const groupName of ALL_GROUPS) {
+        const shouldDim = groupsToDim.includes(groupName);
+        for (const id of SIDEBAR_GROUPS[groupName]) {
+            const el = document.getElementById(id);
+            if (!el) continue;
+            el.style.opacity = shouldDim ? '0.25' : '';
+            el.style.pointerEvents = shouldDim ? 'none' : '';
+            el.style.transition = 'opacity 0.3s ease';
+        }
+    }
+}
+
 export function updateGhcStopButton(isActive) {
     const stopBtn = document.getElementById('ghc-stop-btn');
     const actionIds = ['ghc-coffee-btn', 'ghc-water-btn', 'ghc-steam-btn', 'ghc-flush-btn'];

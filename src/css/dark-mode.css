@@ -25,8 +25,17 @@
 }
 
 [data-theme="dark"] aside {
-    background-color: #17191e;
+    background-color: #181a21;
     border-right-color: black;
+}
+
+[data-theme="dark"] aside [role="separator"] {
+    border-color: black;
+}
+
+[data-theme="dark"] #shot-history-panel,
+[data-theme="dark"] #shot-data-panel {
+    border-color: black;
 }
 
 [data-theme="dark"] footer {
@@ -50,5 +59,11 @@
 
 [data-theme="dark"] #sleep-button, [data-theme="dark"] .settings-button {
     background-color: #101117;
+    color: white;
+}
+
+[data-theme="dark"] #confirm-profile-btn,
+[data-theme="dark"] #editor-save-btn {
+    background-color: #385a92;
     color: white;
 }

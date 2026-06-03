@@ -3698,7 +3698,7 @@ async function _preloadSettingsInternal() {
             if (reaSettingsResult.reason.status === 500) {
                 console.log('decent.app settings API returned 500 error, redirecting to home page');
                 setTimeout(() => {
-                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 5000, 'error');
+                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 2000, 'error');
                 }, 1000);
 
                 loadPage('index.html');
@@ -3717,7 +3717,7 @@ async function _preloadSettingsInternal() {
             if (de1SettingsResult.reason.status === 500) {
                 console.log('DE1 settings API returned 500 error, redirecting to home page');
                 setTimeout(() => {
-                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 5000, 'error');
+                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 2000, 'error');
                 }, 1000);
                 loadPage('index.html');
 
@@ -3736,7 +3736,7 @@ async function _preloadSettingsInternal() {
             if (de1AdvancedSettingsResult.reason.status === 500) {
                 console.log('DE1 advanced settings API returned 500 error, redirecting to home page');
                 setTimeout(() => {
-                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 5000, 'error');
+                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 2000, 'error');
                 }, 1000);
                 loadPage('index.html');
                 return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, appInfo: null, machineInfo: null };
@@ -4454,6 +4454,13 @@ export async function initializeSettings() {
         });
     };
 
+    function xorEncode(str, key) {
+        let out = '';
+        for (let i = 0; i < str.length; i++)
+            out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+        return btoa(out);
+    }
+
     window.submitFeedback = async function() {
         const category  = document.getElementById('feedback-category')?.value || 'bug';
         const title     = (document.getElementById('feedback-title')?.value || '').trim();
@@ -4469,12 +4476,13 @@ export async function initializeSettings() {
         }
 
         let fullDesc = `**${title}**\n\n${desc}`;
-        if (email) fullDesc += `\n\n---\n**Contact:** ${email}`;
+        const ENCODE_KEY = 'itisadecentcupofcoffee';
+        if (email) fullDesc += `\n\n---\n**Contact:** \`${xorEncode(email, ENCODE_KEY)}\``;
 
         const decentEmail  = localStorage.getItem('decentEmail');
         const decentSerial = localStorage.getItem('decentSerial');
         if (decentEmail) {
-            fullDesc += `\n\n---\n**Decent Account:** ${decentEmail}`;
+            fullDesc += `\n\n---\n**Decent Account:** \`${xorEncode(decentEmail, ENCODE_KEY)}\``;
             if (decentSerial) fullDesc += `\n**Serial:** ${decentSerial}`;
         }
 

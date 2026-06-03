@@ -949,10 +949,8 @@ export async function getDe1Settings() {
     } catch (error) {
         logger.error("Error in getDe1Settings:", error);
         
-        // Check if this is a 500 error and re-throw with status info
         if (error.status === 500) {
-            ui.showToast('Unable to load settings, check connection status of De1, returned to home page.', 2000, 'error');
-            throw error; // Re-throw so calling code can handle 500 specifically
+            throw error;
         }
         
         // Return cached data if available, even if expired, to avoid breaking functionality

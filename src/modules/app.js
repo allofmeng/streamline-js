@@ -109,6 +109,8 @@ function formatStateString(text) {
 }
 
 let shotStartTime = null;
+let shotEndedAt = null;
+const SHOT_RESTART_COOLDOWN_MS = 5000;
 let dataTimeout;
 let de1DeviceId = null;
 let isDe1Connected = false;
@@ -393,6 +395,7 @@ function handleData(data) {
                           state !== MachineState.SLEEPING &&
                           state !== MachineState.ERROR;
     ui.updateGhcStopButton(isActiveState);
+    ui.updateSidebarOverlay(state);
 
     // Update UI elements
     // Pass detailed status information to match the enhanced updateMachineStatus function
@@ -414,6 +417,9 @@ function handleData(data) {
         // This excludes the "preparingForShot" phase from the shot timing
         if (substate === 'preinfusion' || substate === 'pouring') {
             if (!shotStartTime) {
+                if (shotEndedAt && (Date.now() - shotEndedAt) < SHOT_RESTART_COOLDOWN_MS) {
+                    return;
+                }
                 shotStartTime = new Date(data.timestamp);
                 chart.clearChart();
                 shotData.clearShotData();
@@ -426,6 +432,7 @@ function handleData(data) {
             shotData.updateShotData(data, latestScaleWeight);
         }
     } else {
+        if (shotStartTime) shotEndedAt = Date.now();
         shotStartTime = null;
     }
 }
@@ -1019,7 +1026,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ua = navigator.userAgent;
         const isAndroidWebView = /Android/.test(ua) && /wv/.test(ua);
         const isIOSWebView = isIOS && !isStandalone && !/Safari\//.test(ua);
-        const isWebView = isAndroidWebView || isIOSWebView;
+        const isDecentWebView = ua.includes('Decent');
+        const isWebView = isAndroidWebView || isIOSWebView || isDecentWebView;
+
+        if (isWebView) {
+            const fsBtn = document.getElementById('fullscreen-toggle-btn');
+            if (fsBtn) fsBtn.style.display = 'none';
+        }
 
         // Function to determine if we're in fullscreen mode
         // This accounts for both browser fullscreen API and web view fullscreen scenarios

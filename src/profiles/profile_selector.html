@@ -110,7 +110,7 @@
     <div class="modal-box bg-[var(--box-color)] max-w-[450px] rounded-[20px] p-8">
         <h3 class="font-bold text-[26px] text-[var(--text-primary)] mb-4">Import from Visualizer</h3>
         <p class="text-[18px] text-[var(--text-primary)] mb-6">Enter the 4-character share code from visualizer.coffee</p>
-        <input type="text" id="share-code-input" maxlength="4" placeholder="ABCD" autocomplete="off" autofocus class="w-full h-[70px] text-[36px] text-center font-bold tracking-[20px] bg-[var(--profile-button-background-color)] border-2 border-[var(--border-color)] rounded-[15px] focus:outline-none focus:border-[var(--mimoja-blue)] mb-4 placeholder-gray-400" style="color: black;"/>
+        <input type="text" id="share-code-input" maxlength="4" placeholder="ABCD" autocomplete="off" class="w-full h-[70px] text-[36px] text-center font-bold tracking-[20px] bg-[var(--profile-button-background-color)] border-2 border-[var(--border-color)] rounded-[15px] focus:outline-none focus:border-[var(--mimoja-blue)] mb-4 placeholder-gray-400" style="color: black;"/>
         <p id="share-code-error" class="text-[16px] text-red-500 mb-4 hidden"></p>
         <div class="flex gap-4">
             <button id="share-code-cancel-btn" class="flex-1 h-[60px] border-2 border-[var(--border-color)] text-[var(--text-primary)] text-[20px] font-bold rounded-[15px]">Cancel</button>
@@ -133,11 +133,6 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
-</div>
-<div id="app-toast" class="toast toast-buttom toast-center" style="z-index: 10001; display: none;">
-    <div class="alert alert-info text-sm">
-        <span id="app-toast-message"></span>
-    </div>
 </div>
 <input type="file" id="profile-upload-input" class="hidden" accept=".json" />
 <script src="src/modules/profile_selector.js" type="module" defer></script>

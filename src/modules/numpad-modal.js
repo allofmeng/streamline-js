@@ -148,8 +148,8 @@ function createModalHTML() {
                 <div class="numpad-modal-header">
                     <span class="numpad-modal-title">DOSE</span>
                     <div class="numpad-modal-actions ml-auto">
-                        <button class="numpad-modal-cancel w-[240px] h-[82.5px] py-10 rounded-[90px] inline-flex justify-center items-center gap-2.5" id="numpad-cancel">CANCEL</button>
-                        <button class="numpad-modal-confirm w-[240px] h-[82.5px] py-10 bg-[#385a92] rounded-[90px] inline-flex justify-center items-center gap-2.5" id="numpad-confirm">CONFIRM</button>
+                        <button class="numpad-modal-cancel" id="numpad-cancel">CANCEL</button>
+                        <button class="numpad-modal-confirm" id="numpad-confirm">CONFIRM</button>
                     </div>
                 </div>
                 
@@ -161,15 +161,14 @@ function createModalHTML() {
                             <span class="numpad-modal-input-label">Input value between 1–120</span>
                             <div class="numpad-modal-input-box">
                                 <div class="numpad-modal-input-border"></div>
-                                <div class="numpad-modal-input-cursor"></div>
-                                <span class="numpad-modal-input-value" id="numpad-display-value">0g</span>
+                                <span class="numpad-modal-input-value" id="numpad-display-value"></span>
                             </div>
                         </div>
                         
                         <div class="numpad-previous-divider"></div>
                         
                         <div class="numpad-modal-previous-values" id="numpad-previous-values-container" style="display: none;">
-                            <div class="numpad-modal-previous-container" style="width: 750px; height: 370px;">
+                            <div class="numpad-modal-previous-container">
                                 <div class="numpad-modal-previous-title">Previous Values</div>
                                 <div class="numpad-modal-previous-grid" id="numpad-previous-grid"></div>
                             </div>
@@ -215,27 +214,11 @@ function createModalHTML() {
 }
 
 function updateDisplay() {
-    console.log('[Numpad] updateDisplay called, currentValue:', currentValue, 'currentFieldType:', currentFieldType);
     const displayElement = document.getElementById('numpad-display-value');
-    const cursorElement = document.querySelector('.numpad-modal-input-cursor');
-    if (displayElement) {
-        const config = fieldConfig[currentFieldType] || fieldConfig['dose-in'];
-        displayElement.textContent = currentValue + config.unit;
-        
-        // Position cursor after the text
-        if (cursorElement && displayElement) {
-            requestAnimationFrame(() => {
-                const textWidth = displayElement.getBoundingClientRect().width;
-                const containerWidth = displayElement.parentElement.getBoundingClientRect().width;
-                const containerCenter = containerWidth / 2;
-                const cursorLeft = containerCenter + textWidth / 2 + 4;
-                cursorElement.style.left = cursorLeft + 'px';
-                cursorElement.style.right = 'auto';
-            });
-        }
-    } else {
-        console.log('[Numpad] ERROR: displayElement not found!');
-    }
+    if (!displayElement) return;
+    const config = fieldConfig[currentFieldType] || fieldConfig['dose-in'];
+    displayElement.innerHTML =
+        `${currentValue}<span class="numpad-modal-input-cursor"></span><span class="numpad-unit-text">${config.unit}</span>`;
 }
 
 function handleNumberClick(num) {
@@ -283,21 +266,28 @@ function handlePreviousValue(value) {
 function renderPreviousValues() {
     const container = document.getElementById('numpad-previous-values-container');
     const grid = document.getElementById('numpad-previous-grid');
-    
+
     if (!previousValues || previousValues.length === 0) {
         container.style.display = 'none';
         return;
     }
-    
+
     container.style.display = 'block';
     grid.innerHTML = '';
-    
-    previousValues.forEach(value => {
-        const btn = document.createElement('button');
-        btn.className = 'numpad-modal-previous-btn';
-        btn.textContent = value;
-        btn.addEventListener('click', () => handlePreviousValue(value));
-        grid.appendChild(btn);
+
+    const rows = [previousValues.slice(0, 2), previousValues.slice(2, 4)];
+    rows.forEach(rowValues => {
+        if (rowValues.length === 0) return;
+        const row = document.createElement('div');
+        row.className = 'numpad-previous-row';
+        rowValues.forEach(value => {
+            const btn = document.createElement('button');
+            btn.className = 'numpad-modal-previous-btn';
+            btn.textContent = value;
+            btn.addEventListener('click', () => handlePreviousValue(value));
+            row.appendChild(btn);
+        });
+        grid.appendChild(row);
     });
 }
 
