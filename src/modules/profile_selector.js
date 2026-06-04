@@ -634,11 +634,18 @@ function renderProfiles() {
 
         console.log('renderProfiles: Total visible profiles:', visibleProfileCount);
         if (visibleProfileCount > 0 && !selectedProfileKey) {
-            const firstItem = container.querySelector('[data-profile-key]');
-            if (firstItem) {
-                firstItem.classList.add('bg-[#385a92]', 'text-white', 'rounded-[8px]');
-                firstItem.setAttribute('aria-selected', 'true');
-                updateSelectedProfileView(firstItem);
+            // Honor a return-from-editor hint before falling back to first item.
+            const lastEditedKey = sessionStorage.getItem('lastEditedProfileKey');
+            let initialItem = null;
+            if (lastEditedKey) {
+                initialItem = container.querySelector(`[data-profile-key="${CSS.escape(lastEditedKey)}"]`);
+                sessionStorage.removeItem('lastEditedProfileKey');
+            }
+            if (!initialItem) initialItem = container.querySelector('[data-profile-key]');
+            if (initialItem) {
+                initialItem.classList.add('bg-[#385a92]', 'text-white', 'rounded-[8px]');
+                initialItem.setAttribute('aria-selected', 'true');
+                updateSelectedProfileView(initialItem);
             }
         }
 

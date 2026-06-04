@@ -2390,6 +2390,21 @@ async function saveProfile() {
         const { setKVValue } = await import('./api.js');
         const { availableProfiles } = await import('./profileManager.js');
 
+        // No-op save guard — if the profile is byte-identical to its source,
+        // skip writing a new KV record. Prevents duplicating a default the user
+        // opened but didn't actually modify.
+        const sourceProfileJson = editorState.sourceProfileRecord?.profile
+            ? JSON.stringify(editorState.sourceProfileRecord.profile)
+            : null;
+        if (sourceProfileJson && sourceProfileJson === JSON.stringify(editorState.profile)) {
+            showToast('No changes to save', 2000, 'info');
+            if (editorState.sourceProfileId) {
+                sessionStorage.setItem('lastEditedProfileKey', editorState.sourceProfileId);
+            }
+            setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 500);
+            return;
+        }
+
         // Title change at save = user intent to fork into a brand-new profile.
         // Compare trimmed current title against source's original title.
         const sourceTitle = (editorState.sourceProfileRecord?.profile?.title || '').trim();
@@ -2474,6 +2489,9 @@ async function saveProfile() {
         // Rebind editor to the saved record so repeat saves update in place.
         editorState.sourceProfileRecord = kvRecord;
         editorState.sourceProfileId = kvRecord.id;
+
+        // Hint to selector so it pre-selects the profile we just edited.
+        sessionStorage.setItem('lastEditedProfileKey', kvRecord.id);
 
         showToast('Profile saved!', 2000, 'success');
         setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 1000);
