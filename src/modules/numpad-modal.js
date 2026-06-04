@@ -7,6 +7,7 @@ let originalValue = '0';
 let previousValues = [];
 let onConfirmCallback = null;
 let isFirstInput = false;
+let currentConfig = null;
 
 async function getPreviousValues(fieldType) {
     try {
@@ -216,7 +217,9 @@ function createModalHTML() {
 function updateDisplay() {
     const displayElement = document.getElementById('numpad-display-value');
     if (!displayElement) return;
-    const config = fieldConfig[currentFieldType] || fieldConfig['dose-in'];
+    // Prefer the live config set by openModal — covers caller-supplied fieldTypes
+    // (e.g. 'pe-temp', 'pe-pump') that aren't keys in the static fieldConfig dict.
+    const config = currentConfig || fieldConfig[currentFieldType] || fieldConfig['dose-in'];
     displayElement.innerHTML =
         `${currentValue}<span class="numpad-modal-input-cursor"></span><span class="numpad-unit-text">${config.unit}</span>`;
 }
@@ -337,6 +340,7 @@ async function openModal(inputElement, options = {}) {
     currentFieldType = options.fieldType || 'dose-in';
 
     const config = options.config || fieldConfig[currentFieldType] || fieldConfig['dose-in'];
+    currentConfig = config;
     const inputValue = inputElement.value || inputElement.getAttribute('data-default') || config.defaultValue;
     // Remove any existing units for editing
     currentValue = inputValue.replace(/[g°c]/g, '').trim() || config.defaultValue;
@@ -353,7 +357,12 @@ async function openModal(inputElement, options = {}) {
     
     const labelEl = document.querySelector('.numpad-modal-input-label');
     if (labelEl) {
-        labelEl.textContent = config.label;
+        // Synthesize from min/max when caller supplied them so the helper text
+        // always reflects the actual valid range + unit for the field.
+        const hasRange = config.min !== undefined && config.max !== undefined;
+        labelEl.textContent = hasRange
+            ? `Input value between ${config.min}–${config.max}${config.unit ? ' ' + config.unit : ''}`
+            : (config.label || '');
     }
     
     // Load previous values

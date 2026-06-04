@@ -175,7 +175,7 @@ function inlineEditValue(displayEl, currentValue, { min, max, step, unit, onComm
 const EXIT_TYPES    = ['pressure', 'flow', 'weight', 'time', 'off'];
 const EXIT_UNIT_MAP = { pressure: 'bar', flow: 'mL/s', weight: 'g', time: 'sec' };
 const EXIT_STEP_MAP = { pressure: 0.1, flow: 0.1, weight: 0.5, time: 1 };
-const EXIT_MAX_MAP  = { pressure: 16,  flow: 15,  weight: 500, time: 300 };
+const EXIT_MAX_MAP  = { pressure: 12,  flow: 8,   weight: 1000, time: 300 };
 
 const DEFAULT_STEP = {
     name: 'New Step',
@@ -510,7 +510,7 @@ function renderStepCards() {
                 if (tempLongPressFired) { tempLongPressFired = false; return; }
                 if (expandedTempSteps.has(index)) {
                     if (shouldUseNumpad()) {
-                        openNumpadForField(tempValue, { fieldType: 'pe-temp', title: 'TEMPERATURE', unit: '\u00b0C', min: 0, max: 110, label: '0\u2013110' }, (val) => {
+                        openNumpadForField(tempValue, { fieldType: 'pe-temp', title: 'TEMPERATURE', unit: '\u00b0C', min: 0, max: 105, label: '0\u2013110' }, (val) => {
                             tempValue = val;
                             tempTextSpan.textContent = `${tempValue}\u00b0C`;
                             editorState.profile.steps[index].temperature = tempValue;
@@ -570,7 +570,8 @@ function renderStepCards() {
             pumpLine.className = 'flex flex-col gap-[4px]';
 
             const targetUnit = isFlow ? 'mL/s' : 'bar';
-            const targetMax  = isFlow ? 15 : 16;
+            const targetMax  = isFlow ? 15 : 12;
+            const targetMin  = isFlow ? 0  : 1;
             const tStep      = 0.1;
             const isPumpExp  = expandedPumpSteps.has(index);
 
@@ -696,7 +697,7 @@ function renderStepCards() {
                     if (shouldUseNumpad()) {
                         const pumpConfig = isFlow
                             ? { fieldType: 'pe-pump', title: 'FLOW', unit: 'mL/s', min: 0, max: 15, label: '0\u201315' }
-                            : { fieldType: 'pe-pump', title: 'PRESSURE', unit: 'bar', min: 0, max: 16, label: '0\u201316' };
+                            : { fieldType: 'pe-pump', title: 'PRESSURE', unit: 'bar', min: 1, max: 12, label: '1\u201312' };
                         openNumpadForField(targetValue, pumpConfig, (val) => {
                             targetValue = val;
                             targetDisplay.textContent = `${targetValue}`;
@@ -709,8 +710,9 @@ function renderStepCards() {
                         return;
                     }
                     // Desktop: inline edit
-                    const tMax = isFlow ? 15 : 16;
-                    const handled = inlineEditValue(targetDisplay, targetValue, { min: 0, max: tMax, step: tStep, onCommit: (val) => {
+                    const tMax = isFlow ? 15 : 12;
+                    const tMin = isFlow ? 0  : 1;
+                    const handled = inlineEditValue(targetDisplay, targetValue, { min: tMin, max: tMax, step: tStep, onCommit: (val) => {
                         targetValue = val;
                         targetDisplay.textContent = `${targetValue}`;
                         updateTargetStyle();
@@ -745,7 +747,7 @@ function renderStepCards() {
 
             targetMinus.addEventListener('click', () => {
                 flashPlusMinusButton(targetMinus);
-                targetValue = roundTo(clamp(targetValue - tStep, 0, targetMax), tStep);
+                targetValue = roundTo(clamp(targetValue - tStep, targetMin, targetMax), tStep);
                 targetDisplay.textContent = `${targetValue}`;
                 updateTargetStyle();
                 if (isFlow) editorState.profile.steps[index].flow = targetValue;
@@ -755,7 +757,7 @@ function renderStepCards() {
 
             targetPlus.addEventListener('click', () => {
                 flashPlusMinusButton(targetPlus);
-                targetValue = roundTo(clamp(targetValue + tStep, 0, targetMax), tStep);
+                targetValue = roundTo(clamp(targetValue + tStep, targetMin, targetMax), tStep);
                 targetDisplay.textContent = `${targetValue}`;
                 updateTargetStyle();
                 if (isFlow) editorState.profile.steps[index].flow = targetValue;
@@ -772,7 +774,8 @@ function renderStepCards() {
             limLine.className = 'flex flex-col gap-[4px]';
 
             const limUnit = isFlow ? 'bar' : 'mL/s';
-            const limMax  = isFlow ? 16 : 15;
+            const limMax  = isFlow ? 12 : 8;
+            const limMin  = isFlow ? 1  : 0;
             const lStep   = 0.1;
             const isLimExp = expandedLimSteps.has(index);
 
@@ -881,8 +884,8 @@ function renderStepCards() {
                 if (expandedLimSteps.has(index)) {
                     if (shouldUseNumpad()) {
                         const limConfig = isFlow
-                            ? { fieldType: 'pe-lim', title: 'PRESSURE LIMIT', unit: 'bar', min: 0, max: 16, label: '0\u201316' }
-                            : { fieldType: 'pe-lim', title: 'FLOW LIMIT', unit: 'mL/s', min: 0, max: 15, label: '0\u201315' };
+                            ? { fieldType: 'pe-lim', title: 'PRESSURE LIMIT', unit: 'bar', min: 1, max: 12, label: '1\u201312' }
+                            : { fieldType: 'pe-lim', title: 'FLOW LIMIT', unit: 'mL/s', min: 0, max: 8, label: '0\u20138' };
                         openNumpadForField(limValue, limConfig, (val) => {
                             limValue = val;
                             limDisplay.textContent = `${limValue}`;
@@ -895,7 +898,7 @@ function renderStepCards() {
                         return;
                     }
                     // Desktop: inline edit
-                    const handled = inlineEditValue(limDisplay, limValue, { min: 0, max: limMax, step: lStep, onCommit: (val) => {
+                    const handled = inlineEditValue(limDisplay, limValue, { min: limMin, max: limMax, step: lStep, onCommit: (val) => {
                         limValue = val;
                         limDisplay.textContent = `${limValue}`;
                         updateLimStyle();
@@ -917,7 +920,7 @@ function renderStepCards() {
 
             limMinus.addEventListener('click', () => {
                 flashPlusMinusButton(limMinus);
-                limValue = roundTo(clamp(limValue - lStep, 0, limMax), lStep);
+                limValue = roundTo(clamp(limValue - lStep, limMin, limMax), lStep);
                 limDisplay.textContent = `${limValue}`;
                 updateLimStyle();
                 if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: limValue, range: 0.6 };
@@ -927,7 +930,7 @@ function renderStepCards() {
 
             limPlus.addEventListener('click', () => {
                 flashPlusMinusButton(limPlus);
-                limValue = roundTo(clamp(limValue + lStep, 0, limMax), lStep);
+                limValue = roundTo(clamp(limValue + lStep, limMin, limMax), lStep);
                 limDisplay.textContent = `${limValue}`;
                 updateLimStyle();
                 if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: limValue, range: 0.6 };
@@ -1160,9 +1163,9 @@ function renderStepCards() {
             maxExtrasRow.style.display = 'none';
 
             const MAX_FIELDS = [
-                { key: 'weight',  unit: 'g',   fStep: 1, fMax: 500 },
+                { key: 'weight',  unit: 'g',   fStep: 1, fMax: 1000 },
                 { key: 'seconds', unit: 'sec', fStep: 1, fMax: 300 },
-                { key: 'volume',  unit: 'ml',  fStep: 1, fMax: 500 },
+                { key: 'volume',  unit: 'ml',  fStep: 1, fMax: 1000 },
             ];
 
             const fieldRefs = [];
@@ -1359,9 +1362,9 @@ function renderStepCards() {
                     if (current === key) {
                         if (shouldUseNumpad()) {
                             const MAX_CONFIG = {
-                                weight:  { fieldType: 'pe-max-weight',  title: 'MAX WEIGHT', unit: 'g',   min: 0, max: 500, label: '0\u2013500' },
-                                seconds: { fieldType: 'pe-max-seconds', title: 'MAX TIME',   unit: 'sec', min: 0, max: 300, label: '0\u2013300' },
-                                volume:  { fieldType: 'pe-max-volume',  title: 'MAX VOLUME', unit: 'ml',  min: 0, max: 500, label: '0\u2013500' },
+                                weight:  { fieldType: 'pe-max-weight',  title: 'MAX WEIGHT', unit: 'g',   min: 0, max: 1000, label: '0\u20131000' },
+                                seconds: { fieldType: 'pe-max-seconds', title: 'MAX TIME',   unit: 'sec', min: 0, max: 300,  label: '0\u2013300' },
+                                volume:  { fieldType: 'pe-max-volume',  title: 'MAX VOLUME', unit: 'ml',  min: 0, max: 1000, label: '0\u20131000' },
                             };
                             openNumpadForField(fieldValue, MAX_CONFIG[key], (val) => {
                                 fieldValue = val;
@@ -1482,7 +1485,7 @@ function renderSettingsTab() {
 
     // Target Weight
     addFieldTo(leftCol, getTranslation('Target Weight (g)'), createSpinner(
-        profile.target_weight || 0, 0.1, 'g', (val) => { editorState.profile.target_weight = val; }, { min: 0, max: 500 }
+        profile.target_weight || 0, 0.1, 'g', (val) => { editorState.profile.target_weight = val; }, { min: 0, max: 1000 }
     ));
 
     // Tank Temperature
@@ -1606,7 +1609,7 @@ function renderSettingsTab() {
 // ─── Review Tab ─────────────────────────────────────────────────────────────
 
 function describeStep(step, index) {
-    const PROSE_CLASS = 'text-[20px] text-[#121212] select-none';
+    const PROSE_CLASS = 'text-[20px] text-[var(--text-primary)] select-none';
     const PILL_ACTIVE   = 'text-[var(--button-primary-bg)] text-[20px] font-semibold cursor-pointer select-none inline-flex underline decoration-dashed underline-offset-[3px] px-[4px] rounded-[4px]';
     const TOGGLE_CLASS  = 'text-[var(--button-primary-bg)] text-[20px] font-semibold cursor-pointer select-none underline decoration-dashed underline-offset-[3px] px-[4px]';
     const BTN_CLASS     = 'bg-[var(--button-grey)] rounded-[18px] w-[40px] h-[40px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
@@ -2143,6 +2146,10 @@ function renderReviewGraph() {
     const graphDiv = document.getElementById('review-graph');
     if (!graphDiv || typeof Plotly === 'undefined') return;
 
+    const isDark = (localStorage.getItem('theme') || 'light') === 'dark';
+    const stepMarkerColor = isDark ? '#7f8bbb' : '#7c7c7c';
+    const tempLineColor = isDark ? '#AE6D73' : '#ff97a1';
+
     // Build step-target traces + step boundary markers
     const pressureX = [], pressureY = [], flowX = [], flowY = [], tempX = [], tempY = [];
     const stepShapes = [];
@@ -2158,7 +2165,7 @@ function renderReviewGraph() {
                 type: 'line',
                 x0: startT, x1: startT,
                 y0: 0, y1: 1, yref: 'paper',
-                line: { color: '#7c7c7c', width: 2, dash: 'longdash' },
+                line: { color: stepMarkerColor, width: 2, dash: 'longdash' },
             });
         }
 
@@ -2182,19 +2189,29 @@ function renderReviewGraph() {
     const traces = [
         { x: pressureX, y: pressureY, name: 'Pressure', mode: 'lines', line: { color: '#17c29a' }, hoverinfo: 'name' },
         { x: flowX,     y: flowY,     name: 'Flow',     mode: 'lines', line: { color: '#0358cf' }, hoverinfo: 'name' },
-        { x: tempX,     y: tempY,     name: '\u00b0C',  mode: 'lines', line: { color: '#ff97a1' }, hoverinfo: 'name' },
+        { x: tempX,     y: tempY,     name: '\u00b0C',  mode: 'lines', line: { color: tempLineColor }, hoverinfo: 'name' },
     ];
 
-    const layout = {
-        plot_bgcolor: 'white',
-        paper_bgcolor: 'white',
-        font: { color: '#E0E0E0', size: 16 },
+    const layout = isDark ? {
+        plot_bgcolor: '#0d0e14',
+        paper_bgcolor: '#0d0e14',
+        font: { color: '#606579', size: 16 },
         autosize: true,
         margin: { l: 50, r: 50, t: 20, b: 40, pad: 0 },
         showlegend: false,
         shapes: stepShapes,
-        xaxis: { gridcolor: '#E0E0E0', linecolor: '#E0E0E0', tickcolor: '#E0E0E0', fixedrange: true },
-        yaxis: { gridcolor: '#E0E0E0', linecolor: '#E0E0E0', tickcolor: '#E0E0E0', range: [0, 10], dtick: 1, fixedrange: true },
+        xaxis: { gridcolor: '#3D4255', linecolor: '#606579', tickcolor: '#606579', fixedrange: true },
+        yaxis: { gridcolor: '#3D4255', linecolor: '#606579', tickcolor: '#606579', range: [0, 10], dtick: 1, fixedrange: true },
+    } : {
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white',
+        font: { color: '#959595', size: 16 },
+        autosize: true,
+        margin: { l: 50, r: 50, t: 20, b: 40, pad: 0 },
+        showlegend: false,
+        shapes: stepShapes,
+        xaxis: { gridcolor: '#E0E0E0', linecolor: '#959595', tickcolor: '#959595', fixedrange: true },
+        yaxis: { gridcolor: '#E0E0E0', linecolor: '#959595', tickcolor: '#959595', range: [0, 10], dtick: 1, fixedrange: true },
     };
 
     Plotly.react(graphDiv, traces, layout, { responsive: true, displayModeBar: false });
@@ -2221,7 +2238,7 @@ function renderReviewTab() {
 
         steps.forEach((step, i) => {
             const row = document.createElement('div');
-            row.className = 'flex flex-col gap-[6px] text-[#121212]';
+            row.className = 'flex flex-col gap-[6px] text-[var(--text-primary)]';
 
             const nameRow = document.createElement('div');
             nameRow.className = 'flex items-center justify-between';
@@ -2373,12 +2390,32 @@ async function saveProfile() {
         const { setKVValue } = await import('./api.js');
         const { availableProfiles } = await import('./profileManager.js');
 
-        const isUpdate = !!editorState.sourceProfileRecord?._kvKey;
+        // Title change at save = user intent to fork into a brand-new profile.
+        // Compare trimmed current title against source's original title.
+        const sourceTitle = (editorState.sourceProfileRecord?.profile?.title || '').trim();
+        const currentTitle = editorState.profile.title.trim();
+        const titleChanged = sourceTitle && currentTitle !== sourceTitle;
 
-        // Auto-suffix title if name already taken — exclude self when updating
+        // Resolve save target — clone-on-first-edit for built-in defaults:
+        // if source has no _kvKey but a kv clone already exists for this default,
+        // update that clone in place instead of minting another one.
+        // Skipped entirely when titleChanged → forces the create branch below.
+        const existingClone = !titleChanged && !editorState.sourceProfileRecord?._kvKey
+            ? Object.values(availableProfiles).find(
+                r => r._kvKey && r.parentId === editorState.sourceProfileId
+              )
+            : null;
+        const targetRecord = titleChanged
+            ? null
+            : editorState.sourceProfileRecord?._kvKey
+                ? editorState.sourceProfileRecord
+                : existingClone;
+        const isUpdate = !!targetRecord;
+
+        // Auto-suffix title if name already taken — exclude the resolved target when updating
         const existingTitles = new Set(
             Object.values(availableProfiles)
-                .filter(r => !isUpdate || r.id !== editorState.sourceProfileRecord.id)
+                .filter(r => !isUpdate || r.id !== targetRecord.id)
                 .map(r => r.profile?.title)
                 .filter(Boolean)
         );
@@ -2405,13 +2442,13 @@ async function saveProfile() {
         let kvKey, kvRecord;
 
         if (isUpdate) {
-            // Update in place — reuse the original KV key and id
-            kvKey = editorState.sourceProfileRecord._kvKey;
+            // Update in place — reuse the resolved target's KV key and id
+            kvKey = targetRecord._kvKey;
             kvRecord = {
-                ...editorState.sourceProfileRecord,
+                ...targetRecord,
                 profile: editorState.profile,
                 updatedAt: now,
-                parentId: editorState.sourceProfileRecord.parentId ?? null,
+                parentId: targetRecord.parentId ?? null,
             };
         } else {
             // Create new KV entry (new profile or editing a built-in default)
@@ -2434,6 +2471,10 @@ async function saveProfile() {
         // Inject into live cache so selector shows it immediately without reload.
         availableProfiles[kvRecord.id] = kvRecord;
 
+        // Rebind editor to the saved record so repeat saves update in place.
+        editorState.sourceProfileRecord = kvRecord;
+        editorState.sourceProfileId = kvRecord.id;
+
         showToast('Profile saved!', 2000, 'success');
         setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 1000);
     } catch (err) {
@@ -2443,7 +2484,7 @@ async function saveProfile() {
 }
 
 function cancelEditor() {
-    loadPage('src/profiles/profile_selector.html');
+    loadPage('index.html');
 }
 
 

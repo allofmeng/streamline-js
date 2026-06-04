@@ -15,7 +15,7 @@
 
     <!-- Tab bar -->
     <div class="flex items-center px-6 h-[82px] border-b border-base-300 bg-[var(--box-color)]">
-        <div class="flex items-center gap-[12px] bg-white border-2 border-[#e8e8e8] rounded-[60px] px-[16px] h-[58px]">
+        <div class="flex items-center gap-[12px] bg-[var(--box-color)] border-2 border-[var(--border-color)] rounded-[60px] px-[16px] h-[58px]">
             <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="0" data-i18n-key="GRID">GRID</button>
             <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="2" data-i18n-key="TEXT">TEXT</button>
             <button class="editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide" data-tab="1" data-i18n-key="SETTINGS">SETTINGS</button>
@@ -41,22 +41,22 @@
 
         <!-- Tab 2: Review -->
         <div id="editor-tab-panel-2" class="editor-tab-panel h-full hidden overflow-hidden">
-            <div class="flex h-full bg-white rounded-[20px] mx-[30px] my-[20px] border-2 border-[#e8e8e8] overflow-hidden">
+            <div class="flex h-full bg-[var(--box-color)] rounded-[20px] mx-[30px] my-[20px] border-2 border-[var(--border-color)] overflow-hidden">
                 <!-- Left: Steps Review -->
-                <div id="review-steps-col" class="flex-1 border-r-2 border-[#e8e8e8] overflow-y-auto p-[30px] flex flex-col gap-[20px]">
-                    <p class="text-[24px] font-semibold text-[#121212]" data-i18n-key="Text Review">Text Review</p>
+                <div id="review-steps-col" class="flex-1 border-r-2 border-[var(--border-color)] overflow-y-auto p-[30px] flex flex-col gap-[20px]">
+                    <p class="text-[24px] font-semibold text-[var(--text-primary)]" data-i18n-key="Text Review">Text Review</p>
                     <div id="review-steps-list" class="flex gap-[30px]"></div>
                 </div>
                 <!-- Right: Graph + Settings -->
                 <div id="review-right-col" class="flex-1 overflow-y-auto p-[30px] flex flex-col gap-[20px]">
                     <div class="flex flex-col gap-[14px]">
-                        <p class="text-[24px] font-semibold text-[#121212]" data-i18n-key="Graph Preview">Graph Preview</p>
+                        <p class="text-[24px] font-semibold text-[var(--text-primary)]" data-i18n-key="Graph Preview">Graph Preview</p>
                         <div id="review-graph" class="w-full h-[450px]"></div>
                     </div>
-                    <div class="h-[2px] bg-[#e8e8e8]"></div>
+                    <div class="h-[2px] bg-[var(--border-color)]"></div>
                     <div class="flex flex-col gap-[14px]">
-                        <p class="text-[24px] font-semibold text-[#121212]" data-i18n-key="Profile settings">Profile settings</p>
-                        <ul id="review-settings-list" class="flex flex-col gap-[10px] list-disc list-inside text-[20px] text-[#121212]"></ul>
+                        <p class="text-[24px] font-semibold text-[var(--text-primary)]" data-i18n-key="Profile settings">Profile settings</p>
+                        <ul id="review-settings-list" class="flex flex-col gap-[10px] list-disc list-inside text-[20px] text-[var(--text-primary)]"></ul>
                     </div>
                 </div>
             </div>

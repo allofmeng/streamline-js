@@ -454,8 +454,10 @@ function updateSelectedProfileView(profileItem) {
     }
 
     console.log('updateSelectedProfileView: Profile item found:', profileItem.textContent);
-    // Update title
-    const profileTitle = profileItem.textContent;
+    // Update title — prefer explicit data attr so badge/decoration text doesn't leak in
+    const profileTitle = profileItem.dataset.profileTitle
+        || availableProfiles[profileItem.dataset.profileKey]?.profile?.title
+        || profileItem.textContent;
     const titleElement = document.getElementById('selected_profile_name');
     if (titleElement) {
         titleElement.textContent = profileTitle;
@@ -516,16 +518,24 @@ function renderProfiles() {
         }
 
         let visibleProfileCount = 0;
-        for (const [key, profileRecord] of sortedProfiles) {
+
+        const renderSectionHeader = (label) => {
+            const h = document.createElement('div');
+            h.className = 'px-3 pt-4 pb-1 text-[16px] uppercase tracking-wider text-[var(--low-contrast-white)] select-none';
+            h.textContent = label;
+            container.appendChild(h);
+        };
+
+        const renderProfileItem = ([key, profileRecord]) => {
             const profile = profileRecord.profile;
-            if (!profile) continue;
+            if (!profile) return;
 
             const isHidden = profileRecord.visibility === 'hidden';
             console.log('renderProfiles: Processing profile', profile.title, 'isHidden:', isHidden);
 
             if (!isShowingHidden && isHidden) {
                 console.log('renderProfiles: Skipping hidden profile', profile.title);
-                continue; // Skip if we are not showing hidden profiles
+                return;
             }
             visibleProfileCount++;
             console.log('renderProfiles: Adding profile to list', profile.title);
@@ -533,13 +543,27 @@ function renderProfiles() {
             const div = document.createElement('div');
             div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center';
             div.dataset.profileKey = key;
+            div.dataset.profileTitle = profile.title || 'Untitled Profile';
             div.setAttribute('role', 'option');
             div.setAttribute('aria-selected', (key === selectedProfileKey) ? 'true' : 'false');
             div.setAttribute('aria-label', profile.title || 'Untitled Profile');
 
+            const leftSide = document.createElement('div');
+            leftSide.className = 'flex items-baseline gap-2 min-w-0';
             const titleSpan = document.createElement('span');
             titleSpan.textContent = profile.title || 'Untitled Profile';
-            div.appendChild(titleSpan);
+            leftSide.appendChild(titleSpan);
+
+            // Lineage badge — "from <parent>" when this is a user-edited clone of a default
+            const parentRecord = profileRecord.parentId ? availableProfiles[profileRecord.parentId] : null;
+            const parentTitle = parentRecord?.profile?.title;
+            if (parentTitle) {
+                const badge = document.createElement('span');
+                badge.className = 'text-[14px] px-2 py-0.5 rounded-full bg-white/15 text-[var(--low-contrast-white)] whitespace-nowrap';
+                badge.textContent = `from ${parentTitle}`;
+                leftSide.appendChild(badge);
+            }
+            div.appendChild(leftSide);
 
             if (isHidden) {
                 div.classList.add('text-[var(--low-contrast-white)]');
@@ -567,7 +591,7 @@ function renderProfiles() {
                 console.log('renderProfiles: Profile item clicked:', profile.title);
                 const clickedItem = e.currentTarget;
 
-                const allItems = clickedItem.parentElement.children;
+                const allItems = clickedItem.parentElement.querySelectorAll('[data-profile-key]');
                 for(const item of allItems) {
                     item.classList.remove('bg-[#385a92]', 'text-white', 'rounded-[8px]', 'bg-gray-200', 'text-black');
                     item.setAttribute('aria-selected', 'false');
@@ -593,6 +617,19 @@ function renderProfiles() {
             });
 
             container.appendChild(div);
+        };
+
+        // Partition: built-in defaults vs user-owned (kv records, includes clones)
+        const defaultsList = sortedProfiles.filter(([, r]) => r.isDefault === true);
+        const yoursList = sortedProfiles.filter(([, r]) => r.isDefault !== true);
+
+        if (defaultsList.length > 0) {
+            renderSectionHeader('Defaults');
+            defaultsList.forEach(renderProfileItem);
+        }
+        if (yoursList.length > 0) {
+            renderSectionHeader('Your Profiles');
+            yoursList.forEach(renderProfileItem);
         }
 
         console.log('renderProfiles: Total visible profiles:', visibleProfileCount);
@@ -631,6 +668,17 @@ async function initFavoriteButtons() {
 
     favoriteButtons.forEach((button, index) => {
         let pressTimer = null;
+
+        // Suppress browser long-press defaults: text selection, context menu,
+        // iOS callout, touch tap-highlight, accidental drag.
+        button.style.userSelect = 'none';
+        button.style.webkitUserSelect = 'none';
+        button.style.webkitTouchCallout = 'none';
+        button.style.webkitTapHighlightColor = 'transparent';
+        button.style.touchAction = 'manipulation';
+        button.addEventListener('contextmenu', (e) => e.preventDefault());
+        button.addEventListener('selectstart', (e) => e.preventDefault());
+        button.addEventListener('dragstart', (e) => e.preventDefault());
 
         const startPress = async () => {
             if (index < 0 || index >= FAV_COUNT) {
@@ -1027,13 +1075,26 @@ function filterProfiles(searchTerm) {
         const div = document.createElement('div');
         div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center';
         div.dataset.profileKey = key;
+        div.dataset.profileTitle = profile.title || 'Untitled Profile';
         div.setAttribute('role', 'option');
         div.setAttribute('aria-selected', 'false');
         div.setAttribute('aria-label', profile.title || 'Untitled Profile');
 
+        const leftSide = document.createElement('div');
+        leftSide.className = 'flex items-baseline gap-2 min-w-0';
         const titleSpan = document.createElement('span');
         titleSpan.textContent = profile.title || 'Untitled Profile';
-        div.appendChild(titleSpan);
+        leftSide.appendChild(titleSpan);
+
+        const parentRecord = profileRecord.parentId ? availableProfiles[profileRecord.parentId] : null;
+        const parentTitle = parentRecord?.profile?.title;
+        if (parentTitle) {
+            const badge = document.createElement('span');
+            badge.className = 'text-[14px] px-2 py-0.5 rounded-full bg-white/15 text-[var(--low-contrast-white)] whitespace-nowrap';
+            badge.textContent = `from ${parentTitle}`;
+            leftSide.appendChild(badge);
+        }
+        div.appendChild(leftSide);
 
         if (isHidden) {
             div.classList.add('text-[var(--low-contrast-white)]');
@@ -1058,7 +1119,7 @@ function filterProfiles(searchTerm) {
             console.log('filterProfiles: Profile item clicked:', profile.title);
             const clickedItem = e.currentTarget;
 
-            const allItems = clickedItem.parentElement.children;
+            const allItems = clickedItem.parentElement.querySelectorAll('[data-profile-key]');
             for(const item of allItems) {
                 item.classList.remove('bg-[#385a92]', 'text-white', 'rounded-[8px]', 'bg-gray-200', 'text-black');
                 item.setAttribute('aria-selected', 'false');
@@ -1294,10 +1355,15 @@ export async function initializeProfileSelector() {
                 delete availableProfiles[selectedProfileKey];
                 selectedProfileKey = parentId && availableProfiles[parentId] ? parentId : null;
                 renderProfiles();
-                updateSelectedProfileView(selectedProfileKey ? availableProfiles[selectedProfileKey] : null);
+                // updateSelectedProfileView expects the rendered DOM element, not the record
+                const nextItem = selectedProfileKey
+                    ? document.querySelector(`#profile-list [data-profile-key="${CSS.escape(selectedProfileKey)}"]`)
+                    : null;
+                updateSelectedProfileView(nextItem);
                 showToast('Profile reset to original.', 2500, 'success');
             } catch (e) {
-                showToast('Failed to reset profile.', 3000, 'error');
+                console.error('[ResetProfile] delete failed:', e);
+                showToast(`Failed to reset profile: ${e.message}`, 4000, 'error');
             }
         });
     }

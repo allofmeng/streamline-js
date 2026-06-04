@@ -60,6 +60,8 @@ let steamApiDebounce = null;
 let hotWaterApiDebounce = null;
 const API_DEBOUNCE_MS = 1000;
 
+let grindStep = 0.1;
+
 export function flashPlusMinusButton(button) {
     // Add the flash animation class
     button.classList.add('flash-animation');
@@ -391,6 +393,9 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
 
     if (!minusBtn || !plusBtn || !document.getElementById(valueElId)) return;
 
+    const getStep = () => typeof step === 'function' ? step() : step;
+    const format = (v) => typeof formatter === 'function' ? formatter(v) : v;
+
     let debounceTimer = null;
     const scheduleUpdate = (value) => {
         clearTimeout(debounceTimer);
@@ -403,8 +408,8 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
         if (!valueEl) return;
         let currentValue = parseFloat(valueEl.textContent);
         if (currentValue > min) {
-            currentValue -= step;
-            valueEl.textContent = formatter(currentValue);
+            currentValue -= getStep();
+            valueEl.textContent = format(currentValue);
             scheduleUpdate(currentValue);
         }
     });
@@ -414,8 +419,8 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
         const valueEl = document.getElementById(valueElId);
         if (!valueEl) return;
         let currentValue = parseFloat(valueEl.textContent);
-        currentValue += step;
-        valueEl.textContent = formatter(currentValue);
+        currentValue += getStep();
+        valueEl.textContent = format(currentValue);
         scheduleUpdate(currentValue);
     });
 }
@@ -1079,6 +1084,7 @@ export function initUI(callbacks) {
                 alert('Grind setting must be at least 0.');
                 value = 0;
             }
+            grindStep = Number.isInteger(value) ? 1 : 0.1;
             grindValueEl.textContent = Number.isInteger(value) ? String(value) : value.toFixed(1);
             updateGrindValue(value);
         });
@@ -1174,7 +1180,7 @@ export function initUI(callbacks) {
     setupValueAdjuster('drink-out-minus', 'drink-out-plus', 'drink-out-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('out', val); updateDrinkRatio(); });
     setupValueAdjuster('temp-minus', 'temp-plus', 'temp-value', 1, 0, (val) => `${val}°c`, updateTemperatureValue);
     setupValueAdjuster('dose-in-minus', 'dose-in-plus', 'dose-in-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('in', val); updateDrinkRatio(); });
-    setupValueAdjuster('grind-minus', 'grind-plus', 'grind-value', 0.1, 0, (val) => val.toFixed(1), updateGrindValue);
+    setupValueAdjuster('grind-minus', 'grind-plus', 'grind-value', () => grindStep, 0, (val) => grindStep === 1 ? String(Math.round(val)) : val.toFixed(1), updateGrindValue);
     setupValueAdjuster('flush-minus', 'flush-plus', 'flush-value', 1, 0, (val) => `${val}s`, (val) => {
         updateflushValue(val);
         updateFlushDisplay(val);

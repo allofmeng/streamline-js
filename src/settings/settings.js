@@ -192,7 +192,7 @@ const settingsTree = {
     'machine': {
         name: 'Machine',
         subcategories: [
-            { id: 'usbchargermode', name: 'USB Charger Mode', settingsCategory: 'usbchargermode' }
+            { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' }
         ]
     },
     'maintenance': {
@@ -230,7 +230,6 @@ const settingsTree = {
             { id: 'presence', name: 'Presence Detection', settingsCategory: 'presence' },
             { id: 'fontsize', name: 'Display Size', settingsCategory: 'fontsize' },
             { id: 'resolution', name: 'Resolution', settingsCategory: 'resolution' },
-            { id: 'smartcharging', name: 'Smart Charging', settingsCategory: 'smartcharging' },
             { id: 'screensaver', name: 'Screen Saver', settingsCategory: 'screensaver' },
             { id: 'machineadvancedsettings', name: 'Machine Advanced Settings', settingsCategory: 'de1advanced' },
             { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' }
@@ -505,7 +504,6 @@ export function renderSettingsContent(category) {
             break;
         case 'de1':
         case 'fanthreshold':
-        case 'usbchargermode':
         case 'watertank':
         case 'flush':
         case 'steam':
@@ -513,6 +511,10 @@ export function renderSettingsContent(category) {
         case 'calib_fan':
             isLoading = settingsCache.de1Loading;
             error = settingsCache.de1Error;
+            break;
+        case 'usbchargermode':
+            isLoading = settingsCache.de1Loading || settingsCache.reaLoading;
+            error = settingsCache.de1Error || settingsCache.reaError;
             break;
         case 'de1advanced':
         case 'calib_refillkit':
@@ -614,8 +616,6 @@ export function renderSettingsContent(category) {
         case 'misc':
         case 'miscellaneous':
             return renderMiscellaneousSettings();
-        case 'smartcharging':
-            return renderSmartChargingSettings();
         case 'firmware':
         case 'firmwareupdate':
             return renderFirmwareUpdateSettings();
@@ -1043,24 +1043,125 @@ export function renderFanThresholdSettings(settings) {
     `;
 }
 
-// Render USB Charger Mode settings
+// Render USB Charger settings — combines USB charger toggle + Smart Charging controls
 export function renderUsbChargerModeSettings(settings) {
-    if (!settings) {
+    const reaSettings = settingsCache.rea;
+    if (!settings || !reaSettings) {
         return `
             <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
                 <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                    <p class="leading-[1.2]">USB Charger Mode</p>
+                    <p class="leading-[1.2]">USB Charger</p>
                 </div>
-                <div class="text-red-500 p-4 text-[24px]">Failed to load DE1 settings</div>
+                <div class="text-red-500 p-4 text-[24px]">Failed to load settings</div>
             </div>
         `;
     }
+
+    const chargingMode = reaSettings.chargingMode || 'disabled';
+    const nightModeEnabled = reaSettings.nightModeEnabled || false;
+    const sleepTime = reaSettings.nightModeSleepTime ?? 1320;
+    const morningTime = reaSettings.nightModeMorningTime ?? 420;
+    const chargingState = reaSettings.chargingState;
+
+    const phaseLabels = {
+        inactive: 'Inactive',
+        normal: 'Normal',
+        hovering: 'Hovering',
+        chargingToMax: 'Charging to Max',
+        sleeping: 'Sleeping'
+    };
+
+    const nightModeSection = chargingMode !== 'disabled' ? `
+        <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+        <div class="content-stretch flex flex-col items-start relative w-full">
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]">Night Mode</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="night-mode-toggle"
+                               class="sr-only peer"
+                               ${nightModeEnabled ? 'checked' : ''}
+                               onchange="handleNightModeToggle(this.checked)">
+                        <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                    </label>
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    Charge conservatively overnight between a sleep time and a morning time
+                </p>
+            </div>
+        </div>
+
+        ${nightModeEnabled ? `
+        <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+        <div class="content-stretch flex flex-col items-start relative w-full">
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]">Sleep Time</p>
+                    </div>
+                    <input type="time"
+                           id="night-mode-sleep-time"
+                           class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[200px] text-[var(--text-primary)] text-[26px] font-bold text-center"
+                           value="${minutesToTimeString(sleepTime)}"
+                           onchange="handleNightModeTimeChange('sleep', this.value)">
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    Time to start night charging mode (e.g. 22:00)
+                </p>
+            </div>
+        </div>
+
+        <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+        <div class="content-stretch flex flex-col items-start relative w-full">
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]">Morning Time</p>
+                    </div>
+                    <input type="time"
+                           id="night-mode-morning-time"
+                           class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[200px] text-[var(--text-primary)] text-[26px] font-bold text-center"
+                           value="${minutesToTimeString(morningTime)}"
+                           onchange="handleNightModeTimeChange('morning', this.value)">
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    Time to end night charging mode (e.g. 07:00)
+                </p>
+            </div>
+        </div>
+        ` : ''}
+    ` : '';
+
+    const statusSection = chargingState ? `
+        <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+        <div class="content-stretch flex flex-col items-start relative w-full">
+            <div class="content-stretch flex flex-col gap-[20px] items-start relative w-full">
+                <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                    <p class="leading-[1.2]">Charging Status</p>
+                </div>
+                <div class="grid grid-cols-2 gap-x-8 gap-y-4 w-full text-[22px] text-[var(--text-primary)]">
+                    <span class="font-semibold">Battery</span>
+                    <span>${chargingState.batteryPercent ?? '--'}%${chargingState.isEmergency ? ' (emergency)' : ''}</span>
+                    <span class="font-semibold">Phase</span>
+                    <span>${phaseLabels[chargingState.currentPhase] || chargingState.currentPhase || '--'}</span>
+                    <span class="font-semibold">USB Charger</span>
+                    <span>${chargingState.usbChargerOn ? 'On' : 'Off'}</span>
+                </div>
+            </div>
+        </div>
+    ` : '';
 
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
 
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                <p class="leading-[1.2]">USB Charger Mode</p>
+                <p class="leading-[1.2]">USB Charger</p>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -1082,6 +1183,62 @@ export function renderUsbChargerModeSettings(settings) {
                     <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
                 </label>
             </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]">Charging Mode</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-[16px] w-full">
+                        ${[
+                            { value: 'disabled',         label: 'Charge to 100%',   sub: 'no battery management' },
+                            { value: 'highAvailability', label: 'Charge to 95%',    sub: 'slightly better battery life' },
+                            { value: 'balanced',         label: 'Charge up to 80%', sub: 'better battery life' },
+                            { value: 'longevity',        label: 'Charge up to 55%', sub: 'best battery life' }
+                        ].map(({ value, label, sub }) => {
+                            const active = chargingMode === value;
+                            return `<button
+                                onclick="handleSmartChargingModeChange('${value}')"
+                                aria-pressed="${active}"
+                                class="flex flex-col items-start justify-center gap-[6px] px-[24px] py-[20px] rounded-[14px] border-2 transition-colors duration-150 cursor-pointer text-left
+                                    ${active
+                                        ? 'bg-[#385a92] border-[#385a92] text-white'
+                                        : 'bg-[var(--box-color)] border-[var(--profile-button-outline-color)] text-[var(--text-primary)]'}">
+                                <span class="font-['Inter:Bold',sans-serif] font-bold text-[26px] leading-tight">${label}</span>
+                                <span class="font-['Inter:Regular',sans-serif] text-[19px] leading-snug opacity-80">${sub}</span>
+                            </button>`;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+
+            ${nightModeSection}
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]">Dim the screen when low battery</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="low-battery-brightness-limit-toggle"
+                                   class="sr-only peer"
+                                   ${reaSettings.lowBatteryBrightnessLimit ? 'checked' : ''}
+                                   onchange="window.updateReaSetting('lowBatteryBrightnessLimit', this.checked)">
+                            <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                       
+                    </p>
+                </div>
+            </div>
+
+            ${statusSection}
         </div>
     `;
 }
@@ -2075,193 +2232,6 @@ function timeStringToMinutes(timeStr) {
     const [h, m] = timeStr.split(':').map(Number);
     return h * 60 + m;
 }
-
-// Render Smart Charging settings
-export function renderSmartChargingSettings() {
-    const reaSettings = settingsCache.rea;
-    if (!reaSettings) {
-        return renderLoadingState('Smart Charging');
-    }
-
-    const chargingMode = reaSettings.chargingMode || 'disabled';
-    const nightModeEnabled = reaSettings.nightModeEnabled || false;
-    const sleepTime = reaSettings.nightModeSleepTime ?? 1320;
-    const morningTime = reaSettings.nightModeMorningTime ?? 420;
-    const chargingState = reaSettings.chargingState;
-
-    const phaseLabels = {
-        inactive: 'Inactive',
-        normal: 'Normal',
-        hovering: 'Hovering',
-        chargingToMax: 'Charging to Max',
-        sleeping: 'Sleeping'
-    };
-
-    const nightModeSection = chargingMode !== 'disabled' ? `
-        <!-- Divider -->
-        <div class="h-0 relative w-full">
-            <hr class="border-t border-[#c9c9c9] w-full" />
-        </div>
-
-        <div class="content-stretch flex flex-col items-start relative w-full">
-            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Night Mode</p>
-                    </div>
-                    <input type="checkbox"
-                           id="night-mode-toggle"
-                           class="toggle toggle-lg toggle-primary"
-                           ${nightModeEnabled ? 'checked' : ''}
-                           onchange="handleNightModeToggle(this.checked)">
-                </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                    Charge conservatively overnight between a sleep time and a morning time
-                </p>
-            </div>
-        </div>
-
-        ${nightModeEnabled ? `
-        <!-- Divider -->
-        <div class="h-0 relative w-full">
-            <hr class="border-t border-[#c9c9c9] w-full" />
-        </div>
-
-        <div class="content-stretch flex flex-col items-start relative w-full">
-            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Sleep Time</p>
-                    </div>
-                    <input type="time"
-                           id="night-mode-sleep-time"
-                           class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[200px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                           value="${minutesToTimeString(sleepTime)}"
-                           onchange="handleNightModeTimeChange('sleep', this.value)">
-                </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                    Time to start night charging mode (e.g. 22:00)
-                </p>
-            </div>
-        </div>
-
-        <!-- Divider -->
-        <div class="h-0 relative w-full">
-            <hr class="border-t border-[#c9c9c9] w-full" />
-        </div>
-
-        <div class="content-stretch flex flex-col items-start relative w-full">
-            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Morning Time</p>
-                    </div>
-                    <input type="time"
-                           id="night-mode-morning-time"
-                           class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[200px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                           value="${minutesToTimeString(morningTime)}"
-                           onchange="handleNightModeTimeChange('morning', this.value)">
-                </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                    Time to end night charging mode (e.g. 07:00)
-                </p>
-            </div>
-        </div>
-        ` : ''}
-    ` : '';
-
-    const statusSection = chargingState ? `
-        <!-- Divider -->
-        <div class="h-0 relative w-full">
-            <hr class="border-t border-[#c9c9c9] w-full" />
-        </div>
-
-        <div class="content-stretch flex flex-col items-start relative w-full">
-            <div class="content-stretch flex flex-col gap-[20px] items-start relative w-full">
-                <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                    <p class="leading-[1.2]">Charging Status</p>
-                </div>
-                <div class="grid grid-cols-2 gap-x-8 gap-y-4 w-full text-[22px] text-[var(--text-primary)]">
-                    <span class="font-semibold">Battery</span>
-                    <span>${chargingState.batteryPercent ?? '--'}%${chargingState.isEmergency ? ' (emergency)' : ''}</span>
-                    <span class="font-semibold">Phase</span>
-                    <span>${phaseLabels[chargingState.currentPhase] || chargingState.currentPhase || '--'}</span>
-                    <span class="font-semibold">USB Charger</span>
-                    <span>${chargingState.usbChargerOn ? 'On' : 'Off'}</span>
-                </div>
-            </div>
-        </div>
-    ` : '';
-
-    return `
-        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
-            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                <p class="leading-[1.2]">Smart Charging</p>
-            </div>
-
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Charging Mode</p>
-                    </div>
-                    <div class="grid grid-cols-2 gap-[16px] w-full">
-                        ${[
-                            { value: 'disabled',        label: 'Disabled',          sub: 'No smart charging' },
-                            { value: 'longevity',       label: 'Longevity',         sub: 'Caps at 45–55%' },
-                            { value: 'balanced',        label: 'Balanced',          sub: 'Caps at 40–80%' },
-                            { value: 'highAvailability',label: 'High Availability', sub: 'Caps at 80–95%' }
-                        ].map(({ value, label, sub }) => {
-                            const active = chargingMode === value;
-                            return `<button
-                                onclick="handleSmartChargingModeChange('${value}')"
-                                aria-pressed="${active}"
-                                class="flex flex-col items-start justify-center gap-[6px] px-[24px] py-[20px] rounded-[14px] border-2 transition-colors duration-150 cursor-pointer text-left
-                                    ${active
-                                        ? 'bg-[#385a92] border-[#385a92] text-white'
-                                        : 'bg-[var(--box-color)] border-[var(--profile-button-outline-color)] text-[var(--text-primary)]'}">
-                                <span class="font-['Inter:Bold',sans-serif] font-bold text-[26px] leading-tight">${label}</span>
-                                <span class="font-['Inter:Regular',sans-serif] text-[19px] leading-snug opacity-80">${sub}</span>
-                            </button>`;
-                        }).join('')}
-                    </div>
-                </div>
-            </div>
-
-            ${nightModeSection}
-
-            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
-
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Low Battery Brightness Limit</p>
-                    </div>
-                    <div class="flex gap-[16px] w-full">
-                        ${[
-                            { value: true,  label: 'Enabled',  sub: 'Caps at 20% below 30%' },
-                            { value: false, label: 'Disabled', sub: 'No brightness limit' }
-                        ].map(({ value, label, sub }) => {
-                            const active = !!reaSettings.lowBatteryBrightnessLimit === value;
-                            return `<button
-                                onclick="window.updateReaSetting('lowBatteryBrightnessLimit', ${value})"
-                                aria-pressed="${active}"
-                                class="flex flex-col items-start justify-center gap-[6px] px-[24px] py-[20px] rounded-[14px] border-2 transition-colors duration-150 cursor-pointer text-left flex-1
-                                    ${active
-                                        ? 'bg-[#385a92] border-[#385a92] text-white'
-                                        : 'bg-[var(--box-color)] border-[var(--profile-button-outline-color)] text-[var(--text-primary)]'}">
-                                <span class="font-['Inter:Bold',sans-serif] font-bold text-[26px] leading-tight">${label}</span>
-                                <span class="font-['Inter:Regular',sans-serif] text-[19px] leading-snug opacity-80">${sub}</span>
-                            </button>`;
-                        }).join('')}
-                    </div>
-                </div>
-            </div>
-
-            ${statusSection}
-        </div>
-    `;
-}
-
 
 // Render Steam settings
 export function renderSteamSettings() {
@@ -3827,7 +3797,7 @@ function getCategoryTitle(category) {
         case 'flush': return 'Flush Settings';
         case 'de1': return 'DE1 Settings';
         case 'fanthreshold': return 'Fan Threshold Settings';
-        case 'usbchargermode': return 'USB Charger Mode Settings';
+        case 'usbchargermode': return 'USB Charger Settings';
         case 'de1advanced': return 'Machine Advanced Settings';
         default: return 'Settings';
     }

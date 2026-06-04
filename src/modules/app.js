@@ -1,4 +1,4 @@
-import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings } from './api.js';
+import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings } from './api.js';
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
@@ -129,6 +129,29 @@ let timeToReadyMessage = null;
 let isHeatingFromTimeToReady = false; // Flag to track if we're currently in a heating phase from time-to-ready
 let timeToReadyStatus = null; // Track the status from time-to-ready data
 
+// Scale reconnect text state — driven by /ws/v1/devices scanning flag + wake grace window
+let isScaleScanning = false;
+let isInWakeGracePeriod = false;
+let wakeGraceTimeout = null;
+const WAKE_RECONNECT_GRACE_MS = 4000;
+
+function renderScaleDisconnectedText() {
+    if (isScaleConnected) return;
+    const showScanning = isScaleScanning || isInWakeGracePeriod;
+    ui.updateWeight(showScanning ? 'Scanning...' : '[Reconnect]', {
+        weightText: { add: ['text-red-600'] },
+        dataWeight: { add: ['text-[var(--mimoja-blue)]'], remove: ['text-[var(--text-primary)]'] }
+    });
+}
+
+function handleDeviceWsData(data) {
+    const next = !!data?.scanning;
+    if (next !== isScaleScanning) {
+        isScaleScanning = next;
+        renderScaleDisconnectedText();
+    }
+}
+
 // To filter the chart to only show data from the 'pouring' state,
 // set this variable to true in your browser's developer console.
 let filterGraphToPouringState = true;
@@ -140,11 +163,7 @@ function onScaleReconnect() {
 function onScaleDisconnect() {
     logger.warn('Scale has disconnected.');
     isScaleConnected = false;
-    // Keep the scale info container visible but show reconnect status
-    ui.updateWeight('[Reconnect]', {
-        weightText: { add: ['text-red-600'] },
-        dataWeight: { add: ['text-[var(--mimoja-blue)]'], remove: ['text-[var(--text-primary)]'] }
-    });
+    renderScaleDisconnectedText();
 }
 
 const deviceErrorCopy = {
@@ -323,6 +342,18 @@ function handleData(data) {
     if (wasSleeping && state !== MachineState.SLEEPING && state !== MachineState.ERROR) {
         logger.info('Machine woke from sleep. Reloading initial data.');
         loadInitialData();
+
+        // Hold off "[Reconnect]" — REA fires devices ws scanning ~3s after wake.
+        // Show "Scanning..." until grace window expires or scanning flag arrives.
+        if (!isScaleConnected) {
+            isInWakeGracePeriod = true;
+            clearTimeout(wakeGraceTimeout);
+            wakeGraceTimeout = setTimeout(() => {
+                isInWakeGracePeriod = false;
+                renderScaleDisconnectedText();
+            }, WAKE_RECONNECT_GRACE_MS);
+            renderScaleDisconnectedText();
+        }
     }
 
     // Check if the machine is in an error state that indicates disconnection
@@ -487,14 +518,7 @@ function handleScaleData(data) {
     } else {
         // We received a message without a weight.
         if (!isScaleConnected) {
-            // If it was never connected and no weight data, keep it hidden.
-            // if (scaleInfoContainer) {
-            //     scaleInfoContainer.style.display = 'none';
-            // }
-            ui.updateWeight('[Reconnect]', {
-                weightText: { add: ['text-red-600'] },
-                dataWeight: { add: ['text-[var(--mimoja-blue)]'] ,remove:['text-[var(--text-primary)]']}
-            });
+            renderScaleDisconnectedText();
         }
         logger.warn('Scale message received without weight data.');
     }
@@ -511,6 +535,9 @@ async function handleWeightClick() {
         return;
     }
 
+    // Untappable while a scan is already in flight (or grace window after wake)
+    if (isScaleScanning || isInWakeGracePeriod) return;
+
     if (isConnectingScale) return;
 
     isConnectingScale = true;
@@ -523,7 +550,7 @@ async function handleWeightClick() {
                 () => {
                     sendDeviceCommand({ command: 'scan', connect: true });
                 },
-                () => {},
+                handleDeviceWsData,
                 () => {},
                 () => {},
                 handleDeviceConnectionError
@@ -539,11 +566,8 @@ async function handleWeightClick() {
             if (attempts > maxAttempts) {
                 clearInterval(poll);
                 ui.showToast('Scale Not Found', 3000, 'error');
-                ui.updateWeight('[Reconnect]', {
-                    weightText: { add: ['text-red-600'] },
-                    dataWeight: { add: ['text-[var(--mimoja-blue)]'] ,remove:['text-[var(--text-primary)]']}
-                });
                 isConnectingScale = false;
+                renderScaleDisconnectedText();
                 // If scale connection failed, hide the container if it was never truly connected
                 if (!isScaleConnected) {
                     const scaleInfoContainer = document.getElementById('scale-info-container');
@@ -576,11 +600,8 @@ async function handleWeightClick() {
         }, 1000);
     } catch (error) {
         ui.showToast('Failed to initiate scale connection', 3000, 'error');
-        ui.updateWeight('[Reconnect]', {
-            weightText: { add: ['text-red-600'] },
-            dataWeight: { add: ['text-[var(--mimoja-blue)]'] ,remove:['text-[var(--text-primary)]']}
-        });
         isConnectingScale = false;
+        renderScaleDisconnectedText();
         // If initial connection failed, hide the container if it was never truly connected
         // if (!isScaleConnected) {
         //     const scaleInfoContainer = document.getElementById('scale-info-container');
@@ -968,6 +989,7 @@ async function initMainPageOnce() {
             isDe1Connected = false;
         });
         connectScaleWebSocket(handleScaleData, onScaleReconnect, onScaleDisconnect);
+        connectDeviceWebSocket(handleDeviceWsData, () => {}, () => {}, handleDeviceConnectionError);
         initWaterTankSocket();
         connectTimeToReadyWebSocket(handleTimeToReadyData);
         connectDisplayWebSocket((data) => logger.debug('Display state updated:', data));
