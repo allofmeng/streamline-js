@@ -541,7 +541,7 @@ function renderProfiles() {
             console.log('renderProfiles: Adding profile to list', profile.title);
 
             const div = document.createElement('div');
-            div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center';
+            div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center no-select';
             div.dataset.profileKey = key;
             div.dataset.profileTitle = profile.title || 'Untitled Profile';
             div.setAttribute('role', 'option');
@@ -1080,7 +1080,7 @@ function filterProfiles(searchTerm) {
         console.log('filterProfiles: Adding profile to filtered list', profile.title, 'isHidden:', isHidden);
 
         const div = document.createElement('div');
-        div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center';
+        div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center no-select';
         div.dataset.profileKey = key;
         div.dataset.profileTitle = profile.title || 'Untitled Profile';
         div.setAttribute('role', 'option');

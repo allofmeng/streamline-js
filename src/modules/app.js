@@ -137,6 +137,10 @@ const WAKE_RECONNECT_GRACE_MS = 4000;
 
 function renderScaleDisconnectedText() {
     if (isScaleConnected) return;
+    // Container is display:none by default and only revealed on first weight frame.
+    // Force it visible here so the [Reconnect] / Scanning text — and the tap target — render.
+    const scaleInfoContainer = document.getElementById('scale-info-container');
+    if (scaleInfoContainer) scaleInfoContainer.style.display = '';
     const showScanning = isScaleScanning || isInWakeGracePeriod;
     ui.updateWeight(showScanning ? 'Scanning...' : '[Reconnect]', {
         weightText: { add: ['text-red-600'] },
@@ -151,10 +155,6 @@ function handleDeviceWsData(data) {
         renderScaleDisconnectedText();
     }
 }
-
-// To filter the chart to only show data from the 'pouring' state,
-// set this variable to true in your browser's developer console.
-let filterGraphToPouringState = true;
 
 function onScaleReconnect() {
     logger.info('Scale WebSocket reconnected.');
@@ -383,19 +383,30 @@ function handleData(data) {
                 } catch { /* fall through to normal stop reason */ }
             }
 
-            // Show stop-reason toast
-            const finalWeight = finishedShot.weights?.at(-1) ?? latestScaleWeight;
+            // Stop-reason classification — priority depends on whether scale is connected.
+            // Scale present → weight is the authoritative stop signal; volume match is
+            // coincidental and would mislead, so suppress it. Scale absent → volume
+            // is the only mass proxy DE1 has, so it's the valid non-time stop reason.
+            const finalWeight = finishedShot.finalWeight ?? finishedShot.weights?.at(-1) ?? latestScaleWeight;
             const finalVolume = finishedShot.volumes?.at(-1) ?? 0;
             const targetWeight = parseFloat(currentActiveProfile?.target_weight ?? 0);
             const targetVolume = parseFloat(currentActiveProfile?.target_volume ?? 0);
+            const profileSeconds = (currentActiveProfile?.steps ?? [])
+                .reduce((sum, s) => sum + (parseFloat(s.seconds) || 0), 0);
+
+            const WEIGHT_HIT = targetWeight > 0 && finalWeight !== null && finalWeight >= targetWeight * 0.93;
+            const VOLUME_HIT = targetVolume > 0 && finalVolume >= targetVolume * 0.93;
+            const TIME_HIT = profileSeconds > 0 && totalS >= profileSeconds * 0.95;
 
             let stopReason;
-            if (targetWeight > 0 && finalWeight !== null && finalWeight >= targetWeight * 0.93) {
-                stopReason = `Espresso weight reached: ${finalWeight.toFixed(1)}g`;
-            } else if (targetVolume > 0 && finalVolume >= targetVolume * 0.93) {
-                stopReason = `Espresso volume reached: ${Math.round(finalVolume)}ml`;
+            if (isScaleConnected && WEIGHT_HIT) {
+                stopReason = `Stopped by weight: ${finalWeight.toFixed(1)}g`;
+            } else if (!isScaleConnected && VOLUME_HIT) {
+                stopReason = `Stopped by volume: ${Math.round(finalVolume)}ml`;
+            } else if (TIME_HIT) {
+                stopReason = `Stopped by time: ${totalS.toFixed(1)}s`;
             } else {
-                stopReason = `Shot complete: ${totalS.toFixed(1)}s`;
+                stopReason = `Shot stopped: ${totalS.toFixed(1)}s`;
             }
             ui.showToast(stopReason, 6000, 'info');
 

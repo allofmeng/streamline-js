@@ -120,7 +120,10 @@ function calculateAndRender(shotData) {
         const totalVolume = shotData.volumes[lastIndex] || 0;
         const piWeight = shotData.weights[piEndIndex];
         const piVolume = shotData.volumes[piEndIndex] || 0;
-        const exWeight = (totalWeight !== null && piWeight !== null) ? totalWeight - piWeight : null;
+        // Use settled finalWeight so pi + ex == total. Drip-down after pump stop
+        // belongs to extraction (water already in puck at cutoff), not preinfusion.
+        const displayTotal = shotData.finalWeight ?? totalWeight;
+        const exWeight = (displayTotal !== null && displayTotal !== undefined && piWeight !== null) ? displayTotal - piWeight : null;
         const exVolume = totalVolume - piVolume;
 
         // --- Rendering ---
@@ -141,10 +144,7 @@ function calculateAndRender(shotData) {
         }
 
         updateText(elements.total.time, `${totalTime.toFixed(1)}`);
-        // Prefer the latest settled scale reading over the last in-pour sample —
-        // scale keeps reporting through drip-down after substate leaves 'pouring'.
-        const displayWeight = shotData.finalWeight ?? totalWeight;
-        updateText(elements.total.weight, displayWeight !== null && displayWeight !== undefined ? `${displayWeight.toFixed(1)}g` : '0.0');
+        updateText(elements.total.weight, displayTotal !== null && displayTotal !== undefined ? `${displayTotal.toFixed(1)}g` : '0.0');
         updateText(elements.total.volume, `${totalVolume.toFixed(0)}`);
     } catch (error) {
         logger.error('Error in calculateAndRender:', error);
@@ -194,7 +194,9 @@ export function renderPastShot(shotRecord) {
         pastShotData.pressures.push(m.machine.pressure);
         pastShotData.flows.push(m.machine.flow);
         pastShotData.weights.push(m.scale?.weight ?? null); // Safely access weight, default to null
-        pastShotData.temperatures.push(m.machine.mixTemperature);
+        // Use groupTemperature to match the chart line; mixTemperature is the
+        // pre-group mid-mix sensor and reads 2–5°C off the brew temp at puck.
+        pastShotData.temperatures.push(m.machine.groupTemperature);
         pastShotData.substates.push(m.machine.state.substate);
 
         const idx = pastShotData.timestamps.length - 1;
@@ -231,7 +233,7 @@ export function updateShotData(de1Data, scaleWeight) {
     currentShot.pressures.push(de1Data.pressure);
     currentShot.flows.push(de1Data.flow);
     currentShot.weights.push(scaleWeight ?? null); // Use null if scaleWeight is undefined
-    currentShot.temperatures.push(de1Data.mixTemperature);
+    currentShot.temperatures.push(de1Data.groupTemperature);
     currentShot.substates.push(de1Data.state.substate);
 
     if (currentShot.timestamps.length > 1) {
