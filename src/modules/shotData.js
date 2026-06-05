@@ -78,6 +78,7 @@ export function clearShotData() {
         substates: [],
         volumes: [],
         preinfusionEndIndex: -1,
+        finalWeight: null,
     };
 
     const elements = getElements();
@@ -140,7 +141,10 @@ function calculateAndRender(shotData) {
         }
 
         updateText(elements.total.time, `${totalTime.toFixed(1)}`);
-        updateText(elements.total.weight, totalWeight !== null ? `${totalWeight.toFixed(1)}g` : '0.0');
+        // Prefer the latest settled scale reading over the last in-pour sample —
+        // scale keeps reporting through drip-down after substate leaves 'pouring'.
+        const displayWeight = shotData.finalWeight ?? totalWeight;
+        updateText(elements.total.weight, displayWeight !== null && displayWeight !== undefined ? `${displayWeight.toFixed(1)}g` : '0.0');
         updateText(elements.total.volume, `${totalVolume.toFixed(0)}`);
     } catch (error) {
         logger.error('Error in calculateAndRender:', error);
@@ -164,7 +168,18 @@ export function renderPastShot(shotRecord) {
         substates: [],
         volumes: [],
         preinfusionEndIndex: -1,
+        finalWeight: null,
     };
+
+    // Scan unfiltered measurements for the last non-null scale weight — captures
+    // drip-down after pouringDone that the substate filter below would skip.
+    for (let i = shotRecord.measurements.length - 1; i >= 0; i--) {
+        const w = shotRecord.measurements[i].scale?.weight;
+        if (w !== null && w !== undefined) {
+            pastShotData.finalWeight = w;
+            break;
+        }
+    }
 
     let accumulatedVolume = 0;
     for (let i = 0; i < shotRecord.measurements.length; i++) {
@@ -191,7 +206,7 @@ export function renderPastShot(shotRecord) {
         pastShotData.volumes.push(accumulatedVolume);
 
         if (m.machine.state.substate === 'pouring' && pastShotData.preinfusionEndIndex === -1) {
-            pastShotData.preinfusionEndIndex = idx;
+            if (idx >= 1) pastShotData.preinfusionEndIndex = idx - 1;
         }
     }
 
@@ -230,7 +245,11 @@ export function updateShotData(de1Data, scaleWeight) {
     }
 
     if (de1Data.state.substate === 'pouring' && currentShot.preinfusionEndIndex === -1) {
-        currentShot.preinfusionEndIndex = currentShot.timestamps.length - 1;
+        // Point at the previous sample (last preinfusion) so PI metrics don't
+        // include the first pouring tick. Skip if pouring is the very first sample.
+        if (currentShot.timestamps.length >= 2) {
+            currentShot.preinfusionEndIndex = currentShot.timestamps.length - 2;
+        }
     }
 
     calculateAndRender(currentShot);
@@ -238,6 +257,16 @@ export function updateShotData(de1Data, scaleWeight) {
 
 export function getCurrentShot() {
     return currentShot;
+}
+
+// Updated from every scale frame regardless of machine substate — captures the
+// settled weight after pouringDone that the substate filter in updateShotData drops.
+export function setFinalWeight(weight) {
+    if (!currentShot.timestamps) return;
+    if (weight === null || weight === undefined) return;
+    currentShot.finalWeight = weight;
+    // Only re-render once the shot has at least one sample, otherwise calculateAndRender bails.
+    if (currentShot.timestamps.length > 0) calculateAndRender(currentShot);
 }
 
 export function getTotalTime() {

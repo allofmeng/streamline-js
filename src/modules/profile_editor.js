@@ -123,7 +123,7 @@ function inlineEditValue(displayEl, currentValue, { min, max, step, unit, onComm
     input.step = step || 'any';
     if (min !== undefined) input.min = min;
     if (max !== undefined) input.max = max;
-    input.className = 'bg-transparent border-b-2 border-white outline-none text-center font-bold text-white';
+    input.className = 'bg-transparent border-b-2 border-[var(--text-primary)] outline-none text-center font-bold text-[var(--text-primary)]';
     input.style.cssText = `width:${Math.max(displayEl.offsetWidth, 60)}px;font-size:inherit;line-height:inherit;`;
 
     if (textNode) {
@@ -298,7 +298,7 @@ function createToggle(options, activeValue, onChange) {
     function render() {
         buttons.forEach(({ btn, value }) => {
             if (value === currentValue) {
-                btn.className = 'bg-[#button-primary-bg] text-white rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
+                btn.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
             } else {
                 btn.className = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
             }
@@ -424,7 +424,7 @@ function renderStepCards() {
             let sensorValue = step.sensor || 'coffee';
             const sensorBtn = document.createElement('button');
             sensorBtn.type = 'button';
-            sensorBtn.className = 'text-[var(--text-primary) border border-[var(--secondary-button-outline)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            sensorBtn.className = 'text-[var(--text-primary)] border border-[var(--secondary-button-outline)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
             sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
             sensorBtn.addEventListener('click', () => {
                 sensorValue = sensorValue === 'coffee' ? 'water' : 'coffee';
@@ -581,7 +581,7 @@ function renderStepCards() {
 
             const transBtn = document.createElement('button');
             transBtn.type = 'button';
-            transBtn.className = ' border border-[var(--secondary-button-outline)] text-black rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            transBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
             transBtn.textContent = transValue === 'fast' ? getTranslation('Quick') : getTranslation('Smooth');
 
             const rampText = document.createElement('span');
@@ -1427,14 +1427,14 @@ function renderStepCards() {
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
-        deleteBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-blue-50 rounded-[10px] cursor-pointer';
+        deleteBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
         deleteBtn.setAttribute('aria-label', 'Delete step');
         deleteBtn.addEventListener('click', () => { editorState.profile.steps.splice(index, 1); renderStepCards(); });
 
         const insertBtn = document.createElement('button');
         insertBtn.type = 'button';
-        insertBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-blue-50 rounded-[10px] cursor-pointer';
+        insertBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         insertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
         insertBtn.setAttribute('aria-label', 'Insert step after');
         insertBtn.addEventListener('click', () => { editorState.profile.steps.splice(index + 1, 0, deepCopy(DEFAULT_STEP)); renderStepCards(); });
@@ -1641,7 +1641,7 @@ function describeStep(step, index) {
         const valuePill = document.createElement('span');
         valuePill.className = PILL_ACTIVE;
         valuePill.textContent = `${roundTo(value, step)} ${unit}`;
-        valuePill.addEventListener('mouseenter', () => { valuePill.style.backgroundColor = 'rgba(3,88,207,0.08)'; });
+        valuePill.addEventListener('mouseenter', () => { valuePill.style.backgroundColor = 'var(--button-grey)'; });
         valuePill.addEventListener('mouseleave', () => { valuePill.style.backgroundColor = ''; });
 
         const minusBtn = document.createElement('span');
@@ -2252,7 +2252,7 @@ function renderReviewTab() {
 
             const reviewDeleteBtn = document.createElement('button');
             reviewDeleteBtn.type = 'button';
-            reviewDeleteBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-blue-50 rounded-[10px] cursor-pointer';
+            reviewDeleteBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
             reviewDeleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
             reviewDeleteBtn.setAttribute('aria-label', 'Delete step');
             reviewDeleteBtn.addEventListener('click', () => {
@@ -2263,7 +2263,7 @@ function renderReviewTab() {
 
             const reviewInsertBtn = document.createElement('button');
             reviewInsertBtn.type = 'button';
-            reviewInsertBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-blue-50 rounded-[10px] cursor-pointer';
+            reviewInsertBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
             reviewInsertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
             reviewInsertBtn.setAttribute('aria-label', 'Insert step after');
             reviewInsertBtn.addEventListener('click', () => {

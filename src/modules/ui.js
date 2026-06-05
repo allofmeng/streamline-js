@@ -4,6 +4,7 @@ import { shouldUseNumpad } from './numpad-modal.js';
 import { logger } from './logger.js';
 import * as chart from './chart.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, getTranslation } from './i18n.js';
+import { getTotalTime as getShotTotalTime } from './shotData.js';
 
 
 function initLanguageSwitcher() {
@@ -1390,15 +1391,12 @@ export function updateMachineStatus(data) {
 
             // Only start a new interval if one is NOT already running.
             if (!machineStatusEl.preinfusionOrPouringIntervalId) {
-                // Initialize counter if it doesn't exist
-                machineStatusEl.currentPreinfusionOrPouringValue = 0;
+                machineStatusEl.currentPreinfusionOrPouringValue = Math.floor(getShotTotalTime());
 
                 machineStatusEl.preinfusionOrPouringIntervalId = setInterval(() => {
-                    // Safely default value and stage text
-                    if (typeof machineStatusEl.currentPreinfusionOrPouringValue !== 'number') {
-                        machineStatusEl.currentPreinfusionOrPouringValue = 0;
-                    }
-                    machineStatusEl.currentPreinfusionOrPouringValue += 1;
+                    // Drive from the same source as shot-data-total-time so the two stay in sync.
+                    // Math.floor: integer never reads ahead of the XX.X decimal shown in shot-data.
+                    machineStatusEl.currentPreinfusionOrPouringValue = Math.floor(getShotTotalTime());
 
                     const currentStageText = machineStatusEl.currentPreinfusionOrPouringStageText || stageText;
                     machineStatusEl.innerHTML = `<span class="text-[var(--status-green-color)]">${currentStageText}</span> <span class="text-[var(--status-clickable-color)]">| ${machineStatusEl.currentPreinfusionOrPouringValue}s >></span>`;
@@ -1408,9 +1406,8 @@ export function updateMachineStatus(data) {
 
             // Whenever updateMachineStatus is called in a preinfusion/pouring state,
             // make sure the label and value reflect the *current* stage.
-            const displayValue = typeof machineStatusEl.currentPreinfusionOrPouringValue === 'number'
-                ? machineStatusEl.currentPreinfusionOrPouringValue
-                : 0;
+            const displayValue = Math.floor(getShotTotalTime());
+            machineStatusEl.currentPreinfusionOrPouringValue = displayValue;
             machineStatusEl.innerHTML = `<span class="text-[var(--status-green-color)]">${stageText}</span> <span class="text-[var(--status-clickable-color)]">| ${displayValue}s <span id="skip-step-indicator" class="cursor-pointer">>></span></span>`;
             
             // Add click handler to the skip indicator

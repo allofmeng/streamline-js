@@ -515,6 +515,9 @@ function handleScaleData(data) {
             weightText: { remove: ['text-red-600'] },
             dataWeight: { remove: ['text-[var(--mimoja-blue)]'] }
         });
+        // Carry settled weight through to the shot total card so it tracks the scale
+        // after substate leaves 'pouring' (drip-down).
+        shotData.setFinalWeight(currentWeight);
     } else {
         // We received a message without a weight.
         if (!isScaleConnected) {

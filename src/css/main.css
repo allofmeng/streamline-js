@@ -115,11 +115,12 @@ body {
     --profile-button-text-color: #FFFFFF;
     --box-color: #17191e;
     --profileselectorbg:#17191e;
-    --button-grey: #101115;
+    --button-grey: #2a2d36;
+    --secondary-button-bg: #2a3a5a;
     /* Plus Minus Flash Colors (Dark Mode) */
-    --plus-minus-flash-on-color: #272A34;
-    --plus-minus-flash-on-color2: #1a1d25;
-    --plus-minus-flash-off-color: #101115;
+    --plus-minus-flash-on-color: #4a4f5e;
+    --plus-minus-flash-on-color2: #3a3e4a;
+    --plus-minus-flash-off-color: #2a2d36;
     --bgmain-color : #101217;
     --mimoja-blue-v2: #415996;
     --text-primary: #e8e8e8;
