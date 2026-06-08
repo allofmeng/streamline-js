@@ -1,4 +1,4 @@
-import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile } from './profileManager.js';
+import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI } from './profileManager.js';
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
@@ -445,6 +445,10 @@ async function handleConfirm() {
         if (verified) {
             logger.info('Profile sent and verified. Navigating to main page.');
             setActiveProfile(selectedProfileKey);
+            // Push the freshly-sent workflow to the main-page left column + title
+            // so the user lands on a page that already reflects what's on Rea
+            // instead of waiting for the next WS snapshot to repaint.
+            applyWorkflowToMainPageUI(sentworkflow);
             showToast(`Profile Set`, 3000, 'success');
             loadPage('index.html');
         } else {
@@ -702,16 +706,9 @@ async function initFavoriteButtons() {
     favoriteButtons.forEach((button, index) => {
         let pressTimer = null;
 
-        // Suppress browser long-press defaults: text selection, context menu,
-        // iOS callout, touch tap-highlight, accidental drag.
-        button.style.userSelect = 'none';
-        button.style.webkitUserSelect = 'none';
-        button.style.webkitTouchCallout = 'none';
-        button.style.webkitTapHighlightColor = 'transparent';
-        button.style.touchAction = 'manipulation';
-        button.addEventListener('contextmenu', (e) => e.preventDefault());
-        button.addEventListener('selectstart', (e) => e.preventDefault());
-        button.addEventListener('dragstart', (e) => e.preventDefault());
+        // Browser long-press defaults (text selection, context menu, iOS callout,
+        // tap-highlight, drag) are suppressed at the page root via
+        // suppressBrowserActions(). No per-button wiring needed here.
 
         const startPress = async () => {
             if (index < 0 || index >= FAV_COUNT) {
@@ -1200,6 +1197,14 @@ export async function initializeProfileSelector() {
 
     translatePage();
     console.log('initializeProfileSelector: i18n translated');
+
+    // Suppress browser-default selection/long-press/drag/callout across the whole
+    // profile-selector page. Delegated listeners on the root also cover items
+    // added later by renderProfiles() / filterProfiles().
+    const pageRoot =
+        document.querySelector('div[role="dialog"][aria-labelledby="page_title"]')
+        || document.getElementById('profile-editor-grid');
+    suppressBrowserActions(pageRoot);
 
     // Initialize chart — wait until the element is in the DOM before calling initChart
     await new Promise((resolve) => {

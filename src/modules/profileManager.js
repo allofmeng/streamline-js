@@ -886,10 +886,11 @@ async function autoPopulateFavoritesFromHistory() {
 
     // Best-effort: recipe sidebar pre-fill from the most recent shot.
     const latest = shots[0];
-    if (latest?.workflow) _applyRecipeFromShot(latest.workflow);
+    if (latest?.workflow) applyWorkflowToMainPageUI(latest.workflow, { updateName: false });
 }
 
-function _applyRecipeFromShot(workflow) {
+export function applyWorkflowToMainPageUI(workflow, { updateName = true } = {}) {
+    if (!workflow) return;
     const context = workflow.context;
 
     const dose = context?.targetDoseWeight ?? workflow.doseData?.doseIn;
@@ -901,6 +902,8 @@ function _applyRecipeFromShot(workflow) {
     const hotWaterVol = workflow.hotWaterData?.volume;
     const hotWaterTemp = workflow.hotWaterData?.targetTemperature;
     const flushDuration = workflow.rinseData?.duration;
+
+    if (updateName && workflow.profile?.title) updateProfileName(workflow.profile.title);
 
     if (dose != null) updateDoseInDisplay(dose);
     if (yield_ != null) { updateDrinkOut(yield_); updateDrinkRatio(); }

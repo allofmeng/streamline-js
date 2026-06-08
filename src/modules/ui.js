@@ -966,8 +966,31 @@ export function initUI(callbacks) {
                 const doseInValue = parseFloat(document.getElementById('dose-in-value').textContent);
                 const drinkOutValue = parseFloat(document.getElementById('drink-out-value').textContent);
                 const currentLabel = `${doseInValue}:${drinkOutValue}`;
+                const [presetDoseStr, presetOutStr] = button.textContent.split(':');
                 openContextMenu(button, [
                     { label: `Apply ${button.textContent}`, onSelect: clickCallback },
+                    { label: 'Enter values…', onSelect: () => {
+                        openNumpadModal(makeNumpadMockInput(presetDoseStr), {
+                            fieldType: 'dose-in',
+                            onConfirm: (doseVal) => {
+                                const dose = parseFloat(doseVal);
+                                if (isNaN(dose)) return;
+                                // Open second numpad for drink-out after dose is confirmed
+                                setTimeout(() => {
+                                    openNumpadModal(makeNumpadMockInput(presetOutStr), {
+                                        fieldType: 'drink-out',
+                                        onConfirm: (outVal) => {
+                                            const out = parseFloat(outVal);
+                                            if (isNaN(out)) return;
+                                            button.textContent = `${dose}:${out}`;
+                                            flashElement(button);
+                                            showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                                        },
+                                    });
+                                }, 150);
+                            },
+                        });
+                    } },
                     { label: `Save current (${currentLabel}) here`, onSelect: () => {
                         button.textContent = currentLabel;
                         flashElement(button);
