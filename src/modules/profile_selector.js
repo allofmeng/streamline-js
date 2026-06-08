@@ -653,13 +653,13 @@ function renderProfiles() {
         const defaultsList = sortedProfiles.filter(([, r]) => r.isDefault === true);
         const yoursList = sortedProfiles.filter(([, r]) => r.isDefault !== true);
 
-        if (defaultsList.length > 0) {
-            renderSectionHeader('Defaults');
-            defaultsList.forEach(renderProfileItem);
-        }
         if (yoursList.length > 0) {
             renderSectionHeader('Your Profiles');
             yoursList.forEach(renderProfileItem);
+        }
+        if (defaultsList.length > 0) {
+            renderSectionHeader('Defaults');
+            defaultsList.forEach(renderProfileItem);
         }
 
         console.log('renderProfiles: Total visible profiles:', visibleProfileCount);

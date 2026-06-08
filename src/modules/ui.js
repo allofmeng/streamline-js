@@ -2359,11 +2359,13 @@ export function showGhcControls() {
 
     // Resize Plotly: clear inline width (set by Plotly at init) then relayout to new size.
     // 1920px canvas - 480px left aside - 172px GHC = 1268px chart width.
+    // Bump right margin so trace labels (anchored at last data point with xshift)
+    // have room to render instead of being clipped at the chart's right edge.
     const chartEl = document.getElementById('plotly-chart');
     if (chartEl) {
         chartEl.style.width = '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
-            Plotly.relayout(chartEl, { width: 1268 });
+            Plotly.relayout(chartEl, { width: 1268, 'margin.r': 11 });
         }));
     }
 }
@@ -2388,11 +2390,12 @@ export function hideGhcControls() {
     });
 
     // Restore chart to full main width: 1920px - 480px left aside = 1440px.
+    // Reset right margin to the baseLayout default.
     const chartEl = document.getElementById('plotly-chart');
     if (chartEl) {
         chartEl.style.width = '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
-            Plotly.relayout(chartEl, { width: 1440 });
+            Plotly.relayout(chartEl, { width: 1460 });
         }));
     }
 }

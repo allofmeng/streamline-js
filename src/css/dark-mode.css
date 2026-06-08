@@ -43,6 +43,23 @@
     border-color: black;
 }
 
+/* GHC column: match shot-history-panel border, recolor buttons + icons for dark mode */
+[data-theme="dark"] #ghc-controls {
+    border-left-color: black;
+}
+
+[data-theme="dark"] #ghc-controls button:not(#ghc-stop-btn) {
+    background-color: #6576A0;
+}
+
+[data-theme="dark"] #ghc-controls button img {
+    filter: brightness(0) invert(1);
+}
+
+[data-theme="dark"] #ghc-controls button:not(#ghc-stop-btn) span {
+    color: white;
+}
+
 [data-theme="dark"] footer {
     background-color: #101117;
     border-top-color: black;

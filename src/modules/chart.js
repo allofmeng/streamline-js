@@ -184,19 +184,28 @@ function getAnnotations() {
         }
     }
 
-    // 2. Sort by y-value, ascending
-    labelCandidates.sort((a, b) => a.y - b.y);
+    // Place each label INSIDE the chart, just below its trace's last point.
+    // Anchor right of the data point so text extends leftward (stays in plot area)
+    // and anchor top so text sits below the line. A solid background fill matches
+    // the chart bg so the label visually masks any trace line it might cross.
+    const minVerticalSeparation = 0.7; // y-axis units between adjacent labels
+    const minAxisBuffer = 0.3;          // floor — don't sink labels into the x-axis
+    const belowLineOffset = 0.5;        // initial drop below each line's last y
+    const labelBgColor = theme === 'dark' ? '#0d0e14' : '#ffffff';
 
-    let lastY = -Infinity;
-    const minVerticalSeparation = 0.4; // Corresponds to y-axis units
-    const minAxisBuffer = 0.2; // Minimum distance from x-axis
+    // Sort top → bottom so collisions push subsequent labels DOWN, matching
+    // the "below the lines" intent.
+    labelCandidates.sort((a, b) => b.y - a.y);
 
-    // 3. Adjust positions to avoid overlap, moving from bottom up
+    let lastY = Infinity;
     for (const candidate of labelCandidates) {
-        let finalY = Math.max(candidate.y, minAxisBuffer);
+        let finalY = candidate.y - belowLineOffset;
 
-        if (lastY !== -Infinity && finalY - lastY < minVerticalSeparation) {
-            finalY = lastY + minVerticalSeparation;
+        if (lastY - finalY < minVerticalSeparation) {
+            finalY = lastY - minVerticalSeparation;
+        }
+        if (finalY < minAxisBuffer) {
+            finalY = minAxisBuffer;
         }
 
         annotations.push({
@@ -206,9 +215,11 @@ function getAnnotations() {
             yref: 'y',
             text: candidate.name,
             showarrow: false,
-            xanchor: 'left',
-            yanchor: 'middle',
-            xshift: 5,
+            xanchor: 'right',
+            yanchor: 'top',
+            xshift: -5,
+            bgcolor: labelBgColor,
+            borderpad: 2,
             font: {
                 color: candidate.color,
                 size: 16
