@@ -151,7 +151,7 @@ export function updateDrinkOutPresetsDisplay(doseIn, drinkOut) {
     }
 }
 
-function updateTemperatureValue(newValue) {
+export function updateTemperatureValue(newValue) {
     getWorkflow().then(workflow => {
         if (workflow && workflow.profile && workflow.profile.steps) {
             // Update temperature on ALL steps as number (not string)
@@ -183,7 +183,7 @@ export function updateGrindValue(newValue) {
     window.app?.saveGrindToActiveProfile?.(parseFloat(newValue).toFixed(2));
 }
 
-function updateflushValue(newValue) {
+export function updateFlushValue(newValue) {
     // Conform to expected rinseData schema:
     // {
     //   rinseData: {
@@ -1017,7 +1017,7 @@ export function initUI(callbacks) {
                 if (isNaN(newValue)) return;
 
                 // Use workflow-based update for flush/rinse settings
-                updateflushValue(newValue);
+                updateFlushValue(newValue);
                 updateFlushDisplay(newValue);
 
                 // Update preset styles
@@ -1402,7 +1402,7 @@ export function initUI(callbacks) {
             }
             flushValueEl.textContent = `${newValue}s`;
             updateFlushDisplay(newValue);
-            updateflushValue(newValue);
+            updateFlushValue(newValue);
         });
     }
 
@@ -1447,7 +1447,7 @@ export function initUI(callbacks) {
     setupValueAdjuster('dose-in-minus', 'dose-in-plus', 'dose-in-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('in', val); updateDrinkRatio(); });
     setupValueAdjuster('grind-minus', 'grind-plus', 'grind-value', () => grindStep, 0, (val) => grindStep === 1 ? String(Math.round(val)) : val.toFixed(1), updateGrindValue);
     setupValueAdjuster('flush-minus', 'flush-plus', 'flush-value', 1, 0, (val) => `${val}s`, (val) => {
-        updateflushValue(val);
+        updateFlushValue(val);
         updateFlushDisplay(val);
     });
 

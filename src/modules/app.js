@@ -72,16 +72,27 @@ function initMobileValueInputs() {
                             window.app.ui.updateDoseValue('in', newVal);
                         } else if (type === 'drink-out') {
                             window.app.ui.updateDoseValue('out', newVal);
+                        } else if (type === 'temperature') {
+                            window.app.ui.updateTemperatureValue(parseFloat(newVal));
                         } else if (type === 'steam-duration') {
-                            window.app.ui.updateSteamDisplay({ targetSteamDuration: parseFloat(newVal) });
+                            const v = parseFloat(newVal);
+                            window.app.ui.updateSteamDisplay({ targetSteamDuration: v });
+                            window.app.api.setTargetSteamDuration(v).catch(e => logger.error('setTargetSteamDuration failed:', e));
                         } else if (type === 'steam-flow') {
-                            window.app.ui.updateSteamDisplay({ targetSteamFlow: parseFloat(newVal) });
+                            const v = parseFloat(newVal);
+                            window.app.ui.updateSteamDisplay({ targetSteamFlow: v });
+                            window.app.api.setTargetSteamFlow(v).catch(e => logger.error('setTargetSteamFlow failed:', e));
                         } else if (type === 'flush') {
+                            window.app.ui.updateFlushValue(parseFloat(newVal));
                             window.app.ui.updateFlushDisplay(parseFloat(newVal));
                         } else if (type === 'hot-water-vol') {
-                            window.app.ui.updateHotWaterDisplay({ targetHotWaterVolume: parseFloat(newVal) });
+                            const v = parseFloat(newVal);
+                            window.app.ui.updateHotWaterDisplay({ targetHotWaterVolume: v });
+                            window.app.api.setTargetHotWaterVolume(v).catch(e => logger.error('setTargetHotWaterVolume failed:', e));
                         } else if (type === 'hot-water-temp') {
-                            window.app.ui.updateHotWaterDisplay({ targetHotWaterTemp: parseFloat(newVal) });
+                            const v = parseFloat(newVal);
+                            window.app.ui.updateHotWaterDisplay({ targetHotWaterTemp: v });
+                            window.app.api.setTargetHotWaterTemp(v).catch(e => logger.error('setTargetHotWaterTemp failed:', e));
                         } else if (type === 'grind') {
                             window.app.ui.updateGrindValue(newVal);
                         }
