@@ -1,6 +1,7 @@
 import { logger } from './logger.js';
 import { updateWorkflow,sendProfile, getWorkflow, getValueFromStore, setValueInStore, getProfiles, deleteProfile, updateProfileVisibility, uploadProfile, updateProfile, updateProfileMetadata, getShots, getKVKeys, getKVValue } from './api.js';
-import { updateProfileName, updateTemperatureDisplay, updateDrinkOut, updateDrinkRatio, updateDoseInDisplay, updateGrindDisplay, updateSteamDisplay, updateHotWaterDisplay, updateFlushDisplay, showToast} from './ui.js';
+import { updateProfileName, updateTemperatureDisplay, updateDrinkOut, updateDrinkRatio, updateDoseInDisplay, updateGrindDisplay, updateSteamDisplay, updateHotWaterDisplay, updateFlushDisplay, showToast, setupPressAndHold} from './ui.js';
+import { openContextMenu } from './context-menu.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { loadPage } from './router.js'; // Singular and correctly formatted import
 import { getTranslation } from './i18n.js';
@@ -43,10 +44,10 @@ export async function renameProfile(profileId, newTitle) {
 
 const FAV_COUNT = 5;
 const PROFILES_PATH = 'profiles/';
-const LONG_PRESS_DURATION = 800; // ms
 
 const SETTINGS_NAMESPACE = 'streamline-app';
 const FAVORITES_KEY = 'favorite-profiles';
+const FAVORITES_INITIALIZED_KEY = 'favorite-profiles-initialized';
 const UPLOADED_PROFILES_KEY = 'uploaded-profiles';
 const DEFAULT_PROFILES_KEY = 'default-profiles';
 const DEFAULT_PROFILES_MIGRATED_KEY = 'default-profiles-migrated';
@@ -174,6 +175,22 @@ function isValidAssignments(v) {
     return v && typeof v === 'object' && !Array.isArray(v);
 }
 
+async function getFavoritesInitializedFlag() {
+    try {
+        const reaFlag = await getValueFromStore(SETTINGS_NAMESPACE, FAVORITES_INITIALIZED_KEY);
+        if (reaFlag === true) return true;
+    } catch (e) {
+        logger.warn('Could not read favorites-initialized flag from REA store:', e);
+    }
+    try {
+        const idbFlag = await getSetting(FAVORITES_INITIALIZED_KEY);
+        if (idbFlag === true) return true;
+    } catch (e) {
+        logger.warn('Could not read favorites-initialized flag from IDB:', e);
+    }
+    return false;
+}
+
 export async function loadAssignments() {
     logger.info('Loading assignments...');
     try {
@@ -237,14 +254,22 @@ export async function loadAssignments() {
     return favoriteAssignments;
 }
 
-async function saveAssignments() {
+async function saveAssignments({ markUserInitialized = true } = {}) {
     logger.info('Saving assignments to REA store and IndexedDB backup...');
 
-    // We use Promise.allSettled to ensure we attempt both saves even if one fails.
-    const results = await Promise.allSettled([
+    // markUserInitialized: when true, persist a flag indicating user has intentionally
+    // set assignments (even an all-empty state via clearing slots). init() reads this
+    // to decide whether to auto-populate defaults. autoPopulate passes false so a
+    // failed first-run populate can retry on the next launch.
+    const tasks = [
         setValueInStore(SETTINGS_NAMESPACE, FAVORITES_KEY, favoriteAssignments),
         setSetting(FAVORITES_KEY, favoriteAssignments)
-    ]);
+    ];
+    if (markUserInitialized) {
+        tasks.push(setValueInStore(SETTINGS_NAMESPACE, FAVORITES_INITIALIZED_KEY, true));
+        tasks.push(setSetting(FAVORITES_INITIALIZED_KEY, true));
+    }
+    const results = await Promise.allSettled(tasks);
 
     if (results[0].status === 'fulfilled') {
         logger.info('Assignments saved to REA store successfully.');
@@ -414,6 +439,15 @@ async function handleProfileClick(index) {
         logger.error(`Invalid button index ${index} in handleProfileClick - must be between 0 and ${FAV_COUNT - 1}`);
         return;
     }
+
+    // Empty slot: route straight to selector for assignment instead of nagging with a toast
+    if (!favoriteAssignments[index] || !availableProfiles[favoriteAssignments[index]]) {
+        logger.info(`Tap on unassigned favorite button ${index}. Navigating to profile selector.`);
+        sessionStorage.setItem('pendingAssignmentIndex', index);
+        loadPage('src/profiles/profile_selector.html');
+        return;
+    }
+
     // Add a unique identifier to track this specific call
     const callId = Date.now() + Math.random();
     logger.info(`handleProfileClick called with index ${index}, callId: ${callId}, profileUpdateInProgress: ${profileUpdateInProgress}`);
@@ -429,7 +463,7 @@ async function handleProfileClick(index) {
 
     // Get the button element to apply waiting state
     const button = favoriteButtons[index];
-    
+
     // Apply waiting state to the button by replacing the background class
     if (button) {
         button.classList.remove('bg-[var(--profile-button-background-color)]');
@@ -438,25 +472,6 @@ async function handleProfileClick(index) {
 
     const profileKey = favoriteAssignments[index];
     const profileRecord = availableProfiles[profileKey];
-
-    if (!profileRecord || !profileRecord.profile) {
-        logger.warn(`Button ${index} has no profile assigned or profile data is missing.`);
-        logger.info(`[handleProfileClick] Attempting to show toast for index: ${index}`);
-        try {
-            showToast('No profile assigned. Double tap or long press to assign a profile.', 4000, 'info');
-        } catch (toastError) {
-            logger.error('Failed to show toast:', toastError);
-            alert('No profile assigned. Double tap or long press to assign a profile.');
-        }
-        // Reset the flag before returning
-        profileUpdateInProgress = false;
-        // Remove waiting state if there was an error
-        if (button) {
-            button.classList.remove('bg-[var(--fav-button-wait)]');
-            button.classList.add('bg-[var(--profile-button-background-color)]');
-        }
-        return;
-    }
 
     const profile = profileRecord.profile;
 
@@ -597,56 +612,38 @@ function openProfileSelectionModal(buttonIndex) {
     modal.showModal();
 }
 
-async function handleDoubleClick(index) {
-    if (index < 0 || index >= FAV_COUNT) {
-        logger.error(`Invalid button index ${index} in handleDoubleClick - must be between 0 and ${FAV_COUNT - 1}`);
-        return;
-    }
+function openFavoriteContextMenu(button, index) {
     const profileKey = favoriteAssignments[index];
-    if (profileKey) {
-        if (profileKey === activeProfileId) {
-            // Double tap on the selected (active) profile → open profile editor
-            logger.info(`Double-click on active profile button ${index}. Opening profile editor.`);
-            const profileRecord = availableProfiles[profileKey];
-            if (profileRecord) {
+    const profileRecord = profileKey ? availableProfiles[profileKey] : null;
+    const assigned = !!profileRecord;
+    const title = assigned ? translateProfileTitle(profileRecord.profile.title) : null;
+
+    const items = assigned
+        ? [
+            { label: `Edit "${title}"`, onSelect: () => {
                 window.__pendingEditProfile = profileRecord;
                 loadPage('src/profiles/profile_editor.html');
-            }
-        } else {
-            // Double tap on an assigned but not currently selected button → clear assignment
-            logger.info(`Double-click on assigned (inactive) button ${index}. Clearing assignment.`);
-            favoriteAssignments[index] = null;
-            await saveAssignments();
-            updateButtonUI();
-        }
-    } else {
-        logger.info(`Double-click on unassigned button ${index}. Navigating to profile selector.`);
-        sessionStorage.setItem('pendingAssignmentIndex', index);
-        loadPage('src/profiles/profile_selector.html');
-    }
-}
+            } },
+            { label: 'Replace with…', onSelect: () => {
+                sessionStorage.setItem('pendingAssignmentIndex', index);
+                loadPage('src/profiles/profile_selector.html');
+            } },
+            { divider: true },
+            { label: 'Clear slot', danger: true, onSelect: async () => {
+                favoriteAssignments[index] = null;
+                await saveAssignments();
+                updateButtonUI();
+                showToast(`Favorite ${index + 1} cleared`, 2000, 'info');
+            } },
+        ]
+        : [
+            { label: 'Browse profiles…', onSelect: () => {
+                sessionStorage.setItem('pendingAssignmentIndex', index);
+                loadPage('src/profiles/profile_selector.html');
+            } },
+        ];
 
-async function handleLongPress(index) {
-    if (index < 0 || index >= FAV_COUNT) {
-        logger.error(`Invalid button index ${index} in handleLongPress - must be between 0 and ${FAV_COUNT - 1}`);
-        return;
-    }
-    const isAssigned = favoriteAssignments[index];
-
-    if (isAssigned) {
-        logger.info(`[handleLongPress] Clearing assignment for favorite button ${index}`);
-        favoriteAssignments[index] = null;
-        await saveAssignments();
-        updateButtonUI();
-    }
-    else {
-        logger.info(`Long press on unassigned favorite button ${index}, navigating to profile selector.`);
-        // Show the toast message before navigating
-        setTimeout(() => showToast(`Select a profile and press confirm to assign.`, 2400, 'info'), 500);
-        // Store the button index for later use when confirming a profile
-        sessionStorage.setItem('pendingAssignmentIndex', index);
-loadPage('src/profiles/profile_selector.html');
-    }
+    openContextMenu(button, items);
 }
 
 export async function handleProfileUpload(event) {
@@ -884,7 +881,7 @@ async function autoPopulateFavoritesFromHistory() {
         }
     }
 
-    await saveAssignments();
+    await saveAssignments({ markUserInitialized: false });
     updateButtonUI();
 
     // Best-effort: recipe sidebar pre-fill from the most recent shot.
@@ -949,10 +946,14 @@ export async function init() {
         await loadAssignments();
 
         const allEmpty = Object.values(favoriteAssignments).every(v => v === null || v === undefined);
-        if (allEmpty) {
+        // If user has previously saved assignments (even all-empty via clearing slots),
+        // respect that choice and skip auto-populate.
+        const userInitialized = await getFavoritesInitializedFlag();
+        if (allEmpty && !userInitialized) {
             logger.info('No favorite assignments found — auto-populating from shot history.');
             await autoPopulateFavoritesFromHistory();
         } else {
+            if (allEmpty) logger.info('All favorites empty but user-initialized marker set — skipping auto-populate.');
             updateButtonUI();
         }
 
@@ -967,60 +968,19 @@ export async function init() {
             // Update our reference to point to the cloned button
             favoriteButtons[index] = clonedButton;
 
-            clonedButton.classList.add('no-select');
-            let pressTimer = null;
-            let clickTimer = null;
-            let isProcessing = false; // Flag to prevent duplicate execution
-            const DOUBLE_CLICK_THRESHOLD = 300; // ms
+            clonedButton.classList.add('no-select', 'has-context-menu');
+            // Clear the dataset flag so setupPressAndHold re-wires after the cloneNode
+            delete clonedButton.dataset.pressHoldInit;
 
-            const startPress = (e) => {
-                e.preventDefault();
-                // RESET: Clear stale state from previous interactions
-                isProcessing = false;
-                // Clear only the long press timer - preserve clickTimer for double-click detection
-                clearTimeout(pressTimer);
-                logger.debug(`[startPress] index: ${index}, pressTimer cleared, isProcessing reset`);
-                pressTimer = setTimeout(() => {
-                    handleLongPress(index);
-                }, LONG_PRESS_DURATION);
+            const clickCallback = () => {
+                handleProfileClick(index).catch(err => logger.error('handleProfileClick failed', err));
             };
 
-            const endPress = async () => {
-                logger.debug(`[endPress] index: ${index}, pressTimer: ${pressTimer !== null}, clickTimer: ${!!clickTimer}, isProcessing: ${isProcessing}`);
-                if (pressTimer !== null) { // It's a tap/click, not a long press
-                    clearTimeout(pressTimer);
-
-                    if (clickTimer) { // This is the second click
-                        clearTimeout(clickTimer);
-                        clickTimer = null;
-                        await handleDoubleClick(index);
-                    } else { // This is the first click, wait for a potential second click
-                        // Prevent duplicate execution by checking both the timer and processing state
-                        if (!isProcessing) {
-                            isProcessing = true;
-                            clickTimer = setTimeout(async () => {
-                                clickTimer = null;
-                                await handleProfileClick(index);
-                                // Reset the flag after the operation completes
-                                isProcessing = false;
-                            }, DOUBLE_CLICK_THRESHOLD);
-                        }
-                    }
-                }
+            const longPressCallback = () => {
+                openFavoriteContextMenu(clonedButton, index);
             };
 
-            const cancelPress = () => {
-                clearTimeout(pressTimer);
-            };
-
-            clonedButton.addEventListener('mousedown', startPress);
-            clonedButton.addEventListener('mouseup', endPress);
-            clonedButton.addEventListener('mouseleave', cancelPress);
-            clonedButton.addEventListener('touchstart', startPress, { passive: false });
-            clonedButton.addEventListener('touchend', endPress);
-            clonedButton.addEventListener('touchcancel', cancelPress);
-
-            clonedButton.addEventListener('contextmenu', e => e.preventDefault());
+            setupPressAndHold(clonedButton, clickCallback, longPressCallback);
         });
 
         // Note: This assumes a specific DOM structure which may not exist on all pages using this module.

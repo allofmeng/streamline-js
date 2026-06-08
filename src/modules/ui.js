@@ -1,6 +1,7 @@
 import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials } from './api.js';
-import { openDB, getSetting } from './idb.js';
-import { shouldUseNumpad } from './numpad-modal.js';
+import { openDB, getSetting, setSetting } from './idb.js';
+import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
+import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
 import * as chart from './chart.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, getTranslation } from './i18n.js';
@@ -51,12 +52,26 @@ let currentHotWaterTemp = 0;
 let hotWaterMode = 'volume'; // 'volume' or 'temperature'
 let hotWaterTempPresets = [75, 80, 85, 92];
 let hotWaterVolPresets = [50, 100, 150, 200];
+const DEFAULT_HOT_WATER_TEMP_PRESETS = [75, 80, 85, 92];
+const DEFAULT_HOT_WATER_VOL_PRESETS = [50, 100, 150, 200];
 
 let currentSteamDuration = 0;
 let currentSteamFlow = 1.5;
 let steamMode = 'time'; // 'time' or 'flow'
 let steamTimePresets = [15, 30, 45, 60];
 let steamFlowPresets = [0.5, 1.0, 1.5, 2.0];
+const DEFAULT_STEAM_TIME_PRESETS = [15, 30, 45, 60];
+// Machine-model-specific defaults for steam flow (ml/s). Resolved at boot via setSteamFlowPresetsFromMachineModel().
+const STEAM_FLOW_PRESETS_BY_MODEL = {
+    standard: [0.4, 0.5, 0.6, 0.8],  // DE1Pro, DE1XL, Bengle (default)
+    midGroup: [0.5, 0.8, 1.0, 1.2],  // Bengle 10A, DE1 XXL
+    highGroup: [0.8, 1.0, 1.2, 1.5], // Bengle 15A
+};
+let DEFAULT_STEAM_FLOW_PRESETS = [...STEAM_FLOW_PRESETS_BY_MODEL.standard];
+const STEAM_FLOW_PRESETS_KEY = 'steam-flow-presets-user';
+const STEAM_FLOW_PRESET_INDEX_KEY = 'steam-flow-preset-selected-index';
+const STEAM_FLOW_PRESETS_MODEL_KEY = 'steam-flow-presets-model';
+let selectedSteamFlowPresetIndex = 1; // default = second leftmost
 let steamApiDebounce = null;
 let hotWaterApiDebounce = null;
 const API_DEBOUNCE_MS = 1000;
@@ -426,26 +441,46 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
     });
 }
 
-function setupPressAndHold(element, clickCallback, longPressCallback) {
+export const LONG_PRESS_MS = 600;
+
+function makeNumpadMockInput(initialValue) {
+    return {
+        value: String(initialValue ?? ''),
+        setAttribute: () => {},
+        getAttribute: () => null,
+        dispatchEvent: () => {},
+    };
+}
+
+export function setupPressAndHold(element, clickCallback, longPressCallback, options = {}) {
     if (element.dataset.pressHoldInit) return; // already wired — prevent duplicate listeners on re-init
     element.dataset.pressHoldInit = '1';
+
+    const duration = options.duration ?? LONG_PRESS_MS;
 
     let timer;
     let longPressOccurred = false;
 
+    const setActiveRing = (on) => {
+        if (on) element.classList.add('long-press-active');
+        else element.classList.remove('long-press-active');
+    };
+
     const startPress = (e) => {
         e.preventDefault();
         longPressOccurred = false;
+        setActiveRing(true);
         timer = setTimeout(() => {
             longPressOccurred = true;
-            longPressCallback();
-        }, 1000); // 1 second for long press
+            setActiveRing(false);
+            longPressCallback(element);
+        }, duration);
     };
 
     const endPress = (e) => {
         clearTimeout(timer);
+        setActiveRing(false);
         if (longPressOccurred) {
-            // Prevent any further "click" actions if a long press happened.
             e.preventDefault();
             e.stopPropagation();
         } else if (e.type === 'touchend') {
@@ -457,9 +492,14 @@ function setupPressAndHold(element, clickCallback, longPressCallback) {
 
     const cancelPress = () => {
         clearTimeout(timer);
-    }
+        setActiveRing(false);
+    };
 
-    element.addEventListener('contextmenu', e => e.preventDefault());
+    // Desktop right-click opens the same menu (mouse parity)
+    element.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        longPressCallback(element);
+    });
 
     // Mouse events
     element.addEventListener('mousedown', startPress);
@@ -469,6 +509,7 @@ function setupPressAndHold(element, clickCallback, longPressCallback) {
     // Touch events
     element.addEventListener('touchstart', startPress, { passive: false });
     element.addEventListener('touchend', endPress);
+    element.addEventListener('touchcancel', cancelPress);
 
     element.addEventListener('click', (e) => {
         if (longPressOccurred) {
@@ -589,6 +630,84 @@ function updateSteamPresetDisplay() {
                 button.textContent = `${presets[index]}${unit}`;
             }
         });
+    }
+}
+
+function resolveSteamFlowPresetsForModel(model) {
+    const m = String(model || '').toLowerCase();
+    if (m.includes('15a')) return STEAM_FLOW_PRESETS_BY_MODEL.highGroup;
+    if (m.includes('10a') || m.includes('xxl')) return STEAM_FLOW_PRESETS_BY_MODEL.midGroup;
+    return STEAM_FLOW_PRESETS_BY_MODEL.standard;
+}
+
+async function persistSteamFlowPresets() {
+    try {
+        await setSetting(STEAM_FLOW_PRESETS_KEY, [...steamFlowPresets]);
+    } catch (e) {
+        logger.warn('Failed to persist steam flow presets:', e);
+    }
+}
+
+async function persistSteamFlowSelectedIndex(index) {
+    try {
+        await setSetting(STEAM_FLOW_PRESET_INDEX_KEY, index);
+    } catch (e) {
+        logger.warn('Failed to persist steam flow preset index:', e);
+    }
+}
+
+function highlightSteamFlowPreset(index) {
+    const container = document.getElementById('steam-flow-presets');
+    if (!container) return;
+    Array.from(container.children).forEach((btn, i) => {
+        if (i === index) {
+            btn.classList.remove('text-gray-400');
+            btn.classList.add('text-black');
+        } else {
+            btn.classList.remove('text-black');
+            btn.classList.add('text-gray-400');
+        }
+    });
+}
+
+export async function setSteamFlowPresetsFromMachineModel(model) {
+    try {
+        await openDB();
+        const baseline = resolveSteamFlowPresetsForModel(model);
+        DEFAULT_STEAM_FLOW_PRESETS = [...baseline];
+
+        const storedModel = await getSetting(STEAM_FLOW_PRESETS_MODEL_KEY);
+        const userPresets = await getSetting(STEAM_FLOW_PRESETS_KEY);
+        const storedIndex = await getSetting(STEAM_FLOW_PRESET_INDEX_KEY);
+
+        // If model changed since last save, drop the old user array — its values
+        // are tuned for a different group head and would be misleading.
+        const sameModel = storedModel && storedModel === String(model || '');
+        if (Array.isArray(userPresets) && userPresets.length === 4 && sameModel) {
+            steamFlowPresets = userPresets.map(Number);
+        } else {
+            steamFlowPresets = [...baseline];
+            await setSetting(STEAM_FLOW_PRESETS_KEY, [...steamFlowPresets]);
+        }
+        await setSetting(STEAM_FLOW_PRESETS_MODEL_KEY, String(model || ''));
+
+        selectedSteamFlowPresetIndex = (Number.isInteger(storedIndex) && storedIndex >= 0 && storedIndex < 4)
+            ? storedIndex
+            : 1; // second leftmost
+
+        updateSteamPresetDisplay();
+        highlightSteamFlowPreset(selectedSteamFlowPresetIndex);
+
+        const initialValue = steamFlowPresets[selectedSteamFlowPresetIndex];
+        if (typeof initialValue === 'number' && !isNaN(initialValue)) {
+            currentSteamFlow = initialValue;
+            updateSteamDisplay({ targetSteamFlow: initialValue });
+            try { await setTargetSteamFlow(initialValue); }
+            catch (e) { logger.warn('Could not push initial steam flow preset to machine:', e); }
+        }
+        logger.info(`Steam flow presets initialized for model "${model}":`, steamFlowPresets, 'selected index:', selectedSteamFlowPresetIndex);
+    } catch (e) {
+        logger.error('Failed to init steam flow presets from machine model:', e);
     }
 }
 
@@ -766,7 +885,8 @@ export function initUI(callbacks) {
     const machineStateEl = document.getElementById('machine-status');
     if (tempPresets) {
         for (const button of tempPresets.children) {
-            button.classList.add('no-select');
+            button.classList.add('no-select', 'has-context-menu');
+            button.dataset.defaultValue = button.textContent;
             const clickCallback = () => {
                 const newValue = parseFloat(button.textContent);
                 if (isNaN(newValue)) return;
@@ -787,9 +907,30 @@ export function initUI(callbacks) {
 
             const longPressCallback = () => {
                 const tempValueEl = document.getElementById('temp-value');
-                button.textContent = tempValueEl.textContent;
-                flashElement(button);
-                flashElement(tempValueEl);
+                openContextMenu(button, [
+                    { label: `Apply ${button.textContent}`, onSelect: clickCallback },
+                    { label: 'Enter value…', onSelect: () => {
+                        const current = parseFloat(button.textContent);
+                        openNumpadModal(makeNumpadMockInput(isNaN(current) ? '' : current), {
+                            fieldType: 'temperature',
+                            onConfirm: (newVal) => {
+                                button.textContent = `${newVal}°c`;
+                                flashElement(button);
+                                showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                            },
+                        });
+                    } },
+                    { label: `Save current (${tempValueEl.textContent}) here`, onSelect: () => {
+                        button.textContent = tempValueEl.textContent;
+                        flashElement(button);
+                        showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                    } },
+                    { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
+                        button.textContent = button.dataset.defaultValue;
+                        flashElement(button);
+                        showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
+                    } },
+                ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);
@@ -798,7 +939,8 @@ export function initUI(callbacks) {
 
     if (drinkOutPresets) {
         for (const button of drinkOutPresets.children) {
-            button.classList.add('no-select');
+            button.classList.add('no-select', 'has-context-menu');
+            button.dataset.defaultValue = button.textContent;
             const clickCallback = () => {
                 const [doseInStr, drinkOutStr] = button.textContent.split(':');
                 const newDoseIn = parseFloat(doseInStr);
@@ -823,11 +965,20 @@ export function initUI(callbacks) {
             const longPressCallback = () => {
                 const doseInValue = parseFloat(document.getElementById('dose-in-value').textContent);
                 const drinkOutValue = parseFloat(document.getElementById('drink-out-value').textContent);
-                button.textContent = `${doseInValue}:${drinkOutValue}`;
-
-                flashElement(button);
-                flashElement(document.getElementById('dose-in-value'));
-                flashElement(document.getElementById('drink-out-value'));
+                const currentLabel = `${doseInValue}:${drinkOutValue}`;
+                openContextMenu(button, [
+                    { label: `Apply ${button.textContent}`, onSelect: clickCallback },
+                    { label: `Save current (${currentLabel}) here`, onSelect: () => {
+                        button.textContent = currentLabel;
+                        flashElement(button);
+                        showToast(`Preset saved as ${currentLabel}`, 2000, 'success');
+                    } },
+                    { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
+                        button.textContent = button.dataset.defaultValue;
+                        flashElement(button);
+                        showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
+                    } },
+                ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);
@@ -836,7 +987,8 @@ export function initUI(callbacks) {
 
     if (flushPresets) {
         for (const button of flushPresets.children) {
-            button.classList.add('no-select');
+            button.classList.add('no-select', 'has-context-menu');
+            button.dataset.defaultValue = button.textContent;
             const clickCallback = () => {
                 const newValue = parseFloat(button.textContent);
                 if (isNaN(newValue)) return;
@@ -853,14 +1005,34 @@ export function initUI(callbacks) {
                 button.classList.remove('text-gray-400');
                 button.classList.add('text-black');
                 flashElement(document.getElementById('flush-value'));
-
             };
 
             const longPressCallback = () => {
                 const flushValueEl = document.getElementById('flush-value');
-                button.textContent = flushValueEl.textContent;
-                flashElement(button);
-                flashElement(flushValueEl);
+                openContextMenu(button, [
+                    { label: `Apply ${button.textContent}`, onSelect: clickCallback },
+                    { label: 'Enter value…', onSelect: () => {
+                        const current = parseFloat(button.textContent);
+                        openNumpadModal(makeNumpadMockInput(isNaN(current) ? '' : current), {
+                            fieldType: 'flush',
+                            onConfirm: (newVal) => {
+                                button.textContent = `${newVal}s`;
+                                flashElement(button);
+                                showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                            },
+                        });
+                    } },
+                    { label: `Save current (${flushValueEl.textContent}) here`, onSelect: () => {
+                        button.textContent = flushValueEl.textContent;
+                        flashElement(button);
+                        showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                    } },
+                    { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
+                        button.textContent = button.dataset.defaultValue;
+                        flashElement(button);
+                        showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
+                    } },
+                ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);
@@ -872,7 +1044,7 @@ export function initUI(callbacks) {
         updateHotWaterPresetDisplay();
 
         Array.from(hotwaterPresets.children).forEach((button, index) => {
-            button.classList.add('no-select');
+            button.classList.add('no-select', 'has-context-menu');
             const clickCallback = () => {
                 const isTempMode = hotWaterMode === 'temperature';
                 const presets = isTempMode ? hotWaterTempPresets : hotWaterVolPresets;
@@ -899,24 +1071,47 @@ export function initUI(callbacks) {
                 }
                 button.classList.remove('text-gray-400');
                 button.classList.add('text-black');
-
             };
 
             const longPressCallback = () => {
                 const isTempMode = hotWaterMode === 'temperature';
                 const valueEl = document.getElementById(isTempMode ? 'hot-water-temp-value' : 'hot-water-vol-value');
                 const currentValue = parseFloat(valueEl.textContent);
-
-                if (!isNaN(currentValue)) {
-                    if (isTempMode) {
-                        hotWaterTempPresets[index] = currentValue;
-                    } else {
-                        hotWaterVolPresets[index] = currentValue;
-                    }
-                    updateHotWaterPresetDisplay(); // Refresh button text
-                    flashElement(button);
-                    flashElement(valueEl);
-                }
+                const presetValue = (isTempMode ? hotWaterTempPresets : hotWaterVolPresets)[index];
+                const defaultValue = (isTempMode ? DEFAULT_HOT_WATER_TEMP_PRESETS : DEFAULT_HOT_WATER_VOL_PRESETS)[index];
+                const unit = isTempMode ? '°c' : 'ml';
+                const fieldType = isTempMode ? 'hot-water-temp' : 'hot-water-vol';
+                openContextMenu(button, [
+                    { label: `Apply ${presetValue}${unit}`, onSelect: clickCallback },
+                    { label: 'Enter value…', onSelect: () => {
+                        openNumpadModal(makeNumpadMockInput(presetValue), {
+                            fieldType,
+                            onConfirm: (newVal) => {
+                                const num = parseFloat(newVal);
+                                if (isNaN(num)) return;
+                                if (isTempMode) hotWaterTempPresets[index] = num;
+                                else hotWaterVolPresets[index] = num;
+                                updateHotWaterPresetDisplay();
+                                flashElement(button);
+                                showToast(`Preset saved as ${num}${unit}`, 2000, 'success');
+                            },
+                        });
+                    } },
+                    { label: `Save current (${valueEl.textContent}) here`, disabled: isNaN(currentValue), onSelect: () => {
+                        if (isTempMode) hotWaterTempPresets[index] = currentValue;
+                        else hotWaterVolPresets[index] = currentValue;
+                        updateHotWaterPresetDisplay();
+                        flashElement(button);
+                        showToast(`Preset saved as ${currentValue}${unit}`, 2000, 'success');
+                    } },
+                    { label: `Revert to ${defaultValue}${unit}`, danger: true, onSelect: () => {
+                        if (isTempMode) hotWaterTempPresets[index] = defaultValue;
+                        else hotWaterVolPresets[index] = defaultValue;
+                        updateHotWaterPresetDisplay();
+                        flashElement(button);
+                        showToast(`Preset reverted to ${defaultValue}${unit}`, 2000, 'info');
+                    } },
+                ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);
@@ -927,7 +1122,7 @@ export function initUI(callbacks) {
         updateSteamPresetDisplay();
 
         Array.from(steamPresets.children).forEach((button, index) => {
-            button.classList.add('no-select');
+            button.classList.add('no-select', 'has-context-menu');
             const clickCallback = () => {
                 const newValue = steamTimePresets[index];
                 if (newValue === undefined) return;
@@ -942,18 +1137,41 @@ export function initUI(callbacks) {
                 button.classList.remove('text-gray-400');
                 button.classList.add('text-black');
                 flashElement(document.getElementById('steam-duration-value'));
-
             };
 
             const longPressCallback = () => {
                 const valueEl = document.getElementById('steam-duration-value');
                 const currentValue = parseFloat(valueEl.textContent);
-                if (!isNaN(currentValue)) {
-                    steamTimePresets[index] = currentValue;
-                    updateSteamPresetDisplay();
-                    flashElement(button);
-                    flashElement(valueEl);
-                }
+                const presetValue = steamTimePresets[index];
+                const defaultValue = DEFAULT_STEAM_TIME_PRESETS[index];
+                openContextMenu(button, [
+                    { label: `Apply ${presetValue}s`, onSelect: clickCallback },
+                    { label: 'Enter value…', onSelect: () => {
+                        openNumpadModal(makeNumpadMockInput(presetValue), {
+                            fieldType: 'steam-duration',
+                            onConfirm: (newVal) => {
+                                const num = parseFloat(newVal);
+                                if (isNaN(num)) return;
+                                steamTimePresets[index] = num;
+                                updateSteamPresetDisplay();
+                                flashElement(button);
+                                showToast(`Preset saved as ${num}s`, 2000, 'success');
+                            },
+                        });
+                    } },
+                    { label: `Save current (${valueEl.textContent}) here`, disabled: isNaN(currentValue), onSelect: () => {
+                        steamTimePresets[index] = currentValue;
+                        updateSteamPresetDisplay();
+                        flashElement(button);
+                        showToast(`Preset saved as ${currentValue}s`, 2000, 'success');
+                    } },
+                    { label: `Revert to ${defaultValue}s`, danger: true, onSelect: () => {
+                        steamTimePresets[index] = defaultValue;
+                        updateSteamPresetDisplay();
+                        flashElement(button);
+                        showToast(`Preset reverted to ${defaultValue}s`, 2000, 'info');
+                    } },
+                ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);
@@ -964,7 +1182,7 @@ export function initUI(callbacks) {
         updateSteamPresetDisplay();
 
         Array.from(steamFlowPresetsEl.children).forEach((button, index) => {
-            button.classList.add('no-select');
+            button.classList.add('no-select', 'has-context-menu');
             const clickCallback = () => {
                 const newValue = steamFlowPresets[index];
                 if (newValue === undefined) return;
@@ -972,25 +1190,48 @@ export function initUI(callbacks) {
                 setTargetSteamFlow(newValue).catch(e => logger.error(e));
                 updateSteamDisplay({ targetSteamFlow: newValue });
 
-                for (const btn of steamFlowPresetsEl.children) {
-                    btn.classList.remove('text-black');
-                    btn.classList.add('text-gray-400');
-                }
-                button.classList.remove('text-gray-400');
-                button.classList.add('text-black');
+                highlightSteamFlowPreset(index);
+                selectedSteamFlowPresetIndex = index;
+                persistSteamFlowSelectedIndex(index);
                 flashElement(document.getElementById('steam-flow-value'));
-
             };
 
             const longPressCallback = () => {
                 const valueEl = document.getElementById('steam-flow-value');
                 const currentValue = parseFloat(valueEl.textContent);
-                if (!isNaN(currentValue)) {
-                    steamFlowPresets[index] = currentValue;
-                    updateSteamPresetDisplay();
-                    flashElement(button);
-                    flashElement(valueEl);
-                }
+                const presetValue = steamFlowPresets[index];
+                const defaultValue = DEFAULT_STEAM_FLOW_PRESETS[index];
+                openContextMenu(button, [
+                    { label: `Apply ${presetValue.toFixed(1)}ml/s`, onSelect: clickCallback },
+                    { label: 'Enter value…', onSelect: () => {
+                        openNumpadModal(makeNumpadMockInput(presetValue.toFixed(1)), {
+                            fieldType: 'steam-flow',
+                            onConfirm: (newVal) => {
+                                const num = parseFloat(newVal);
+                                if (isNaN(num)) return;
+                                steamFlowPresets[index] = num;
+                                updateSteamPresetDisplay();
+                                persistSteamFlowPresets();
+                                flashElement(button);
+                                showToast(`Preset saved as ${num.toFixed(1)}ml/s`, 2000, 'success');
+                            },
+                        });
+                    } },
+                    { label: `Save current (${valueEl.textContent}ml/s) here`, disabled: isNaN(currentValue), onSelect: () => {
+                        steamFlowPresets[index] = currentValue;
+                        updateSteamPresetDisplay();
+                        persistSteamFlowPresets();
+                        flashElement(button);
+                        showToast(`Preset saved as ${currentValue.toFixed(1)}ml/s`, 2000, 'success');
+                    } },
+                    { label: `Revert to ${defaultValue.toFixed(1)}ml/s`, danger: true, onSelect: () => {
+                        steamFlowPresets[index] = defaultValue;
+                        updateSteamPresetDisplay();
+                        persistSteamFlowPresets();
+                        flashElement(button);
+                        showToast(`Preset reverted to ${defaultValue.toFixed(1)}ml/s`, 2000, 'info');
+                    } },
+                ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);

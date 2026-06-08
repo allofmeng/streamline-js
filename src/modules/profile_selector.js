@@ -328,6 +328,32 @@ const LONG_PRESS_DURATION = 400; // ms
 const FAV_COUNT = 5;
 let favoriteButtons = [];
 
+// Suppress browser-default text selection, context menu, tap-highlight, drag, and
+// iOS callout across an entire subtree. Inputs/textareas/contenteditable are
+// exempted so typing in the search field still works.
+function suppressBrowserActions(root) {
+    if (!root || root.dataset.browserActionsSuppressed === '1') return;
+    root.dataset.browserActionsSuppressed = '1';
+
+    root.style.userSelect = 'none';
+    root.style.webkitUserSelect = 'none';
+    root.style.webkitTouchCallout = 'none';
+    root.style.webkitTapHighlightColor = 'transparent';
+    root.style.touchAction = 'manipulation';
+
+    const isTypingTarget = (el) =>
+        !!el && !!el.closest && !!el.closest('input, textarea, [contenteditable="true"]');
+
+    const block = (e) => {
+        if (isTypingTarget(e.target)) return;
+        e.preventDefault();
+    };
+
+    root.addEventListener('contextmenu', block);
+    root.addEventListener('selectstart', block);
+    root.addEventListener('dragstart', block);
+}
+
 function getEyeIconSVG(strokeColor) {
     return `<svg aria-hidden="true" class="w-[50px] h-[50px]" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 33C5.5 33 13.75 13.75 33 13.75C52.25 13.75 60.5 33 60.5 33C60.5 33 52.25 52.25 33 52.25C13.75 52.25 5.5 33 5.5 33Z" stroke="${strokeColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M33 41.25C37.5563 41.25 41.25 37.5563 41.25 33C41.25 28.4437 37.5563 24.75 33 24.75C28.4437 24.75 24.75 28.4437 24.75 33C24.75 37.5563 28.4437 41.25 33 41.25Z" stroke="${strokeColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }

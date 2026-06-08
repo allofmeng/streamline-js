@@ -815,15 +815,19 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         if (hotwatersettings) ui.updateHotWaterDisplay(hotwatersettings);
         if (steamsettings) ui.updateSteamDisplay(steamsettings);
 
-        // Show GHC machine controls column only for non-GHC machines
+        // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
+        // presets based on machine model (group-head size).
         try {
             const machineInfo = await getMachineInfo();
             if (machineInfo && machineInfo.GHC === false) {
                 isNonGhcMachine = true;
                 ui.showGhcControls();
             }
+            await ui.setSteamFlowPresetsFromMachineModel(machineInfo?.model);
         } catch (e) {
-            logger.warn('Could not fetch machine info for GHC check:', e);
+            logger.warn('Could not fetch machine info for GHC check / steam preset init:', e);
+            // Fall back to standard presets so the UI still works offline
+            await ui.setSteamFlowPresetsFromMachineModel(null);
         }
 
     } catch (error) {
