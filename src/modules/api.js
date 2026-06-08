@@ -1336,10 +1336,10 @@ export async function setWaterLevels(refillLevel) {
     const response = await fetch(`${API_BASE_URL}/machine/waterLevels`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refillLevel }),
+        body: JSON.stringify({ refillLevel: Math.trunc(refillLevel) }),
     });
-    if (!response.ok) throw new Error('Failed to set water levels');
-    return response.json();
+    if (!response.ok) throw new Error(`Failed to set water levels (status ${response.status})`);
+    return true;
 }
 
 export async function uploadFirmware(firmwareFile) {

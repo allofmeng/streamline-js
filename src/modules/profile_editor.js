@@ -43,7 +43,8 @@ function _ensureFocusOverlayDivs() {
     _focusOverlay = {};
     ['top','right','bottom','left'].forEach(side => {
         const d = document.createElement('div');
-        d.style.cssText = 'position:fixed;background:rgba(255,255,255,0.7);z-index:1000;display:none;cursor:default;';
+        d.className = 'pe-focus-overlay';
+        d.style.cssText = 'position:fixed;z-index:1000;display:none;cursor:default;';
         document.body.appendChild(d);
         _focusOverlay[side] = d;
     });
@@ -99,6 +100,50 @@ function openNumpadForField(currentVal, numpadConfig, onCommit) {
             if (!isNaN(num)) onCommit(clamp(num, numpadConfig.min ?? 0, numpadConfig.max ?? 9999));
         }
     });
+}
+
+// ─── Review Settings Editable Pill ─────────────────────────────────────────
+// Reusable inline editable value span — dotted blue underline; click opens
+// numpad on tablet or inline edit on desktop. Used in the review tab's
+// settings list under the graph preview.
+
+function createSettingPill({ value, step, unit, min, max, fieldType, title, format, onCommit }) {
+    const PILL_CLASS = 'text-[var(--button-primary-bg)] font-semibold cursor-pointer select-none inline-flex underline decoration-dashed underline-offset-[3px] px-[4px] rounded-[4px]';
+    const fmt = format || ((v) => unit ? `${roundTo(v, step || 1)} ${unit}` : `${roundTo(v, step || 1)}`);
+
+    const pill = document.createElement('span');
+    pill.className = PILL_CLASS;
+    pill.textContent = fmt(value);
+    pill.addEventListener('mouseenter', () => { pill.style.backgroundColor = 'var(--button-grey)'; });
+    pill.addEventListener('mouseleave', () => { pill.style.backgroundColor = ''; });
+
+    pill.addEventListener('click', () => {
+        if (shouldUseNumpad()) {
+            openNumpadForField(value, {
+                fieldType: fieldType || 'pe-review-setting',
+                title: title || (unit ? unit.toUpperCase() : 'VALUE'),
+                unit: unit || '',
+                min: min ?? 0,
+                max: max ?? 9999,
+                label: `${min ?? 0}–${max ?? 9999}`
+            }, (val) => {
+                value = val;
+                pill.textContent = fmt(value);
+                onCommit(value);
+            });
+            return;
+        }
+        inlineEditValue(pill, value, {
+            min, max, step: step || 1, unit,
+            onCommit(val) {
+                value = val;
+                pill.textContent = fmt(value);
+                onCommit(value);
+            }
+        });
+    });
+
+    return pill;
 }
 
 // ─── Desktop Inline Edit Helper ────────────────────────────────────────────
@@ -262,9 +307,42 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
         debouncedOnChange();
     });
 
-    // Desktop: click display to type value directly
+    // Click display to edit:
+    //   - Desktop: single click → inline edit
+    //   - Tablet (numpad mode): two clicks → numpad modal (first click selects, second opens)
     display.style.cursor = 'pointer';
+    let _spinnerSelected = false;
+    let _spinnerSelectTimer = null;
     display.addEventListener('click', () => {
+        if (shouldUseNumpad()) {
+            if (_spinnerSelected) {
+                clearTimeout(_spinnerSelectTimer);
+                _spinnerSelected = false;
+                display.style.outline = '';
+                openNumpadForField(value, {
+                    fieldType: 'pe-settings',
+                    title: (unit || 'VALUE').toUpperCase(),
+                    unit: unit || '',
+                    min: min ?? 0,
+                    max: max ?? 9999,
+                    label: `${min ?? 0}–${max ?? 9999}`
+                }, (val) => {
+                    value = roundTo(val, step);
+                    updateDisplay();
+                    onChange(value);
+                });
+            } else {
+                _spinnerSelected = true;
+                display.style.outline = '2px solid var(--mimoja-blue)';
+                display.style.borderRadius = '4px';
+                clearTimeout(_spinnerSelectTimer);
+                _spinnerSelectTimer = setTimeout(() => {
+                    _spinnerSelected = false;
+                    display.style.outline = '';
+                }, 2000);
+            }
+            return;
+        }
         inlineEditValue(display, value, { min, max, step, unit, onCommit: (val) => {
             value = val;
             updateDisplay();
@@ -1427,14 +1505,14 @@ function renderStepCards() {
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
-        deleteBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+        deleteBtn.className = 'pe-step-action-btn w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
         deleteBtn.setAttribute('aria-label', 'Delete step');
         deleteBtn.addEventListener('click', () => { editorState.profile.steps.splice(index, 1); renderStepCards(); });
 
         const insertBtn = document.createElement('button');
         insertBtn.type = 'button';
-        insertBtn.className = 'w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+        insertBtn.className = 'pe-step-action-btn w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         insertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
         insertBtn.setAttribute('aria-label', 'Insert step after');
         insertBtn.addEventListener('click', () => { editorState.profile.steps.splice(index + 1, 0, deepCopy(DEFAULT_STEP)); renderStepCards(); });
@@ -2252,7 +2330,7 @@ function renderReviewTab() {
 
             const reviewDeleteBtn = document.createElement('button');
             reviewDeleteBtn.type = 'button';
-            reviewDeleteBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+            reviewDeleteBtn.className = 'pe-step-action-btn w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
             reviewDeleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
             reviewDeleteBtn.setAttribute('aria-label', 'Delete step');
             reviewDeleteBtn.addEventListener('click', () => {
@@ -2263,7 +2341,7 @@ function renderReviewTab() {
 
             const reviewInsertBtn = document.createElement('button');
             reviewInsertBtn.type = 'button';
-            reviewInsertBtn.className = 'w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+            reviewInsertBtn.className = 'pe-step-action-btn w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
             reviewInsertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
             reviewInsertBtn.setAttribute('aria-label', 'Insert step after');
             reviewInsertBtn.addEventListener('click', () => {
@@ -2302,10 +2380,43 @@ function renderReviewTab() {
             li.innerHTML = `${label} <span class="font-semibold text-[var(--button-primary-bg)]">${val}</span>`;
             settingsList.appendChild(li);
         };
-        if (profile.tank_temperature != null) s(getTranslation('Preheat water tank at'), `${profile.tank_temperature} \u00b0C`);
-        if (profile.target_volume_count_start != null) s(getTranslation('Track water volume after step'), profile.target_volume_count_start);
-        if (profile.target_weight != null && profile.target_weight > 0) s(getTranslation('Stop at weight'), `${profile.target_weight} g`);
-        if (profile.target_volume != null && profile.target_volume > 0) s(getTranslation('Stop at volume'), `${profile.target_volume} ml`);
+        const appendRow = (label, pillEl) => {
+            const li = document.createElement('li');
+            li.append(`${label} `);
+            li.appendChild(pillEl);
+            settingsList.appendChild(li);
+        };
+
+        if (profile.tank_temperature != null) {
+            appendRow(getTranslation('Preheat water tank at'), createSettingPill({
+                value: profile.tank_temperature, step: 1, unit: '\u00b0C', min: 0, max: 110,
+                fieldType: 'pe-tank-temp', title: 'TANK TEMPERATURE',
+                onCommit: (v) => { editorState.profile.tank_temperature = v; }
+            }));
+        }
+        if (profile.target_volume_count_start != null) {
+            const steps = profile.steps || [];
+            appendRow(getTranslation('Track water volume after step'), createSettingPill({
+                value: profile.target_volume_count_start, step: 1, unit: '', min: 0, max: Math.max(steps.length, 1),
+                fieldType: 'pe-vol-count-start', title: 'STEP NUMBER',
+                format: (v) => `${Math.round(v)}`,
+                onCommit: (v) => { editorState.profile.target_volume_count_start = Math.round(v); }
+            }));
+        }
+        if (profile.target_weight != null && profile.target_weight > 0) {
+            appendRow(getTranslation('Stop at weight'), createSettingPill({
+                value: profile.target_weight, step: 0.1, unit: 'g', min: 0, max: 1000,
+                fieldType: 'pe-target-weight', title: 'TARGET WEIGHT',
+                onCommit: (v) => { editorState.profile.target_weight = v; }
+            }));
+        }
+        if (profile.target_volume != null && profile.target_volume > 0) {
+            appendRow(getTranslation('Stop at volume'), createSettingPill({
+                value: profile.target_volume, step: 1, unit: 'ml', min: 0, max: 1000,
+                fieldType: 'pe-target-volume', title: 'TARGET VOLUME',
+                onCommit: (v) => { editorState.profile.target_volume = v; }
+            }));
+        }
         if (profile.beverage_type) s(getTranslation('Beverage type'), profile.beverage_type);
     }
 

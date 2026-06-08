@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
@@ -6,6 +6,90 @@ import { loadPage } from '../modules/router.js'; // Singular and correctly forma
 import { logger } from '../modules/logger.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
+import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
+
+// Config for each numeric input that should get two-click numpad support
+const SETTINGS_NUMPAD_CONFIGS = {
+    flushTempInput:          { title: 'FLUSH TEMPERATURE',   unit: '°C',   min: 5,   max: 95,   fieldType: 'settings-flush-temp' },
+    flushFlowInput:          { title: 'FLUSH FLOW',          unit: 'ml/s', min: 1,   max: 8,    fieldType: 'settings-flush-flow' },
+    tankTempInput:           { title: 'TANK TEMPERATURE',    unit: '°C',   min: 10,  max: 40,   fieldType: 'settings-tank-temp' },
+    waterAlertInput:         { title: 'WATER ALERT LEVEL',   unit: 'mm',   min: 0,   max: 30,   fieldType: 'settings-water-alert' },
+    calibFanInput:           { title: 'FAN THRESHOLD',       unit: '%',    min: 0,   max: 100,  fieldType: 'settings-calib-fan' },
+    steamCalibTempInput:     { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 135, max: 170,  fieldType: 'settings-steam-calib-temp' },
+    steamTempInput:          { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 130, max: 170,  fieldType: 'settings-steam-temp' },
+    steamDurationInput:      { title: 'STEAM DURATION',      unit: 'sec',  min: 10,  max: 120,  fieldType: 'settings-steam-duration' },
+    steamFlowInput:          { title: 'STEAM FLOW',          unit: 'ml/s', min: 0.1, max: 2.5,  fieldType: 'settings-steam-flow' },
+    hotWaterTempInput:       { title: 'HOT WATER TEMP',      unit: '°C',   min: 50,  max: 95,   fieldType: 'settings-hw-temp' },
+    hotWaterVolumeInput:     { title: 'HOT WATER VOLUME',    unit: 'ml',   min: 10,  max: 500,  fieldType: 'settings-hw-volume' },
+    hotWaterDurationInput:   { title: 'HOT WATER DURATION',  unit: 'sec',  min: 5,   max: 120,  fieldType: 'settings-hw-duration' },
+    hotWaterFlowInput:       { title: 'HOT WATER FLOW',      unit: 'ml/s', min: 0.1, max: 8,    fieldType: 'settings-hw-flow' },
+    heaterPh1FlowInput:      { title: 'HEATER PH1 FLOW',     unit: 'ml/s', min: 0,   max: 10,   fieldType: 'settings-heater-ph1' },
+    heaterPh2FlowInput:      { title: 'HEATER PH2 FLOW',     unit: 'ml/s', min: 0,   max: 10,   fieldType: 'settings-heater-ph2' },
+    weightFlowMultiplierInput: { title: 'WEIGHT FLOW MULT',  unit: '',     min: 0,   max: 5,    fieldType: 'settings-weight-mult' },
+    volumeFlowMultiplierInput: { title: 'VOLUME FLOW MULT',  unit: '',     min: 0,   max: 5,    fieldType: 'settings-volume-mult' },
+};
+
+let _settingsNumpadSelected = null;
+let _settingsNumpadTimer = null;
+
+function attachSettingsNumpad() {
+    if (!shouldUseNumpad()) return;
+    initializeNumpadModal();
+
+    Object.entries(SETTINGS_NUMPAD_CONFIGS).forEach(([id, config]) => {
+        const input = document.getElementById(id);
+        if (!input || input.dataset.settingsNumpadAttached) return;
+        input.dataset.settingsNumpadAttached = 'true';
+        input.readOnly = true;
+        input.style.cursor = 'pointer';
+
+        input.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (_settingsNumpadSelected === input) {
+                // Second click — open numpad
+                clearTimeout(_settingsNumpadTimer);
+                _settingsNumpadSelected = null;
+                input.style.outline = '';
+
+                const currentVal = String(parseFloat(input.value) || config.min);
+                const mockEl = {
+                    value: currentVal,
+                    getAttribute: () => currentVal,
+                    dispatchEvent: () => {}
+                };
+                openModal(mockEl, {
+                    fieldType: config.fieldType,
+                    config,
+                    onConfirm: (val) => {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) {
+                            const clamped = Math.max(config.min, Math.min(config.max, num));
+                            input.value = clamped;
+                            input.dispatchEvent(new Event('change'));
+                        }
+                    }
+                });
+            } else {
+                // First click — select / highlight
+                if (_settingsNumpadSelected) {
+                    _settingsNumpadSelected.style.outline = '';
+                }
+                clearTimeout(_settingsNumpadTimer);
+                _settingsNumpadSelected = input;
+                input.style.outline = '2px solid var(--mimoja-blue)';
+                input.style.borderRadius = '4px';
+                _settingsNumpadTimer = setTimeout(() => {
+                    if (_settingsNumpadSelected === input) {
+                        _settingsNumpadSelected = null;
+                        input.style.outline = '';
+                    }
+                }, 2000);
+            }
+        });
+    });
+}
 
 function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -157,6 +241,7 @@ function updateSettingsContentArea(category) {
         if (category === 'talkdecent') {
             setTimeout(() => window.updateTalkToDecentUI?.(), 0);
         }
+        setTimeout(attachSettingsNumpad, 0);
     }
 }
 
@@ -895,9 +980,9 @@ export function renderFlushSettingsForm(settings) {
                         </p>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
-                        <button id="flush-temp-minus" aria-label="Decrease flush temperature" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="flush-temp-minus" aria-label="Decrease flush temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFlushTemp(-5);">
-                            <svg aria-hidden="true" width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -909,9 +994,9 @@ export function renderFlushSettingsForm(settings) {
                                    onchange="window.updateDe1Setting('flushTemp', parseFloat(this.value))">
                             <span class="ml-2" aria-hidden="true">°C</span>
                         </div>
-                        <button id="flush-temp-plus" aria-label="Increase flush temperature" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="flush-temp-plus" aria-label="Increase flush temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFlushTemp(5);">
-                            <svg aria-hidden="true" width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -928,9 +1013,9 @@ export function renderFlushSettingsForm(settings) {
                         </p>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
-                        <button id="flush-flow-minus" aria-label="Decrease flush flow" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="flush-flow-minus" aria-label="Decrease flush flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFlushFlow(-1);">
-                            <svg aria-hidden="true" width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -942,9 +1027,9 @@ export function renderFlushSettingsForm(settings) {
                                    onchange="window.updateDe1Setting('flushFlow', parseFloat(this.value))">
                             <span class="ml-2 text-nowrap" aria-hidden="true">ml/s</span>
                         </div>
-                        <button id="flush-flow-plus" aria-label="Increase flush flow" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="flush-flow-plus" aria-label="Increase flush flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFlushFlow(1);">
-                            <svg aria-hidden="true" width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -2466,7 +2551,7 @@ export function renderWaterTankSettings() {
                 <hr class="border-t border-[#c9c9c9] w-full" />
             </div>
 
-            <div class="content-stretch flex flex-col items-center relative w-full">
+            <div class="content-stretch flex flex-col gap-[30px] items-center relative w-full">
                 <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
@@ -2474,9 +2559,9 @@ export function renderWaterTankSettings() {
                         </p>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
-                        <button id="tank-temp-minus" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="tank-temp-minus" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustTankTemp(-1);">
-                            <svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -2488,9 +2573,9 @@ export function renderWaterTankSettings() {
                                    onchange="window.updateDe1Setting('tankTemp', parseInt(this.value))">
                             <span class="ml-2 text-nowrap">°C</span>
                         </div>
-                        <button id="tank-temp-plus" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="tank-temp-plus" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustTankTemp(1);">
-                            <svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -2499,9 +2584,59 @@ export function renderWaterTankSettings() {
                         Set the water tank temperature (10-40°C)
                     </p>
                 </div>
+
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                    <div class="content-stretch flex items-center relative shrink-0">
+                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
+                            Water Alert Level
+                        </p>
+                    </div>
+                    <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
+                        <button id="water-alert-minus" aria-label="Decrease water alert level" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                onclick="window.flashPlusMinusButton(this); window.adjustWaterAlert(-5);">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <div class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none flex items-center justify-center"
+                             style="width: 130px;">
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" id="waterAlertInput" aria-label="Water alert level" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                   value="${getWaterAlertLevel()}"
+                                   step="5" min="0" max="30"
+                                   onchange="window.commitWaterAlert(parseInt(this.value))">
+                            <span class="ml-2 text-nowrap">mm</span>
+                        </div>
+                        <button id="water-alert-plus" aria-label="Increase water alert level" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                onclick="window.flashPlusMinusButton(this); window.adjustWaterAlert(5);">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                        Alert when tank water level drops below this height (0, 5, 10, 15, 20, 25, 30 mm)
+                    </p>
+                </div>
             </div>
         </div>
     `;
+}
+
+// Allowed refill levels (mm) — coarse 5mm steps from 0 to 30.
+const WATER_ALERT_LEVELS = [0, 5, 10, 15, 20, 25, 30];
+
+function snapWaterAlertLevel(value) {
+    if (isNaN(value)) return 15;
+    const clamped = Math.max(0, Math.min(30, value));
+    return WATER_ALERT_LEVELS.reduce((best, v) =>
+        Math.abs(v - clamped) < Math.abs(best - clamped) ? v : best,
+    WATER_ALERT_LEVELS[0]);
+}
+
+// Read persisted water alert refill level (mm). Default 15mm.
+function getWaterAlertLevel() {
+    const stored = parseInt(localStorage.getItem('waterRefillLevel'), 10);
+    return WATER_ALERT_LEVELS.includes(stored) ? stored : 15;
 }
 
 // Render quick adjustments settings
@@ -2614,9 +2749,9 @@ export function renderCalibFanSettings(settings) {
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
                         <button id="calib-fan-minus" aria-label="Decrease fan threshold"
-                                class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                                class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFanThreshold(-1);">
-                            <svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -2629,9 +2764,9 @@ export function renderCalibFanSettings(settings) {
                             <span class="ml-2 text-nowrap">°C</span>
                         </div>
                         <button id="calib-fan-plus" aria-label="Increase fan threshold"
-                                class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                                class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFanThreshold(1);">
-                            <svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -2772,9 +2907,9 @@ export function renderCalibSteamSettings() {
                         </p>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
-                        <button id="steam-temp-minus" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="steam-temp-minus" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustSteamCalibTemp(-1);">
-                            <svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -2786,9 +2921,9 @@ export function renderCalibSteamSettings() {
                                    onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
                             <span class="ml-2 text-nowrap">°C</span>
                         </div>
-                        <button id="steam-temp-plus" class="w-[72px] h-[72px] bg-[var(--button-grey)] rounded-[18px] flex items-center justify-center"
+                        <button id="steam-temp-plus" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustSteamCalibTemp(1);">
-                            <svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
@@ -4634,6 +4769,38 @@ export async function initializeSettings() {
             let newValue = parseInt(input.value, 10) + change;
             newValue = Math.max(10, Math.min(40, newValue));
             input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    let _waterAlertDebounce = null;
+    window.commitWaterAlert = function(value) {
+        const snapped = snapWaterAlertLevel(value);
+        const input = document.getElementById('waterAlertInput');
+        if (input && parseInt(input.value, 10) !== snapped) {
+            input.value = snapped;
+        }
+        localStorage.setItem('waterRefillLevel', String(snapped));
+        clearTimeout(_waterAlertDebounce);
+        _waterAlertDebounce = setTimeout(async () => {
+            try {
+                await setWaterLevels(snapped);
+                logger.info(`Water refill level set to ${snapped}mm`);
+            } catch (err) {
+                logger.error('Failed to set water refill level:', err);
+                ui.showToast('Failed to update water alert level', 4000, 'error');
+            }
+        }, 400);
+    };
+
+    window.adjustWaterAlert = function(change) {
+        const input = document.getElementById('waterAlertInput');
+        if (input) {
+            const current = parseInt(input.value, 10) || 0;
+            const idx = WATER_ALERT_LEVELS.indexOf(snapWaterAlertLevel(current));
+            const dir = change > 0 ? 1 : -1;
+            const nextIdx = Math.max(0, Math.min(WATER_ALERT_LEVELS.length - 1, idx + dir));
+            input.value = WATER_ALERT_LEVELS[nextIdx];
             input.dispatchEvent(new Event('change'));
         }
     };

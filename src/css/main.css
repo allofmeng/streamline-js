@@ -363,3 +363,11 @@ body {
   background-color: var(--button-primary-bg);
   border-color: var(--button-primary-bg);
 }
+
+/* Profile editor focus-blur scrim (4 sides around the focused control) */
+.pe-focus-overlay {
+  background: rgba(255, 255, 255, 0.7);
+}
+[data-theme='dark'] .pe-focus-overlay {
+  background: rgba(0, 0, 0, 0.55);
+}
