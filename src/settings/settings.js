@@ -122,7 +122,8 @@ let settingsCache = {
     skinInfoError: null,
     allSkins: null,
     allSkinsLoading: false,
-    allSkinsError: null
+    allSkinsError: null,
+    githubLatestVersion: null
 };
 
 let activeSettingsCategory = null; // New global variable to track the currently active category
@@ -3088,6 +3089,9 @@ export function renderSkinSettings() {
                 <div class="grid grid-cols-2 gap-[14px] w-full">
                     ${(allSkins.length > 0 ? allSkins : (activeSkin ? [activeSkin] : [])).map(s => {
                         const isActive = s.id === activeSkinId;
+                        const ghVersion = settingsCache.githubLatestVersion;
+                        const isLatest = ghVersion && s.version && s.version === ghVersion;
+                        const versionKnown = !!ghVersion;
                         return `
                         <button
                             onclick="${isActive ? '' : `window.setActiveSkin('${s.id}')`}"
@@ -3103,6 +3107,10 @@ export function renderSkinSettings() {
                             </div>
                             <div class="flex items-center gap-[10px]">
                                 ${s.version ? `<span class="text-[17px] font-['Inter:Regular',sans-serif] opacity-80">v${s.version}</span>` : ''}
+                                ${s.isBundled && /streamline/i.test(s.name) && versionKnown ? (isLatest
+                                    ? `<span class="text-[13px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#0ca581]/15 text-[#0ca581]'}">Latest</span>`
+                                    : `<span class="text-[13px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#da515e]/15 text-[#da515e]'}">Update available</span>`)
+                                : ''}
                                 <span class="text-[14px] font-['Inter:Regular',sans-serif] opacity-60 uppercase tracking-wider">${s.isBundled ? 'Bundled' : 'Installed'}</span>
                             </div>
                         </button>`;
@@ -3127,14 +3135,6 @@ export function renderSkinSettings() {
                 </div>
             </div>
 
-            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
-
-            <div class="flex flex-col gap-[20px] items-start relative w-full">
-                <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                    <p class="leading-[1.2]">Installed Skins</p>
-                </div>
-                ${skinsTable}
-            </div>
         </div>
     `;
 }
@@ -3823,7 +3823,7 @@ async function _preloadSettingsInternal() {
         settingsCache.appInfoError = null;
 
         // Fetch all settings in parallel using Promise.allSettled to handle individual failures
-        const [reaSettingsResult, de1SettingsResult, de1AdvancedSettingsResult, appInfoResult, machineInfoResult, skinInfoResult, allSkinsResult, workflowResult] = await Promise.allSettled([
+        const [reaSettingsResult, de1SettingsResult, de1AdvancedSettingsResult, appInfoResult, machineInfoResult, skinInfoResult, allSkinsResult, workflowResult, githubReleaseResult] = await Promise.allSettled([
             getReaSettings(),
             getDe1Settings(),
             getDe1AdvancedSettings(),
@@ -3831,7 +3831,8 @@ async function _preloadSettingsInternal() {
             getMachineInfo(),
             getDefaultSkin(),
             getAllSkins(),
-            getWorkflow()
+            getWorkflow(),
+            fetch('https://api.github.com/repos/allofmeng/streamline_project/releases/latest', { cache: 'no-store' }).then(r => r.ok ? r.json() : null)
         ]);
 
         // Process results and handle errors appropriately
@@ -3931,6 +3932,13 @@ async function _preloadSettingsInternal() {
         } else {
             console.error('Error loading all skins:', allSkinsResult.reason);
             settingsCache.allSkinsError = allSkinsResult.reason?.message || 'Failed to load skins';
+        }
+
+        // Handle GitHub latest release result
+        if (githubReleaseResult.status === 'fulfilled' && githubReleaseResult.value?.tag_name) {
+            settingsCache.githubLatestVersion = githubReleaseResult.value.tag_name.replace(/^v/, '');
+        } else {
+            console.warn('Could not fetch GitHub latest release:', githubReleaseResult.reason);
         }
 
         // Handle Workflow result
