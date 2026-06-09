@@ -149,6 +149,9 @@ export function updateDrinkOutPresetsDisplay(doseIn, drinkOut) {
             ratioEl.textContent = '(1:--)';
         }
     }
+
+    const target = `${doseIn}:${drinkOut}`;
+    syncPresetHighlight(document.getElementById('drink-out-presets'), t => t === target);
 }
 
 export function updateTemperatureValue(newValue) {
@@ -320,6 +323,11 @@ export function updateHotWaterDisplay(data) {
     volEl.textContent = `${currentHotWaterVolume}ml`;
     tempEl.textContent = `${currentHotWaterTemp}°C`;
 
+    const hwTarget = hotWaterMode === 'volume'
+        ? `${currentHotWaterVolume}ml`
+        : `${currentHotWaterTemp}°c`;
+    syncPresetHighlight(document.getElementById('hotwater-presets'), t => t.toLowerCase() === hwTarget.toLowerCase());
+
     if (hotWaterMode === 'volume') {
         volEl.classList.remove('text-[20px]');
         volEl.classList.add('text-[26px]', 'font-bold', 'text-[var(--text-primary)]');
@@ -403,7 +411,7 @@ function toggleHotWaterMode() {
     updateHotWaterPresetDisplay();
 }
 
-function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatter, onUpdate) {
+function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatter, onUpdate, afterUpdate) {
     const minusBtn = document.getElementById(minusBtnId);
     const plusBtn = document.getElementById(plusBtnId);
 
@@ -427,6 +435,7 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
             currentValue -= getStep();
             valueEl.textContent = format(currentValue);
             scheduleUpdate(currentValue);
+            if (afterUpdate) afterUpdate(format(currentValue));
         }
     });
 
@@ -438,6 +447,7 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
         currentValue += getStep();
         valueEl.textContent = format(currentValue);
         scheduleUpdate(currentValue);
+        if (afterUpdate) afterUpdate(format(currentValue));
     });
 }
 
@@ -576,6 +586,14 @@ function scheduleSteamApi() {
     }, API_DEBOUNCE_MS);
 }
 
+function syncSteamPresets() {
+    if (steamMode === 'time') {
+        syncPresetHighlight(document.getElementById('steam-presets'), t => t === `${currentSteamDuration}s`);
+    } else {
+        syncPresetHighlight(document.getElementById('steam-flow-presets'), t => t === currentSteamFlow.toFixed(1));
+    }
+}
+
 function incrementSteam() {
     const steamPlusBtn = document.getElementById('steam-plus');
     if (steamPlusBtn) { flashPlusMinusButton(steamPlusBtn); }
@@ -588,6 +606,7 @@ function incrementSteam() {
     }
     updateSteamDisplay({ targetSteamDuration: currentSteamDuration, targetSteamFlow: currentSteamFlow });
     scheduleSteamApi();
+    syncSteamPresets();
 }
 
 function decrementSteam() {
@@ -604,6 +623,7 @@ function decrementSteam() {
     }
     updateSteamDisplay({ targetSteamDuration: currentSteamDuration, targetSteamFlow: currentSteamFlow });
     scheduleSteamApi();
+    syncSteamPresets();
 }
 
 function updateSteamPresetDisplay() {
@@ -620,6 +640,8 @@ function updateSteamPresetDisplay() {
                 button.textContent = `${presets[index].toFixed(1)}`;
             }
         });
+        const flowTarget = currentSteamFlow.toFixed(1);
+        syncPresetHighlight(flowPresetContainer, t => t === flowTarget);
     } else { // time mode
         timePresetContainer.classList.remove('hidden');
         flowPresetContainer.classList.add('hidden');
@@ -630,6 +652,8 @@ function updateSteamPresetDisplay() {
                 button.textContent = `${presets[index]}${unit}`;
             }
         });
+        const timeTarget = `${currentSteamDuration}s`;
+        syncPresetHighlight(timePresetContainer, t => t === timeTarget);
     }
 }
 
@@ -656,17 +680,28 @@ async function persistSteamFlowSelectedIndex(index) {
     }
 }
 
+function syncPresetHighlight(container, matchFn) {
+    if (!container) return;
+    for (const btn of container.children) {
+        const active = matchFn(btn.textContent.trim());
+        btn.classList.toggle('preset-active', active);
+        btn.classList.remove('text-gray-400', 'text-black');
+    }
+}
+
+function syncDrinkOutPresets() {
+    const dose = parseFloat(document.getElementById('dose-in-value')?.textContent);
+    const drink = parseFloat(document.getElementById('drink-out-value')?.textContent);
+    if (isNaN(dose) || isNaN(drink)) return;
+    syncPresetHighlight(document.getElementById('drink-out-presets'), t => t === `${dose}:${drink}`);
+}
+
 function highlightSteamFlowPreset(index) {
     const container = document.getElementById('steam-flow-presets');
     if (!container) return;
     Array.from(container.children).forEach((btn, i) => {
-        if (i === index) {
-            btn.classList.remove('text-gray-400');
-            btn.classList.add('text-black');
-        } else {
-            btn.classList.remove('text-black');
-            btn.classList.add('text-gray-400');
-        }
+        btn.classList.toggle('preset-active', i === index);
+        btn.classList.remove('text-gray-400', 'text-black');
     });
 }
 
@@ -894,13 +929,7 @@ export function initUI(callbacks) {
                 updateTemperatureValue(newValue);
                 updateTemperatureDisplay(newValue);
 
-                // Update preset styles
-                for (const btn of tempPresets.children) {
-                    btn.classList.remove('text-black');
-                    btn.classList.add('text-gray-400');
-                }
-                button.classList.remove('text-gray-400');
-                button.classList.add('text-black');
+                syncPresetHighlight(tempPresets, t => t === button.textContent.trim());
 
                 flashElement(document.getElementById('temp-value'));
             };
@@ -923,7 +952,7 @@ export function initUI(callbacks) {
                     { label: `Save current (${tempValueEl.textContent}) here`, onSelect: () => {
                         button.textContent = tempValueEl.textContent;
                         flashElement(button);
-                        showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                        flashElement(tempValueEl);
                     } },
                     { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
@@ -952,13 +981,7 @@ export function initUI(callbacks) {
                     flashElement(document.getElementById('dose-in-value'));
                     flashElement(document.getElementById('drink-out-value'));
 
-                    // Update preset styles
-                    for (const btn of drinkOutPresets.children) {
-                        btn.classList.remove('text-black');
-                        btn.classList.add('text-[var(--preset-value-color)]');
-                    }
-                    button.classList.remove('text-[var(--preset-value-color)]');
-                    button.classList.add('text-black');
+                    syncPresetHighlight(drinkOutPresets, t => t === button.textContent.trim());
                 }
             };
 
@@ -994,7 +1017,8 @@ export function initUI(callbacks) {
                     { label: `Save current (${currentLabel}) here`, onSelect: () => {
                         button.textContent = currentLabel;
                         flashElement(button);
-                        showToast(`Preset saved as ${currentLabel}`, 2000, 'success');
+                        flashElement(document.getElementById('dose-in-value'));
+                        flashElement(document.getElementById('drink-out-value'));
                     } },
                     { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
@@ -1020,13 +1044,7 @@ export function initUI(callbacks) {
                 updateFlushValue(newValue);
                 updateFlushDisplay(newValue);
 
-                // Update preset styles
-                for (const btn of flushPresets.children) {
-                    btn.classList.remove('text-black');
-                    btn.classList.add('text-gray-400');
-                }
-                button.classList.remove('text-gray-400');
-                button.classList.add('text-black');
+                syncPresetHighlight(flushPresets, t => t === button.textContent.trim());
                 flashElement(document.getElementById('flush-value'));
             };
 
@@ -1048,7 +1066,7 @@ export function initUI(callbacks) {
                     { label: `Save current (${flushValueEl.textContent}) here`, onSelect: () => {
                         button.textContent = flushValueEl.textContent;
                         flashElement(button);
-                        showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                        flashElement(flushValueEl);
                     } },
                     { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
@@ -1087,13 +1105,7 @@ export function initUI(callbacks) {
                     flashElement(document.getElementById("hot-water-vol-value"));
                 }
 
-                // Update preset styles
-                for (const btn of hotwaterPresets.children) {
-                    btn.classList.remove('text-black');
-                    btn.classList.add('text-gray-400');
-                }
-                button.classList.remove('text-gray-400');
-                button.classList.add('text-black');
+                syncPresetHighlight(hotwaterPresets, t => t === button.textContent.trim());
             };
 
             const longPressCallback = () => {
@@ -1125,7 +1137,7 @@ export function initUI(callbacks) {
                         else hotWaterVolPresets[index] = currentValue;
                         updateHotWaterPresetDisplay();
                         flashElement(button);
-                        showToast(`Preset saved as ${currentValue}${unit}`, 2000, 'success');
+                        flashElement(valueEl);
                     } },
                     { label: `Revert to ${defaultValue}${unit}`, danger: true, onSelect: () => {
                         if (isTempMode) hotWaterTempPresets[index] = defaultValue;
@@ -1153,12 +1165,7 @@ export function initUI(callbacks) {
                 setTargetSteamDuration(newValue).catch(e => logger.error(e));
                 updateSteamDisplay({ targetSteamDuration: newValue });
 
-                for (const btn of steamPresets.children) {
-                    btn.classList.remove('text-black');
-                    btn.classList.add('text-gray-400');
-                }
-                button.classList.remove('text-gray-400');
-                button.classList.add('text-black');
+                syncPresetHighlight(steamPresets, t => t === button.textContent.trim());
                 flashElement(document.getElementById('steam-duration-value'));
             };
 
@@ -1186,7 +1193,7 @@ export function initUI(callbacks) {
                         steamTimePresets[index] = currentValue;
                         updateSteamPresetDisplay();
                         flashElement(button);
-                        showToast(`Preset saved as ${currentValue}s`, 2000, 'success');
+                        flashElement(valueEl);
                     } },
                     { label: `Revert to ${defaultValue}s`, danger: true, onSelect: () => {
                         steamTimePresets[index] = defaultValue;
@@ -1245,7 +1252,7 @@ export function initUI(callbacks) {
                         updateSteamPresetDisplay();
                         persistSteamFlowPresets();
                         flashElement(button);
-                        showToast(`Preset saved as ${currentValue.toFixed(1)}ml/s`, 2000, 'success');
+                        flashElement(valueEl);
                     } },
                     { label: `Revert to ${defaultValue.toFixed(1)}ml/s`, danger: true, onSelect: () => {
                         steamFlowPresets[index] = defaultValue;
@@ -1442,14 +1449,14 @@ export function initUI(callbacks) {
         });
     }
 
-    setupValueAdjuster('drink-out-minus', 'drink-out-plus', 'drink-out-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('out', val); updateDrinkRatio(); });
-    setupValueAdjuster('temp-minus', 'temp-plus', 'temp-value', 1, 0, (val) => `${val}°c`, updateTemperatureValue);
-    setupValueAdjuster('dose-in-minus', 'dose-in-plus', 'dose-in-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('in', val); updateDrinkRatio(); });
+    setupValueAdjuster('drink-out-minus', 'drink-out-plus', 'drink-out-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('out', val); updateDrinkRatio(); }, syncDrinkOutPresets);
+    setupValueAdjuster('temp-minus', 'temp-plus', 'temp-value', 1, 0, (val) => `${val}°c`, updateTemperatureValue, (fmt) => syncPresetHighlight(document.getElementById('temp-presets'), t => t === fmt));
+    setupValueAdjuster('dose-in-minus', 'dose-in-plus', 'dose-in-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('in', val); updateDrinkRatio(); }, syncDrinkOutPresets);
     setupValueAdjuster('grind-minus', 'grind-plus', 'grind-value', () => grindStep, 0, (val) => grindStep === 1 ? String(Math.round(val)) : val.toFixed(1), updateGrindValue);
     setupValueAdjuster('flush-minus', 'flush-plus', 'flush-value', 1, 0, (val) => `${val}s`, (val) => {
         updateFlushValue(val);
         updateFlushDisplay(val);
-    });
+    }, (fmt) => syncPresetHighlight(document.getElementById('flush-presets'), t => t === fmt));
 
     if (hotWaterMinusBtn) {
         hotWaterMinusBtn.addEventListener('click', decrementHotWater);
@@ -1963,6 +1970,8 @@ export function updateTemperatureDisplay(temperature) {
     if (tempValueEl) {
         tempValueEl.textContent = `${parseFloat(temperature).toFixed(0)}°c`;
     }
+    const target = `${parseFloat(temperature).toFixed(0)}°c`;
+    syncPresetHighlight(document.getElementById('temp-presets'), t => t === target);
 }
 
 export function updateFlushDisplay(duration) {
@@ -1970,6 +1979,8 @@ export function updateFlushDisplay(duration) {
     if (flushValueEl) {
         flushValueEl.textContent = `${parseFloat(duration).toFixed(0)}s`;
     }
+    const target = `${parseFloat(duration).toFixed(0)}s`;
+    syncPresetHighlight(document.getElementById('flush-presets'), t => t === target);
 }
 
 export function updateGrindDisplay(grinderData) {

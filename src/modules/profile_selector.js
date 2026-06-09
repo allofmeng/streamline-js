@@ -589,7 +589,7 @@ function renderProfiles() {
             const parentTitle = parentRecord?.profile?.title;
             if (parentTitle) {
                 const badge = document.createElement('span');
-                badge.className = 'text-[14px] px-2 py-0.5 rounded-full bg-white/15 text-[var(--low-contrast-white)] whitespace-nowrap';
+                badge.className = 'text-[16px] px-2 py-0.5 rounded-full bg-white/15 whitespace-nowrap';
                 badge.textContent = `from ${parentTitle}`;
                 leftSide.appendChild(badge);
             }
@@ -956,7 +956,8 @@ function initSearchButton() {
             if (button.parentNode && deleteButton) {
                 // Create input field
                 searchInput = document.createElement('input');
-                searchInput.type = 'text';
+                searchInput.type = 'search';
+                searchInput.enterKeyHint = 'search';
                 searchInput.placeholder = 'Search profile names...';
                 searchInput.setAttribute('aria-label', 'Search profile names');
                 searchInput.className = 'w-[400px] h-[82px] mx-[30px] px-4 py-2 rounded-[20px] border border-solid border-[var(--border-color)] text-[var(--text-primary)] bg-[var(--profile-button-background-color)] focus:outline-none focus:ring-2 focus:ring-[var(--mimoja-blue)]';
@@ -1120,7 +1121,7 @@ function filterProfiles(searchTerm) {
         const parentTitle = parentRecord?.profile?.title;
         if (parentTitle) {
             const badge = document.createElement('span');
-            badge.className = 'text-[14px] px-2 py-0.5 rounded-full bg-white/15 text-[var(--low-contrast-white)] whitespace-nowrap';
+            badge.className = 'text-[16px] px-2 py-0.5 rounded-full bg-white/15 whitespace-nowrap';
             badge.textContent = `from ${parentTitle}`;
             leftSide.appendChild(badge);
         }

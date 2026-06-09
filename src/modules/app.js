@@ -1,4 +1,4 @@
-import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings } from './api.js';
+import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings, getAppInfo } from './api.js';
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
@@ -11,6 +11,8 @@ import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
+import { openDB, setSetting } from './idb.js';
+import { openContextMenu } from './context-menu.js';
 
 window.app = { api, ui, chart };
 
@@ -1038,6 +1040,34 @@ async function initMainPageOnce() {
 }
 window.app.initMainPageOnce = initMainPageOnce;
 
+async function prefetchSettingsToIDB() {
+    try {
+        await openDB();
+        const [reaResult, de1Result, de1AdvResult, appInfoResult, workflowResult] = await Promise.allSettled([
+            getReaSettings(),
+            getDe1Settings(),
+            getDe1AdvancedSettings(),
+            getAppInfo(),
+            getWorkflow()
+        ]);
+        const pairs = [
+            ['settings-rea',         reaResult],
+            ['settings-de1',         de1Result],
+            ['settings-de1Advanced', de1AdvResult],
+            ['settings-appInfo',     appInfoResult],
+            ['settings-workflow',    workflowResult],
+        ];
+        for (const [key, result] of pairs) {
+            if (result.status === 'fulfilled' && result.value) {
+                try { await setSetting(key, result.value); } catch(e) { /* non-fatal */ }
+            }
+        }
+        logger.debug('Settings pre-fetched and cached in IDB.');
+    } catch(e) {
+        logger.debug('Settings prefetch skipped:', e.message);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         setDebug(true);
@@ -1063,6 +1093,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!isSubPage()) {
             await initMainPageOnce();
         }
+
+        // Pre-warm settings cache so the settings page opens without redirecting on slow Rea responses
+        prefetchSettingsToIDB();
 
         logger.info('App initialization finished successfully.');
 
@@ -1188,16 +1221,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const profileNameEl = document.getElementById('profile-name');
         if (profileNameEl) {
-            profileNameEl.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-            }, { passive: false });
-            profileNameEl.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                loadPage('src/profiles/profile_selector.html');
-            }, { passive: false });
-            profileNameEl.addEventListener('click', () => {
-                loadPage('src/profiles/profile_selector.html');
-            });
+            profileNameEl.style.cursor = 'pointer';
+            ui.setupPressAndHold(
+                profileNameEl,
+                () => loadPage('src/profiles/profile_selector.html'),
+                (el) => {
+                    const activeRecord = profileManager.getActiveProfileRecord()
+                        ?? Object.values(profileManager.availableProfiles).find(r => {
+                            const t = profileManager.translateProfileTitle(r.profile?.title ?? '');
+                            return t === el.textContent.trim();
+                        }) ?? null;
+                    const profileTitle = activeRecord
+                        ? profileManager.translateProfileTitle(activeRecord.profile.title)
+                        : null;
+                    const items = [
+                        {
+                            label: 'Browse Profiles',
+                            onSelect: () => loadPage('src/profiles/profile_selector.html'),
+                        },
+                        {
+                            label: profileTitle ? `Edit "${profileTitle}"` : 'Edit Profile',
+                            disabled: !activeRecord,
+                            onSelect: () => {
+                                window.__pendingEditProfile = activeRecord;
+                                loadPage('src/profiles/profile_editor.html');
+                            },
+                        },
+                    ];
+                    openContextMenu(el, items);
+                }
+            );
         }
 
         // Add event listener for the settings button

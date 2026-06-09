@@ -43,22 +43,14 @@ function formatRange(values, precision) {
     return `${min}➔${max}`;
 }
 
-function formatRangeWithPeak(values, precision) {
-    if (!values || values.length < 3) {
-        return formatRange(values, precision);
-    }
-
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const maxIndex = values.indexOf(max);
-    const endValue = values[values.length - 1];
-
-    // Check if the peak (max value) is not at the beginning or the end of the phase
-    if (maxIndex > 0 && maxIndex < values.length - 1) {
-        return `${min.toFixed(precision)}➔${max.toFixed(precision)}➔${endValue.toFixed(precision)}`;
-    } else {
-        return `${min.toFixed(precision)}➔${max.toFixed(precision)}`;
-    }
+function formatStartPeakEnd(values, precision) {
+    if (!values || values.length === 0) return '-';
+    const start = values[0].toFixed(precision);
+    const end = values[values.length - 1].toFixed(precision);
+    const peak = Math.max(...values).toFixed(precision);
+    if (start === end) return start;
+    if (peak === start || peak === end) return `${start}➔${end}`;
+    return `${start}➔${peak}➔${end}`;
 }
 
 function getPhaseData(dataArray, startIndex, endIndex) {
@@ -127,23 +119,23 @@ function calculateAndRender(shotData) {
         const exVolume = totalVolume - piVolume;
 
         // --- Rendering ---
-        updateText(elements.pi.time, `${piTime.toFixed(1)}`);
+        updateText(elements.pi.time, `${Math.round(piTime)}`);
         updateText(elements.pi.weight, piWeight !== null ? `${piWeight.toFixed(1)}g` : '0.0');
         updateText(elements.pi.volume, `${piVolume.toFixed(0)}`);
         updateText(elements.pi.temp, `${formatRange(piTemps, 0)}`);
-        updateText(elements.pi.flow, `${formatRange(piFlows, 1)} `);
-        updateText(elements.pi.pressure, `${formatRange(piPressures, 1)}`);
+        updateText(elements.pi.flow, `${formatStartPeakEnd(piFlows, 1)} `);
+        updateText(elements.pi.pressure, `${formatStartPeakEnd(piPressures, 1)}`);
 
         if (exTime > 0) {
-            updateText(elements.ex.time, `${exTime.toFixed(1)}`);
+            updateText(elements.ex.time, `${Math.round(exTime)}`);
             updateText(elements.ex.weight, exWeight !== null ? `${exWeight.toFixed(1)}g` : '0.0');
             updateText(elements.ex.volume, `${exVolume.toFixed(0)}`);
             updateText(elements.ex.temp, `${formatRange(exTemps, 0)}`);
-            updateText(elements.ex.flow, `${formatRangeWithPeak(exFlows, 1)} `);
-            updateText(elements.ex.pressure, `${formatRangeWithPeak(exPressures, 1)}`);
+            updateText(elements.ex.flow, `${formatStartPeakEnd(exFlows, 1)} `);
+            updateText(elements.ex.pressure, `${formatStartPeakEnd(exPressures, 1)}`);
         }
 
-        updateText(elements.total.time, `${totalTime.toFixed(1)}`);
+        updateText(elements.total.time, `${Math.round(totalTime)}`);
         updateText(elements.total.weight, displayTotal !== null && displayTotal !== undefined ? `${displayTotal.toFixed(1)}g` : '0.0');
         updateText(elements.total.volume, `${totalVolume.toFixed(0)}`);
     } catch (error) {

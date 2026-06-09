@@ -288,6 +288,11 @@ export function setActiveProfile(profileId) {
     activeProfileId = profileId;
 }
 
+export function getActiveProfileRecord() {
+    if (!activeProfileId || !availableProfiles[activeProfileId]) return null;
+    return availableProfiles[activeProfileId];
+}
+
 export async function saveContextToActiveProfile(fields) {
     if (!activeProfileId || !availableProfiles[activeProfileId]) return;
     const profileRecord = availableProfiles[activeProfileId];

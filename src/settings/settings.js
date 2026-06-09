@@ -277,7 +277,8 @@ const settingsTree = {
     'machine': {
         name: 'Machine',
         subcategories: [
-            { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' }
+            { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' },
+            { id: 'machineinfo', name: 'Machine Information', settingsCategory: 'machineinfo' }
         ]
     },
     'maintenance': {
@@ -290,7 +291,7 @@ const settingsTree = {
     'skin': {
         name: 'Skin',
         subcategories: [
-            { id: 'skin1', name: 'Theme', settingsCategory: 'appearance' }
+            { id: 'skin1', name: 'Theme & Updates', settingsCategory: 'appearance' }
         ]
     },
     'language': {
@@ -601,6 +602,10 @@ export function renderSettingsContent(category) {
             isLoading = settingsCache.de1Loading || settingsCache.reaLoading;
             error = settingsCache.de1Error || settingsCache.reaError;
             break;
+        case 'machineinfo':
+            isLoading = settingsCache.machineInfoLoading;
+            error = settingsCache.machineInfoError;
+            break;
         case 'de1advanced':
         case 'calib_refillkit':
         case 'calib_voltage':
@@ -719,6 +724,8 @@ export function renderSettingsContent(category) {
             return renderFanThresholdSettings(settingsCache.de1);
         case 'usbchargermode':
             return renderUsbChargerModeSettings(settingsCache.de1);
+        case 'machineinfo':
+            return renderMachineInformationSettings();
         case 'de1advanced':
             return renderDe1AdvancedSettingsForm(settingsCache.de1Advanced);
         case 'hot water':
@@ -1170,8 +1177,8 @@ export function renderUsbChargerModeSettings(settings) {
                                class="sr-only peer"
                                ${nightModeEnabled ? 'checked' : ''}
                                onchange="handleNightModeToggle(this.checked)">
-                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                     </label>
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -1266,8 +1273,8 @@ export function renderUsbChargerModeSettings(settings) {
                            class="sr-only peer"
                            ${settings.usb ? 'checked' : ''}
                            onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
-                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                 </label>
             </div>
 
@@ -1316,8 +1323,8 @@ export function renderUsbChargerModeSettings(settings) {
                                    class="sr-only peer"
                                    ${reaSettings.lowBatteryBrightnessLimit ? 'checked' : ''}
                                    onchange="window.updateReaSetting('lowBatteryBrightnessLimit', this.checked)">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -1575,8 +1582,8 @@ export function renderTalkToDecentSettings() {
                         </div>
                         <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                             <input type="checkbox" id="talkdecent-attach-machine" checked class="sr-only peer">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
                     <div class="flex items-center gap-[20px]">
@@ -1697,8 +1704,8 @@ export function renderFeedbackSettings() {
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="feedback-attach-sysinfo" checked class="sr-only peer">
-                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                 </label>
             </div>
 
@@ -1768,8 +1775,8 @@ export function renderScreenSaverSettings() {
                         <input type="checkbox" class="sr-only peer"
                                ${enabled ? 'checked' : ''}
                                onchange="window.setScreensaverEnabled(this.checked)">
-                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                     </label>
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -1842,8 +1849,8 @@ export function renderWakeLockSettings() {
                         <input type="checkbox" id="wake-lock-toggle" class="sr-only peer"
                                ${wakeLockEnabled ? 'checked' : ''}
                                onchange="handleWakeLockToggle(this.checked)">
-                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                     </label>
                 </div>
             </div>
@@ -1912,8 +1919,8 @@ async function loadPresenceSettingsAsync() {
                         <input type="checkbox" class="sr-only peer"
                                ${schedule.enabled ? 'checked' : ''}
                                onchange="handleScheduleToggle('${schedule.id}', this.checked)">
-                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                     </label>
                     <button class="btn btn-sm btn-error" onclick="handleDeleteSchedule('${schedule.id}')">
                         Delete
@@ -1943,8 +1950,8 @@ async function loadPresenceSettingsAsync() {
                             <input type="checkbox" id="presence-enabled-toggle" class="sr-only peer"
                                    ${settings.userPresenceEnabled ? 'checked' : ''}
                                    onchange="handlePresenceToggle(this.checked)">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
 
@@ -3059,8 +3066,8 @@ export function renderSkinSettings() {
                         </div>
                         <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                             <input type="checkbox" id="theme-toggle" class="sr-only peer">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
@@ -3224,8 +3231,8 @@ export function renderExtensionsSettings() {
                         </div>
                         <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                             <input type="checkbox" id="visualizer-enabled" class="sr-only peer">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
 
@@ -3460,6 +3467,71 @@ async function loadVisualizerSettings() {
     }
 }
 
+export function renderMachineInformationSettings() {
+    const machineInfo = settingsCache.machineInfo;
+
+    const extraRows = (machineInfo?.extra && typeof machineInfo.extra === 'object')
+        ? Object.entries(machineInfo.extra).map(([key, value]) => {
+            const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+            const val = typeof value === 'boolean' ? (value ? 'Enabled' : 'Disabled') : String(value);
+            return `
+            <div class="flex items-center justify-between py-[16px] border-t border-[#c9c9c9]">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">${label}</span>
+                <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${val}</span>
+            </div>`;
+        }).join('')
+        : '';
+
+    const body = machineInfo ? `
+        <div class="rounded-[10px] border border-[#c9c9c9] p-6 bg-[var(--box-color)] flex flex-col gap-0">
+
+            <div class="flex items-center justify-between py-[16px]">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">Device Model</span>
+                <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${machineInfo.model}</span>
+            </div>
+
+            <div class="flex items-center justify-between py-[16px] border-t border-[#c9c9c9]">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">Firmware Version</span>
+                <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${machineInfo.version}</span>
+            </div>
+
+            <div class="flex items-center justify-between py-[16px] border-t border-[#c9c9c9]">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">Serial Number</span>
+                <div class="flex items-center gap-3">
+                    <button onclick="navigator.clipboard.writeText('${machineInfo.serialNumber}').then(()=>{ this.textContent='Copied!'; setTimeout(()=>this.textContent='Copy',1500); })"
+                            class="text-[18px] font-semibold text-[#385a92] px-3 py-1 rounded-[8px] border border-[#385a92] hover:bg-[#385a92] hover:text-white transition-colors">
+                        Copy
+                    </button>
+                    <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${machineInfo.serialNumber}</span>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between py-[16px] border-t border-[#c9c9c9]">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">Group Head Controller</span>
+                <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${machineInfo.GHC ? 'Enabled' : 'Disabled'}</span>
+            </div>
+
+            ${extraRows}
+        </div>
+    ` : `
+        <div class="rounded-[10px] border border-[#c9c9c9] p-6 bg-[var(--box-color)]">
+            <p class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">Fetching machine info...</p>
+        </div>
+    `;
+
+    return `
+        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]">Machine Information</p>
+            </div>
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+            <div class="w-full flex flex-col gap-4">
+                ${body}
+            </div>
+        </div>
+    `;
+}
+
 export function renderFirmwareUpdateSettings() {
     const appInfo = settingsCache.appInfo;
     const appInfoDetails = appInfo ? `
@@ -3481,24 +3553,6 @@ export function renderFirmwareUpdateSettings() {
                 <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
                     <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">Update info</p>
                     <p class="text-[24px] font-['Inter:Regular',sans-serif]">Fetching build metadata...</p>
-                </div>
-            `;
-
-    const machineInfo = settingsCache.machineInfo;
-    const machineExtra = formatMachineExtra(machineInfo?.extra);
-    const machineDetails = machineInfo ? `
-                <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
-                    <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">Machine</p>
-                    <p class="text-[24px] font-['Inter:Regular',sans-serif]">${machineInfo.model}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)]">Firmware Version: ${machineInfo.version}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)]">Serial: ${machineInfo.serialNumber}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)]">GHC: ${machineInfo.GHC ? 'Enabled' : 'Disabled'}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)] break-words">${machineExtra}</p>
-                </div>
-            ` : `
-                <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
-                    <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">Machine Info</p>
-                    <p class="text-[24px] font-['Inter:Regular',sans-serif]">Fetching machine info...</p>
                 </div>
             `;
 
@@ -3555,10 +3609,6 @@ export function renderFirmwareUpdateSettings() {
                     <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decent.app Information</p>
                     ${appInfoDetails}
                 </div>
-                <div class="flex flex-col gap-4">
-                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Machine Details</p>
-                    ${machineDetails}
-                </div>
             </div>
         </div>
     `;
@@ -3587,24 +3637,6 @@ export function renderUpdatesSettings() {
                 <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
                     <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">Update info</p>
                     <p class="text-[24px] font-['Inter:Regular',sans-serif]">Fetching build metadata...</p>
-                </div>
-            `;
-
-    const machineInfo = settingsCache.machineInfo;
-    const machineExtra = formatMachineExtra(machineInfo?.extra);
-    const machineDetails = machineInfo ? `
-                <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
-                    <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">Machine</p>
-                    <p class="text-[24px] font-['Inter:Regular',sans-serif]">${machineInfo.model}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)]">Version: ${machineInfo.version}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)]">Serial: ${machineInfo.serialNumber}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)]">GHC: ${machineInfo.GHC ? 'Enabled' : 'Disabled'}</p>
-                    <p class="text-[16px] text-[var(--text-secondary)] break-words">${machineExtra}</p>
-                </div>
-            ` : `
-                <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
-                    <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">Machine Info</p>
-                    <p class="text-[24px] font-['Inter:Regular',sans-serif]">Fetching machine info...</p>
                 </div>
             `;
 
@@ -3637,10 +3669,6 @@ export function renderUpdatesSettings() {
                     <div class="flex flex-col gap-4">
                         <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decent.app Information</p>
                         ${appInfoDetails}
-                    </div>
-                    <div class="flex flex-col gap-4">
-                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Machine Details</p>
-                        ${machineDetails}
                     </div>
                 </div>
             </div>
@@ -3781,6 +3809,7 @@ export async function preloadSettings() {
 // Internal function to preload all settings
 async function _preloadSettingsInternal() {
     try {
+        await openDB();
         // Only show "Loading" state if we have no stale IDB data to display
         if (!settingsCache.rea)         settingsCache.reaLoading         = true;
         if (!settingsCache.de1)         settingsCache.de1Loading         = true;
@@ -3812,60 +3841,64 @@ async function _preloadSettingsInternal() {
         let appInfo = null;
         let machineInfo = null;
 
-        // Handle REA settings result
+        let usedCache = false;
+
+        // Handle REA settings result — fall back to IDB on any failure
         if (reaSettingsResult.status === 'fulfilled') {
             reaSettings = reaSettingsResult.value;
+            try { await setSetting('settings-rea', reaSettings); } catch(e) { /* non-fatal */ }
         } else {
             console.error('Error loading decent.app settings:', reaSettingsResult.reason);
-            settingsCache.reaError = reaSettingsResult.reason.message;
-
-            // Check if this is a 500 error and redirect if needed
-            if (reaSettingsResult.reason.status === 500) {
-                console.log('decent.app settings API returned 500 error, redirecting to home page');
-                setTimeout(() => {
-                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 2000, 'error');
-                }, 1000);
-
-                loadPage('index.html');
-                return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, appInfo: null, machineInfo: null };
-            }
+            settingsCache.reaError = reaSettingsResult.reason?.message;
+            try { reaSettings = await getSetting('settings-rea'); } catch(e) { /* non-fatal */ }
+            if (reaSettings) usedCache = true;
         }
 
-        // Handle DE1 settings result
+        // Handle DE1 settings result — fall back to IDB on any failure
         if (de1SettingsResult.status === 'fulfilled') {
             de1Settings = de1SettingsResult.value;
+            try { await setSetting('settings-de1', de1Settings); } catch(e) { /* non-fatal */ }
         } else {
             console.error('Error loading DE1 settings:', de1SettingsResult.reason);
-            settingsCache.de1Error = de1SettingsResult.reason.message;
-
-            // Check if this is a 500 error and redirect if needed
-            if (de1SettingsResult.reason.status === 500) {
-                console.log('DE1 settings API returned 500 error, redirecting to home page');
-                setTimeout(() => {
-                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 2000, 'error');
-                }, 1000);
-                loadPage('index.html');
-
-                return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, appInfo: null, machineInfo: null };
-            }
+            settingsCache.de1Error = de1SettingsResult.reason?.message;
+            try { de1Settings = await getSetting('settings-de1'); } catch(e) { /* non-fatal */ }
+            if (de1Settings) usedCache = true;
         }
 
-        // Handle DE1 advanced settings result
+        // Handle DE1 advanced settings result — fall back to IDB on any failure
         if (de1AdvancedSettingsResult.status === 'fulfilled') {
             de1AdvancedSettings = de1AdvancedSettingsResult.value;
+            try { await setSetting('settings-de1Advanced', de1AdvancedSettings); } catch(e) { /* non-fatal */ }
         } else {
             console.error('Error loading DE1 advanced settings:', de1AdvancedSettingsResult.reason);
-            settingsCache.de1AdvancedError = de1AdvancedSettingsResult.reason.message;
+            settingsCache.de1AdvancedError = de1AdvancedSettingsResult.reason?.message;
+            try { de1AdvancedSettings = await getSetting('settings-de1Advanced'); } catch(e) { /* non-fatal */ }
+            if (de1AdvancedSettings) usedCache = true;
+        }
 
-            // Check if this is a 500 error and redirect if needed
-            if (de1AdvancedSettingsResult.reason.status === 500) {
-                console.log('DE1 advanced settings API returned 500 error, redirecting to home page');
-                setTimeout(() => {
-                    ui.showToast('Unable to load settings. Check if De1 is connected. Returned to home page.', 2000, 'error');
-                }, 1000);
-                loadPage('index.html');
-                return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, appInfo: null, machineInfo: null };
+        // All critical settings failed and no IDB cache — show retry UI, auto-retry in background
+        if (!reaSettings && !de1Settings && !de1AdvancedSettings) {
+            const contentArea = document.getElementById('settings-content-area');
+            if (contentArea) {
+                contentArea.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full gap-[40px] p-8">
+                        <p class="text-[var(--text-primary)] text-[30px] font-bold text-center">Unable to reach De1</p>
+                        <p class="text-[var(--text-primary)] text-[24px] text-center opacity-60">Retrying automatically every 3 seconds...</p>
+                        <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
+                                onclick="window.retryLoadSettings()">Retry Now</button>
+                    </div>`;
             }
+            ui.showToast('Unable to reach De1. Retrying...', 3000, 'warning');
+            setTimeout(() => {
+                preloadSettings().then(() => {
+                    if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
+                });
+            }, 3000);
+            return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, appInfo: null, machineInfo: null };
+        }
+
+        if (usedCache) {
+            ui.showToast('Some settings loaded from cache — showing last known values', 4000, 'warning');
         }
 
         // Handle App Info result
@@ -3953,6 +3986,7 @@ function getCategoryTitle(category) {
         case 'de1': return 'DE1 Settings';
         case 'fanthreshold': return 'Fan Threshold Settings';
         case 'usbchargermode': return 'USB Charger Settings';
+        case 'machineinfo': return 'Machine Information';
         case 'de1advanced': return 'Machine Advanced Settings';
         default: return 'Settings';
     }
@@ -4174,8 +4208,8 @@ export async function initializeSettings() {
                                    class="sr-only peer"
                                    ${p.loaded ? 'checked' : ''}
                                    onchange="window.togglePlugin('${p.id}', this.checked)">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                         <span class="text-[18px] text-[var(--text-primary)] opacity-60">${p.loaded ? 'Enabled' : 'Disabled'}</span>
                     </div>
@@ -4734,9 +4768,16 @@ export async function initializeSettings() {
 
     window.updateSkin = async function() {
         try {
+            const beforeVersion = settingsCache.appInfo?.version;
             ui.showToast('Checking for skin updates...', 3000, 'info');
             await updateSkins();
-            ui.showToast('Skin updated successfully. Reload the page to apply.', 5000, 'success');
+            const updatedInfo = await getAppInfo();
+            if (beforeVersion && updatedInfo?.version === beforeVersion) {
+                ui.showToast(`You're already on the latest version (${beforeVersion}).`, 4000, 'info');
+            } else {
+                ui.showToast('Skin updated successfully. Reloading...', 2000, 'success');
+                setTimeout(() => window.location.reload(), 2000);
+            }
         } catch (error) {
             logger.error('Error updating skin:', error);
             ui.showToast(`Failed to update skin: ${error.message}`, 5000, 'error');
@@ -4746,8 +4787,9 @@ export async function initializeSettings() {
     window.updateHotWaterSetting = updateHotWaterSetting;
     window.flashPlusMinusButton = ui.flashPlusMinusButton;
     window.retryLoadSettings = () => {
-        // Function to retry loading settings when user clicks retry button
-        loadSettings();
+        preloadSettings().then(() => {
+            if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
+        });
     };
 
     // Expose flush adjustment functions to global scope
@@ -5080,16 +5122,17 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
     if (navUl) {
         navUl.innerHTML = '';
         
+        const allKeys = Object.keys(settingsTree);
         Object.entries(filteredCategories).forEach(([key, category]) => {
             const li = document.createElement('li');
             const btn = document.createElement('button');
             btn.id = `${key}-btn`;
             btn.className = 'settings-nav-btn w-full text-left px-4 py-3 rounded-lg text-[24px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center';
-            
-            // Highlight matching text in the category name
+
+            const number = allKeys.indexOf(key) + 1;
             const highlightedName = highlightMatch(category.name, searchTerm);
-            btn.innerHTML = `<span>${highlightedName}</span>`;
-            
+            btn.innerHTML = `${number}. <span>${highlightedName}</span>`;
+
             navUl.appendChild(li);
             li.appendChild(btn);
         });
@@ -5100,30 +5143,29 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
         // Remove any existing listeners to avoid duplicates
         const newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
-        
+
         newBtn.addEventListener('click', function() {
             // Handle active state for main categories
             document.querySelectorAll('.settings-nav-btn').forEach(b => {
                 b.classList.remove('text-white', 'bg-[#2c4a7a]');
-                b.classList.add('text-[#959595]'); // Explicitly re-add default color
+                b.classList.add('text-[#959595]');
             });
-            this.classList.remove('text-[#959595]'); // Explicitly remove default color
+            this.classList.remove('text-[#959595]');
             this.classList.add('text-white', 'bg-[#2c4a7a]');
 
             const mainCategoryKey = this.id.replace(/-btn$/, '').replace(/-/g, '');
+            const category = settingsTree[mainCategoryKey];
 
-            // Render matching subcategories
+            // Render all subcategories for the selected main category
             const subCategoriesPanel = document.getElementById('sub-categories-panel');
             if (subCategoriesPanel) {
-                subCategoriesPanel.innerHTML = renderFilteredSubcategories(mainCategoryKey, searchTerm);
+                subCategoriesPanel.innerHTML = renderSubcategories(mainCategoryKey);
 
-                // Add event listeners to the new subcategory buttons
                 subCategoriesPanel.querySelectorAll('.settings-subnav-btn').forEach(subBtn => {
                     subBtn.addEventListener('click', function(e) {
-                        e.preventDefault(); // Prevent any default behavior that might cause page reload
-                        e.stopPropagation(); // Stop event from bubbling up
+                        e.preventDefault();
+                        e.stopPropagation();
 
-                        // Handle active state for subcategories
                         subCategoriesPanel.querySelectorAll('.settings-subnav-btn').forEach(sb => {
                              sb.classList.remove('text-white', 'bg-[#2c4a7a]');
                              sb.classList.add('text-[#959595]');
@@ -5132,18 +5174,24 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
                         this.classList.add('text-white', 'bg-[#2c4a7a]');
 
                         const settingsCategory = this.dataset.category;
-                        activeSettingsCategory = settingsCategory; // Set the active category
-                        updateSettingsContentArea(settingsCategory); // Use the new helper function
+                        activeSettingsCategory = settingsCategory;
+                        updateSettingsContentArea(settingsCategory);
                     });
                 });
             }
 
-            // After rendering subcategories, attempt to click the first one if it exists
-            const firstSubCategoryBtn = subCategoriesPanel?.querySelector('.settings-subnav-btn');
-            if (firstSubCategoryBtn) {
-                firstSubCategoryBtn.click();
+            // If main category name didn't match the search, the user got here via a
+            // subcategory match — jump directly to the first matching subcategory.
+            // Otherwise fall back to the first subcategory in the list.
+            const subBtns = [...(subCategoriesPanel?.querySelectorAll('.settings-subnav-btn') || [])];
+            const mainMatches = category && category.name.toLowerCase().includes(searchTerm);
+            const targetSubBtn = (!mainMatches && searchTerm)
+                ? (subBtns.find(sb => sb.textContent.toLowerCase().includes(searchTerm)) || subBtns[0])
+                : subBtns[0];
+
+            if (targetSubBtn) {
+                targetSubBtn.click();
             } else {
-                // If no subcategories, clear the content area and set activeSettingsCategory to null
                 const contentArea = document.getElementById('settings-content-area');
                 if (contentArea) {
                     contentArea.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-center p-8">
@@ -5154,6 +5202,10 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
             }
         });
     });
+
+    // Auto-click the first result so subcategories appear without a manual click
+    const firstBtn = navUl?.querySelector('.settings-nav-btn');
+    if (firstBtn) firstBtn.click();
 }
 
 // Render filtered subcategories based on search term
@@ -5615,8 +5667,8 @@ export function renderBluetoothScaleSettings(settings) {
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="block-on-no-scale-toggle" class="sr-only peer" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked, false)">
-                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                 </label>
             </div>
 
@@ -5758,8 +5810,8 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type
                             <input type="checkbox" class="sr-only peer"
                                    ${isPreferred ? 'checked' : ''}
                                    onchange="window.setPreferredDevice('${safeSettingKey}', '${safeId}', this.checked)">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[4px] -translate-y-1/2 peer-checked:translate-x-[36px] size-[28px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[4px] -translate-y-1/2 peer-checked:translate-x-[36px] size-[28px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
                     ` : ''}

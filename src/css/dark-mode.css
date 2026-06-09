@@ -1,10 +1,19 @@
 :root {
     --text-primary: #121212;
     --border-color: #eaeaea; /* stone-300 */
+    --toggle-off-bg: #e8e8e8;
+    --toggle-off-border: #c9c9c9;
+    --toggle-off-knob: #c9c9c9;
+    --preset-active-color: #121212;
+}
+
+.preset-active {
+    color: var(--preset-active-color) !important;
 }
 
 [data-theme="dark"] {
     --text-primary: #E0E0E0;
+    --preset-active-color: #e8e8e8;
     --border-color: #374151; /* gray-700 */
     --mimoja-blue-v2: #415996;
     --mimoja-blue: #292c38;
@@ -12,6 +21,9 @@
     --dark-gray: #101217;
     --green: #0CA581;
     --button-grey: #101115;
+    --toggle-off-bg: #2a2a2e;
+    --toggle-off-border: #4a4a52;
+    --toggle-off-knob: #5a5a64;
 }
 
 [data-theme="dark"] body {
