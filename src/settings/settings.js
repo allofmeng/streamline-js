@@ -420,11 +420,11 @@ function areSettingsLoaded() {
 }
 
 // Update decent.app settings
-export function updateReaSetting(key, value) {
+export function updateReaSetting(key, value, rerender = true) {
     if (!settingsCache.rea) settingsCache.rea = {};
     settingsCache.rea[key] = value;
     pendingChanges.rea[key] = value;
-    if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
+    if (rerender && activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
 }
 
 // Update DE1 settings
@@ -1165,12 +1165,13 @@ export function renderUsbChargerModeSettings(settings) {
                     <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                         <p class="leading-[1.2]">Night Mode</p>
                     </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
+                    <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                         <input type="checkbox" id="night-mode-toggle"
                                class="sr-only peer"
                                ${nightModeEnabled ? 'checked' : ''}
                                onchange="handleNightModeToggle(this.checked)">
-                        <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
                     </label>
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -1260,12 +1261,13 @@ export function renderUsbChargerModeSettings(settings) {
                         Controls whether the USB port provides power for charging devices
                     </p>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer">
+                <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="usbChargerModeToggle"
                            class="sr-only peer"
                            ${settings.usb ? 'checked' : ''}
                            onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
-                    <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
                 </label>
             </div>
 
@@ -1309,12 +1311,13 @@ export function renderUsbChargerModeSettings(settings) {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]">Dim the screen when low battery</p>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                             <input type="checkbox" id="low-battery-brightness-limit-toggle"
                                    class="sr-only peer"
                                    ${reaSettings.lowBatteryBrightnessLimit ? 'checked' : ''}
                                    onchange="window.updateReaSetting('lowBatteryBrightnessLimit', this.checked)">
-                            <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
                         </label>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
@@ -1570,8 +1573,11 @@ export function renderTalkToDecentSettings() {
                             <p class="text-[22px] font-bold text-[#385a92]">Attach Machine Info</p>
                             <p class="text-[20px] text-[var(--low-contrast-white)]">Appends machine model, firmware version, and serial number</p>
                         </div>
-                        <input type="checkbox" id="talkdecent-attach-machine" checked
-                               class="toggle toggle-lg toggle-primary">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="talkdecent-attach-machine" checked class="sr-only peer">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        </label>
                     </div>
                     <div class="flex items-center gap-[20px]">
                         <button id="talkdecent-send-btn"
@@ -1689,8 +1695,11 @@ export function renderFeedbackSettings() {
                     <p class="font-bold text-[#385a92] text-[22px]">Attach System Info</p>
                     <p class="text-[var(--text-primary)] text-[19px]">Appends app version and machine firmware to the report</p>
                 </div>
-                <input type="checkbox" id="feedback-attach-sysinfo" checked
-                       class="toggle toggle-lg toggle-primary">
+                <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                    <input type="checkbox" id="feedback-attach-sysinfo" checked class="sr-only peer">
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                </label>
             </div>
 
             <!-- Submit -->
@@ -1755,9 +1764,13 @@ export function renderScreenSaverSettings() {
                     <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                         <p class="leading-[1.2]">Enable Screen Saver</p>
                     </div>
-                    <input type="checkbox" class="toggle toggle-primary scale-[2] mr-[16px]"
-                           ${enabled ? 'checked' : ''}
-                           onchange="window.setScreensaverEnabled(this.checked)">
+                    <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                        <input type="checkbox" class="sr-only peer"
+                               ${enabled ? 'checked' : ''}
+                               onchange="window.setScreensaverEnabled(this.checked)">
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                    </label>
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
                     Show screen saver when the machine sleeps
@@ -1825,11 +1838,13 @@ export function renderWakeLockSettings() {
                             Keep the screen on while the app is active
                         </p>
                     </div>
-                    <input type="checkbox"
-                           id="wake-lock-toggle"
-                           class="toggle toggle-lg toggle-primary"
-                           ${wakeLockEnabled ? 'checked' : ''}
-                           onchange="handleWakeLockToggle(this.checked)">
+                    <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                        <input type="checkbox" id="wake-lock-toggle" class="sr-only peer"
+                               ${wakeLockEnabled ? 'checked' : ''}
+                               onchange="handleWakeLockToggle(this.checked)">
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                    </label>
                 </div>
             </div>
 
@@ -1893,10 +1908,13 @@ async function loadPresenceSettingsAsync() {
                     </div>
                 </div>
                 <div class="flex items-center gap-4">
-                    <input type="checkbox"
-                           class="toggle toggle-md toggle-primary"
-                           ${schedule.enabled ? 'checked' : ''}
-                           onchange="handleScheduleToggle('${schedule.id}', this.checked)">
+                    <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                        <input type="checkbox" class="sr-only peer"
+                               ${schedule.enabled ? 'checked' : ''}
+                               onchange="handleScheduleToggle('${schedule.id}', this.checked)">
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                    </label>
                     <button class="btn btn-sm btn-error" onclick="handleDeleteSchedule('${schedule.id}')">
                         Delete
                     </button>
@@ -1921,11 +1939,13 @@ async function loadPresenceSettingsAsync() {
                                 Track user presence to automatically sleep the machine
                             </p>
                         </div>
-                        <input type="checkbox"
-                               id="presence-enabled-toggle"
-                               class="toggle toggle-lg toggle-primary"
-                               ${settings.userPresenceEnabled ? 'checked' : ''}
-                               onchange="handlePresenceToggle(this.checked)">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="presence-enabled-toggle" class="sr-only peer"
+                                   ${settings.userPresenceEnabled ? 'checked' : ''}
+                                   onchange="handlePresenceToggle(this.checked)">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        </label>
                     </div>
 
                     <div class="mt-6">
@@ -3037,9 +3057,10 @@ export function renderSkinSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]">Theme</p>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                             <input type="checkbox" id="theme-toggle" class="sr-only peer">
-                            <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
                         </label>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
@@ -3201,9 +3222,10 @@ export function renderExtensionsSettings() {
                         Upload shots to visualizer.coffee
                     </p>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                             <input type="checkbox" id="visualizer-enabled" class="sr-only peer">
-                            <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
                         </label>
                     </div>
 
@@ -4148,13 +4170,17 @@ export async function initializeSettings() {
                         ${p.description ? `<p class="text-[22px] text-[var(--text-primary)] leading-[1.4] opacity-75">${p.description}</p>` : ''}
                         <span class="text-[18px] text-[var(--text-primary)] opacity-40 font-mono">${p.id}</span>
                     </div>
-                    <label class="flex flex-col items-center gap-[6px] flex-shrink-0">
-                        <input type="checkbox" id="plugin-toggle-${CSS.escape(p.id)}"
-                               class="toggle toggle-lg toggle-primary"
-                               ${p.loaded ? 'checked' : ''}
-                               onchange="window.togglePlugin('${p.id}', this.checked)">
+                    <div class="flex flex-col items-center gap-[6px] flex-shrink-0">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="plugin-toggle-${CSS.escape(p.id)}"
+                                   class="sr-only peer"
+                                   ${p.loaded ? 'checked' : ''}
+                                   onchange="window.togglePlugin('${p.id}', this.checked)">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        </label>
                         <span class="text-[18px] text-[var(--text-primary)] opacity-60">${p.loaded ? 'Enabled' : 'Disabled'}</span>
-                    </label>
+                    </div>
                 </div>
             `).join('');
         } catch (err) {
@@ -5560,7 +5586,7 @@ export function renderBluetoothScaleSettings(settings) {
                         ${scalePowerMode === 'disabled' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
                         aria-pressed="${scalePowerMode === 'disabled'}"
                         onclick="window.updateReaSetting('scalePowerMode', 'disabled')">
-                        Disabled
+                        Nothing
                     </button>
                     <button class="h-[100px] w-[280px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[28px] flex items-center justify-center cursor-pointer transition-colors duration-200
                         ${scalePowerMode === 'displayOff' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
@@ -5589,9 +5615,10 @@ export function renderBluetoothScaleSettings(settings) {
                         Prevent shots from starting when no scale is connected.
                     </p>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                    <input type="checkbox" id="block-on-no-scale-toggle" class="sr-only peer" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked)">
-                    <div class="w-[100px] h-[50px] bg-white border-2 border-[#385a92] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[46px] after:content-[''] after:absolute after:top-[5px] after:start-[5px] after:bg-[#385a92] after:rounded-full after:h-[40px] after:w-[40px] after:transition-all peer-checked:bg-white"></div>
+                <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                    <input type="checkbox" id="block-on-no-scale-toggle" class="sr-only peer" ${blockOnNoScale ? 'checked' : ''} onchange="window.updateReaSetting('blockOnNoScale', this.checked, false)">
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
                 </label>
             </div>
 
@@ -5729,9 +5756,13 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type
                     ${settingKey ? `
                     <div class="flex flex-col items-center gap-[4px]">
                         <span class="text-[16px] text-[var(--text-primary)] opacity-50">Preferred</span>
-                        <input type="checkbox" class="toggle toggle-md toggle-primary"
-                               ${isPreferred ? 'checked' : ''}
-                               onchange="window.setPreferredDevice('${safeSettingKey}', '${safeId}', this.checked)">
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[72px] h-[36px]">
+                            <input type="checkbox" class="sr-only peer"
+                                   ${isPreferred ? 'checked' : ''}
+                                   onchange="window.setPreferredDevice('${safeSettingKey}', '${safeId}', this.checked)">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[#e8e8e8] border-[#c9c9c9] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[4px] -translate-y-1/2 peer-checked:translate-x-[36px] size-[28px] rounded-full transition-[transform,background-color] duration-200 bg-[#c9c9c9] peer-checked:bg-white"></div>
+                        </label>
                     </div>
                     ` : ''}
                     <span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full ${isConnected ? 'bg-green-500/15 text-green-600' : 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-50'}">
