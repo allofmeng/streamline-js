@@ -3719,16 +3719,14 @@ function initResizableSubNav() {
 
         const startX = clientX;
         const startMainWidth = mainCategoriesPanel.offsetWidth;
-        const startSubWidth = subCategoriesPanel.offsetWidth;
 
         function applyDelta(cx) {
             if (!isDragging) return;
             const dx = cx - startX;
             const newMainWidth = startMainWidth + dx;
-            const newSubWidth = startSubWidth - dx;
-            if (newMainWidth > 150 && newSubWidth > 150) {
+            const containerWidth = separator.parentElement.offsetWidth;
+            if (newMainWidth > 150 && newMainWidth < containerWidth - 150) {
                 mainCategoriesPanel.style.width = `${newMainWidth}px`;
-                subCategoriesPanel.style.width = `${newSubWidth}px`;
             }
         }
 
