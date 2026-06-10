@@ -742,8 +742,8 @@ export function renderSettingsContent(category) {
 export function renderFlowMultiplierSettings(settings) {
     if (!settings) {
         return `
-            <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden">
-                <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
+            <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+                <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
                     <p class="leading-[1.2]">Flow Multiplier Settings</p>
                 </div>
                 <div class="text-red-500 p-4 text-[24px]">Failed to load flow multiplier settings</div>
@@ -752,8 +752,8 @@ export function renderFlowMultiplierSettings(settings) {
     }
 
     return `
-        <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden">
-            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
+        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
                 <p class="leading-[1.2]">Flow Multiplier Settings</p>
             </div>
 
@@ -762,47 +762,71 @@ export function renderFlowMultiplierSettings(settings) {
                 <hr class="border-t border-[#c9c9c9] w-full" />
             </div>
 
-            <div class="flex flex-col items-start relative w-full max-w-full">
-                <div class="flex flex-col gap-[30px] items-start relative w-full max-w-full">
-                    <div class="flex items-center justify-between relative w-full max-w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p id="weight-flow-multiplier-label" class="leading-[1.2]">Weight Flow Multiplier</p>
-                        </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="weightFlowMultiplierInput" aria-labelledby="weight-flow-multiplier-label"
-                                   class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
+            <div class="content-stretch flex flex-col items-center relative w-full">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                    <div class="content-stretch flex items-center relative shrink-0">
+                        <p id="weight-flow-multiplier-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
+                            Weight Flow Multiplier
+                        </p>
+                    </div>
+                    <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
+                        <button id="weight-flow-mult-minus" aria-label="Decrease weight flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                onclick="window.flashPlusMinusButton(this); window.adjustWeightFlowMultiplier(-0.1);">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <div class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none flex items-center justify-center"
+                             style="width: 130px;">
+                            <input type="text" inputmode="decimal" id="weightFlowMultiplierInput" aria-labelledby="weight-flow-multiplier-label" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
                                    value="${settings.weightFlowMultiplier !== undefined ? settings.weightFlowMultiplier : 1.0}"
                                    step="0.1" min="0" max="5"
                                    onchange="window.updateReaSetting('weightFlowMultiplier', parseFloat(this.value))">
                         </div>
+                        <button id="weight-flow-mult-plus" aria-label="Increase weight flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                onclick="window.flashPlusMinusButton(this); window.adjustWeightFlowMultiplier(0.1);">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[220px]">
-                        Multiplier for projected weight calculation. Higher values stop shots earlier.
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                        Multiplier for projected weight calculation. Higher values stop shots earlier.<br>
+                        <span class="text-[20px] opacity-60">Range: 0 – 5</span>
                     </p>
                 </div>
-            </div>
 
-            <!-- Divider -->
-            <div class="h-0 relative w-full">
-                <hr class="border-t border-[#c9c9c9] w-full" />
-            </div>
-
-            <div class="flex flex-col items-start relative w-full max-w-full">
-                <div class="flex flex-col gap-[30px] items-start relative w-full max-w-full">
-                    <div class="flex items-center justify-between relative w-full max-w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p id="volume-flow-multiplier-label" class="leading-[1.2]">Volume Flow Multiplier (s)</p>
-                        </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="volumeFlowMultiplierInput" aria-labelledby="volume-flow-multiplier-label"
-                                   class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px] mt-[30px]">
+                    <div class="content-stretch flex items-center relative shrink-0">
+                        <p id="volume-flow-multiplier-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
+                            Volume Flow Multiplier
+                        </p>
+                    </div>
+                    <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
+                        <button id="volume-flow-mult-minus" aria-label="Decrease volume flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                onclick="window.flashPlusMinusButton(this); window.adjustVolumeFlowMultiplier(-0.05);">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <div class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none flex items-center justify-center"
+                             style="width: 130px;">
+                            <input type="text" inputmode="decimal" id="volumeFlowMultiplierInput" aria-labelledby="volume-flow-multiplier-label" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
                                    value="${settings.volumeFlowMultiplier !== undefined ? settings.volumeFlowMultiplier : 0.3}"
                                    step="0.05" min="0" max="2"
                                    onchange="window.updateReaSetting('volumeFlowMultiplier', parseFloat(this.value))">
+                            <span class="ml-2 text-nowrap" aria-hidden="true">s</span>
                         </div>
+                        <button id="volume-flow-mult-plus" aria-label="Increase volume flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                onclick="window.flashPlusMinusButton(this); window.adjustVolumeFlowMultiplier(0.05);">
+                            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[220px]">
-                        Look-ahead time in seconds for projected volume calculation. Accounts for system lag.
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                        Look-ahead time for projected volume calculation. Accounts for system lag.<br>
+                        <span class="text-[20px] opacity-60">Range: 0 – 2 s</span>
                     </p>
                 </div>
             </div>
@@ -1367,17 +1391,32 @@ export function renderDe1AdvancedSettingsForm(settings) {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Heater Phase 1 Flow (ml/s)</p>
+                            <p class="leading-[1.2]">Heater Phase 1 Flow</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="heaterPh1FlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${settings.heaterPh1Flow !== undefined ? settings.heaterPh1Flow : ''}"
-                                   step="0.1" min="0" max="10"
-                                   onchange="window.updateDe1AdvancedSetting('heaterPh1Flow', parseFloat(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease heater phase 1 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh1Flow(-0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="decimal" id="heaterPh1FlowInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${settings.heaterPh1Flow !== undefined ? settings.heaterPh1Flow : ''}"
+                                       step="0.1" min="0" max="10"
+                                       onchange="window.updateDe1AdvancedSetting('heaterPh1Flow', parseFloat(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">ml/s</span>
+                            </div>
+                            <button aria-label="Increase heater phase 1 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh1Flow(0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Flow rate during heater phase 1
+                        Flow rate during heater phase 1 &nbsp;<span class="text-[20px] opacity-60">Range: 0 – 10 ml/s</span>
                     </p>
                 </div>
             </div>
@@ -1391,17 +1430,32 @@ export function renderDe1AdvancedSettingsForm(settings) {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Heater Phase 2 Flow (ml/s)</p>
+                            <p class="leading-[1.2]">Heater Phase 2 Flow</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="heaterPh2FlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${settings.heaterPh2Flow !== undefined ? settings.heaterPh2Flow : ''}"
-                                   step="0.1" min="0" max="10"
-                                   onchange="window.updateDe1AdvancedSetting('heaterPh2Flow', parseFloat(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease heater phase 2 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh2Flow(-0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="decimal" id="heaterPh2FlowInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${settings.heaterPh2Flow !== undefined ? settings.heaterPh2Flow : ''}"
+                                       step="0.1" min="0" max="10"
+                                       onchange="window.updateDe1AdvancedSetting('heaterPh2Flow', parseFloat(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">ml/s</span>
+                            </div>
+                            <button aria-label="Increase heater phase 2 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh2Flow(0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Flow rate during heater phase 2
+                        Flow rate during heater phase 2 &nbsp;<span class="text-[20px] opacity-60">Range: 0 – 10 ml/s</span>
                     </p>
                 </div>
             </div>
@@ -2375,16 +2429,31 @@ export function renderSteamSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Target Temperature (°C)</p>
+                            <p class="leading-[1.2]">Target Temperature</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="steamTempInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${targetTemp}" step="1" min="130" max="170"
-                                   onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease steam temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamTemp(-1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${targetTemp}" step="1" min="130" max="170"
+                                       onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                            </div>
+                            <button aria-label="Increase steam temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamTemp(1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Steam temperature setting (130-170°C)
+                        Steam temperature setting &nbsp;<span class="text-[20px] opacity-60">Range: 130 – 170 °C</span>
                     </p>
                 </div>
             </div>
@@ -2394,16 +2463,31 @@ export function renderSteamSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Duration (seconds)</p>
+                            <p class="leading-[1.2]">Duration</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="steamDurationInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${duration}" step="5" min="10" max="120"
-                                   onchange="window.updateSteamSetting('duration', parseInt(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(-5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamDurationInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${duration}" step="5" min="10" max="120"
+                                       onchange="window.updateSteamSetting('duration', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
+                            </div>
+                            <button aria-label="Increase steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Steam duration in seconds
+                        Steam duration &nbsp;<span class="text-[20px] opacity-60">Range: 10 – 120 s</span>
                     </p>
                 </div>
             </div>
@@ -2415,19 +2499,34 @@ export function renderSteamSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]">Flow</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="steamFlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${flow.toFixed(1)}" step="0.1" min="0.1" max="2.5"
-                                   onchange="window.updateSteamSetting('flow', parseFloat(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease steam flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamFlow(-0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="decimal" id="steamFlowInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${flow.toFixed(1)}" step="0.1" min="0.1" max="2.5"
+                                       onchange="window.updateSteamSetting('flow', parseFloat(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">ml/s</span>
+                            </div>
+                            <button aria-label="Increase steam flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamFlow(0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Steam flow rate (0.1 - 2.5)
+                        Steam flow rate &nbsp;<span class="text-[20px] opacity-60">Range: 0.1 – 2.5 ml/s</span>
                     </p>
                 </div>
             </div>
 
-            <!-- Steam Purge Mode (from DE1 settings) -->
+            <!-- Steam Purge Mode -->
             ${settingsCache.de1 ? `
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
@@ -2481,16 +2580,31 @@ export function renderHotWaterSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Target Temperature (°C)</p>
+                            <p class="leading-[1.2]">Target Temperature</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="hotWaterTempInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${targetTemp}" step="1" min="50" max="95"
-                                   onchange="window.updateHotWaterSetting('targetTemperature', parseInt(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease hot water temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterTemp(-1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="hotWaterTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${targetTemp}" step="1" min="50" max="95"
+                                       onchange="window.updateHotWaterSetting('targetTemperature', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                            </div>
+                            <button aria-label="Increase hot water temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterTemp(1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water temperature (50-95°C)
+                        Hot water temperature &nbsp;<span class="text-[20px] opacity-60">Range: 50 – 95 °C</span>
                     </p>
                 </div>
             </div>
@@ -2500,16 +2614,31 @@ export function renderHotWaterSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Volume (ml)</p>
+                            <p class="leading-[1.2]">Volume</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="hotWaterVolumeInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${volume}" step="10" min="10" max="500"
-                                   onchange="window.updateHotWaterSetting('volume', parseInt(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease hot water volume" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterVolume(-10);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="hotWaterVolumeInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${volume}" step="10" min="10" max="500"
+                                       onchange="window.updateHotWaterSetting('volume', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">ml</span>
+                            </div>
+                            <button aria-label="Increase hot water volume" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterVolume(10);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water volume in ml
+                        Hot water volume &nbsp;<span class="text-[20px] opacity-60">Range: 10 – 500 ml</span>
                     </p>
                 </div>
             </div>
@@ -2519,35 +2648,65 @@ export function renderHotWaterSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Duration (seconds)</p>
+                            <p class="leading-[1.2]">Duration</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="hotWaterDurationInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${duration}" step="5" min="5" max="120"
-                                   onchange="window.updateHotWaterSetting('duration', parseInt(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease hot water duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterDuration(-5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="hotWaterDurationInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${duration}" step="5" min="5" max="120"
+                                       onchange="window.updateHotWaterSetting('duration', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
+                            </div>
+                            <button aria-label="Increase hot water duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterDuration(5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water duration in seconds
+                        Hot water duration &nbsp;<span class="text-[20px] opacity-60">Range: 5 – 120 s</span>
                     </p>
                 </div>
             </div>
 
-            <!-- Hot Water Flow (from workflow) -->
+            <!-- Hot Water Flow -->
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Flow (ml/s)</p>
+                            <p class="leading-[1.2]">Flow</p>
                         </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" id="hotWaterFlowInput" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center"
-                                   value="${flow.toFixed(1)}" step="0.1" min="0.1" max="8"
-                                   onchange="window.updateHotWaterSetting('flow', parseFloat(this.value))">
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease hot water flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterFlow(-0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="decimal" id="hotWaterFlowInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${flow.toFixed(1)}" step="0.1" min="0.1" max="8"
+                                       onchange="window.updateHotWaterSetting('flow', parseFloat(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">ml/s</span>
+                            </div>
+                            <button aria-label="Increase hot water flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterFlow(0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Flow rate for hot water (0.1 - 8.0 ml/s)
+                        Hot water flow rate &nbsp;<span class="text-[20px] opacity-60">Range: 0.1 – 8.0 ml/s</span>
                     </p>
                 </div>
             </div>
@@ -4825,14 +4984,82 @@ export async function initializeSettings() {
         }
     };
 
+    window.adjustWeightFlowMultiplier = function(change) {
+        const input = document.getElementById('weightFlowMultiplierInput');
+        if (input) {
+            let newValue = parseFloat(input.value) + change;
+            newValue = Math.max(0, Math.min(5, newValue));
+            input.value = newValue.toFixed(1);
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustVolumeFlowMultiplier = function(change) {
+        const input = document.getElementById('volumeFlowMultiplierInput');
+        if (input) {
+            let newValue = parseFloat(input.value) + change;
+            newValue = Math.max(0, Math.min(2, newValue));
+            input.value = newValue.toFixed(2);
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
     window.adjustHotWaterFlow = function(change) {
         const input = document.getElementById('hotWaterFlowInput');
         if (input) {
             let newValue = parseFloat(input.value) + change;
-            // Ensure value stays within bounds (0 to 10 ml/s)
+            newValue = Math.max(0.1, Math.min(8, newValue));
+            input.value = newValue.toFixed(1);
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHotWaterTemp = function(change) {
+        const input = document.getElementById('hotWaterTempInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(50, Math.min(95, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHotWaterVolume = function(change) {
+        const input = document.getElementById('hotWaterVolumeInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(10, Math.min(500, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHotWaterDuration = function(change) {
+        const input = document.getElementById('hotWaterDurationInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(5, Math.min(120, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHeaterPh1Flow = function(change) {
+        const input = document.getElementById('heaterPh1FlowInput');
+        if (input) {
+            let newValue = parseFloat(input.value) + change;
             newValue = Math.max(0, Math.min(10, newValue));
             input.value = newValue.toFixed(1);
-            // Trigger the onchange event to update the setting
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHeaterPh2Flow = function(change) {
+        const input = document.getElementById('heaterPh2FlowInput');
+        if (input) {
+            let newValue = parseFloat(input.value) + change;
+            newValue = Math.max(0, Math.min(10, newValue));
+            input.value = newValue.toFixed(1);
             input.dispatchEvent(new Event('change'));
         }
     };
@@ -4909,6 +5136,36 @@ export async function initializeSettings() {
             let newValue = parseInt(input.value, 10) + change;
             newValue = Math.max(135, Math.min(170, newValue));
             input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustSteamTemp = function(change) {
+        const input = document.getElementById('steamTempInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(130, Math.min(170, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustSteamDuration = function(change) {
+        const input = document.getElementById('steamDurationInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(10, Math.min(120, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustSteamFlow = function(change) {
+        const input = document.getElementById('steamFlowInput');
+        if (input) {
+            let newValue = parseFloat(input.value) + change;
+            newValue = Math.max(0.1, Math.min(2.5, newValue));
+            input.value = newValue.toFixed(1);
             input.dispatchEvent(new Event('change'));
         }
     };

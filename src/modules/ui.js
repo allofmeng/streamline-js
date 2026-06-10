@@ -2015,12 +2015,23 @@ function toggleFullScreen() {
 
     if (!isFullScreen) {
         if (requestFullScreen) {
-            requestFullScreen.call(docEl).catch(err => {
-                logger.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-            });
+            requestFullScreen.call(docEl)
+                .then(() => {
+                    if (screen.orientation?.lock) {
+                        screen.orientation.lock('landscape').catch(err => {
+                            logger.warn(`Orientation lock failed: ${err.message}`);
+                        });
+                    }
+                })
+                .catch(err => {
+                    logger.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+                });
         }
     } else {
         if (cancelFullScreen) {
+            if (screen.orientation?.unlock) {
+                screen.orientation.unlock();
+            }
             cancelFullScreen.call(doc).catch(err => {
                 logger.error(`Error attempting to exit full-screen mode: ${err.message} (${err.name})`);
             });

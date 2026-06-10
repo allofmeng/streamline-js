@@ -72,8 +72,10 @@ function initMobileValueInputs() {
                                         
                         if (type === 'dose-in') {
                             window.app.ui.updateDoseValue('in', newVal);
+                            window.app.ui.updateDrinkRatio();
                         } else if (type === 'drink-out') {
                             window.app.ui.updateDoseValue('out', newVal);
+                            window.app.ui.updateDrinkRatio();
                         } else if (type === 'temperature') {
                             window.app.ui.updateTemperatureValue(parseFloat(newVal));
                         } else if (type === 'steam-duration') {
@@ -148,6 +150,33 @@ let isInWakeGracePeriod = false;
 let wakeGraceTimeout = null;
 const WAKE_RECONNECT_GRACE_MS = 4000;
 
+// Scale auto-retry on disconnect
+let scaleAutoRetryCount = 0;
+let scaleAutoRetryTimer = null;
+const SCALE_AUTO_RETRY_MAX = 3;
+const SCALE_AUTO_RETRY_INTERVAL_MS = 5000;
+
+function clearScaleAutoRetry() {
+    clearTimeout(scaleAutoRetryTimer);
+    scaleAutoRetryTimer = null;
+    scaleAutoRetryCount = 0;
+}
+
+async function attemptScaleAutoRetry() {
+    if (isScaleConnected) { clearScaleAutoRetry(); return; }
+    if (scaleAutoRetryCount >= SCALE_AUTO_RETRY_MAX) { clearScaleAutoRetry(); return; }
+    if (!getScaleDeviceId()) { clearScaleAutoRetry(); return; }
+    try {
+        const reaSettings = await getReaSettings();
+        if (reaSettings?.scalePowerMode === 'disconnect') { clearScaleAutoRetry(); return; }
+    } catch (_) { /* proceed */ }
+
+    scaleAutoRetryCount++;
+    logger.info(`Scale auto-retry ${scaleAutoRetryCount}/${SCALE_AUTO_RETRY_MAX}`);
+    handleWeightClick();
+    scaleAutoRetryTimer = setTimeout(attemptScaleAutoRetry, SCALE_AUTO_RETRY_INTERVAL_MS);
+}
+
 function renderScaleDisconnectedText() {
     if (isScaleConnected) return;
     // Container is display:none by default and only revealed on first weight frame.
@@ -177,6 +206,8 @@ function onScaleDisconnect() {
     logger.warn('Scale has disconnected.');
     isScaleConnected = false;
     renderScaleDisconnectedText();
+    clearScaleAutoRetry();
+    scaleAutoRetryTimer = setTimeout(attemptScaleAutoRetry, SCALE_AUTO_RETRY_INTERVAL_MS);
 }
 
 const deviceErrorCopy = {
@@ -190,6 +221,8 @@ const deviceErrorCopy = {
 };
 
 function handleDeviceConnectionError(err) {
+    // scaleDisconnected is handled silently — the [Reconnect] UI on the main page covers it
+    if (err.kind === 'scaleDisconnected') return;
     const msg = deviceErrorCopy[err.kind] ?? `${err.message}${err.suggestion ? `\n${err.suggestion}` : ''}`;
     ui.showToast(msg, 5000, 'error');
 }
@@ -529,7 +562,7 @@ function handleScaleData(data) {
         if (!isScaleConnected) {
             logger.info('Scale reconnected.');
             isScaleConnected = true;
-            // Show the container when a scale is connected and providing weight data
+            clearScaleAutoRetry();
             if (scaleInfoContainer) {
                 scaleInfoContainer.style.display = '';
             }
