@@ -138,8 +138,102 @@ paths:
         "404":
           description: "Device not found"
 
+  /api/v1/devices/wifi:
+    get:
+      summary: List manually-added WiFi scale endpoints
+      description: |
+        Returns the hosts (IPs or hostnames) added manually for WiFi scale
+        discovery. Auto-discovered (DNS-SD) WiFi scales are NOT listed here —
+        they appear in `GET /api/v1/devices` like any other device.
+      tags: [Devices]
+      responses:
+        "200":
+          description: The configured manual endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      type: string
+    post:
+      summary: Add a manual WiFi scale endpoint
+      description: |
+        Registers a WiFi scale by IP or hostname (e.g. `192.168.1.42` or
+        `hds.local`). Idempotent. The endpoint surfaces in the device list as a
+        "Half Decent Scale (WiFi)" entry and connects/validates through the
+        normal recognition gate — a bad/unreachable address shows as a scale
+        that never reaches `connected`.
+      tags: [Devices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                host:
+                  type: string
+                  description: IP address or hostname of the WiFi scale
+              required:
+                - host
+      responses:
+        "200":
+          description: The updated list of manual endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: "Missing host"
+    delete:
+      summary: Remove a manual WiFi scale endpoint
+      description: |
+        Removes a manually-added endpoint and tears down its scale instance.
+        Accepts `host` via JSON body (preferred) or `?host=` query parameter.
+      tags: [Devices]
+      parameters:
+        - name: host
+          description: IP or hostname to remove
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                host:
+                  type: string
+              required:
+                - host
+      responses:
+        "200":
+          description: The updated list of manual endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: "Missing host"
+
   # Machine specific API
-  
+
   /api/v1/machine/info:
     get:
       summary: Retrieves the current Machine information
@@ -786,6 +880,15 @@ paths:
         - in: query
           name: beanBatchId
           description: Filter by bean batch entity ID
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: beanId
+          description: |
+            Filter by bean entity ID. Matches shots from every batch currently
+            associated with the bean, including archived batches, so bean
+            renames do not break batch-backed shot history.
           required: false
           schema:
             type: string
@@ -3581,6 +3684,9 @@ paths:
                     type: boolean
                   fullVersion:
                     type: string
+                  localIp:
+                    type: string
+                    description: Gateway Wi-Fi/LAN IP (empty if unavailable), for building phone hand-off URLs.
                 required:
                   - commit
                   - commitShort
@@ -3590,6 +3696,7 @@ paths:
                   - buildNumber
                   - appStore
                   - fullVersion
+                  - localIp
   /api/v1/debug/scale/{command}:
     post:
       summary: Control mock scale (simulate mode only)
@@ -3667,6 +3774,69 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: Feedback service not configured (no GitHub token)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/account/decent:
+    get:
+      summary: Decent account link status
+      description: >
+        Reports whether a Decent Espresso account is currently linked.
+        Linking and unlinking are performed only through the app's native UI,
+        not over the network, so no login/logout routes are exposed here. The
+        linked email is deliberately omitted — it is PII and this endpoint is
+        unauthenticated.
+      tags: [Account]
+      responses:
+        "200":
+          description: Current link status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [loggedIn]
+                properties:
+                  loggedIn:
+                    type: boolean
+                    description: True if a Decent account is linked
+
+  /api/v1/account/proxy/{path}:
+    get:
+      summary: Auth-enriching proxy to the Decent backend
+      description: >
+        Forwards a GET to `https://decentespresso.com/{path}` with the linked
+        account's credentials attached server-side as Basic auth, and relays the
+        upstream status code and body verbatim. Clients never see the
+        credentials. Phase 1 is read-only and restricted to the `support/api/`
+        path prefix.
+
+
+        Requires `Authorization: Bearer <token>` scoped `account:proxy` — a skin
+        token (injected into served skin pages) or a user-managed API-client
+        token. Unauthenticated/unknown tokens get 401; known but unscoped get
+        403; a path outside the allowed prefix gets 403; no linked account gets
+        401.
+      tags: [Account]
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: Decent backend path (e.g. `support/api/sn`)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upstream response relayed verbatim (status and body as-is)
+        "401":
+          description: Missing/invalid token, or no Decent account linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token not scoped for account:proxy, or path not allowed
           content:
             application/json:
               schema:
@@ -3856,20 +4026,6 @@ components:
         details:
           type: string
 
-    ScaleSnapshot:
-      type: object
-      properties:
-        timestamp:
-          type: string
-          format: date-time
-        weight:
-          type: number
-        batteryLevel:
-          type: integer
-        timerValue:
-          type: integer
-          nullable: true
-          description: Timer elapsed time in milliseconds. Null if scale doesn't support timers or timer hasn't been started.
     MachineSnapshot:
       type: object
       properties:
@@ -4203,8 +4359,9 @@ components:
         heaterVoltage:
           description: |
             Mains heater voltage hint. Accepts `120` (110V region) or `230` (220V region).
-            Values above 1000 are treated as already-set markers (firmware adds 1000 once committed)
-            and are clamped back into the same set. Other values map to "unset" and are ignored.
+            Measured regional readings such as `110` or `220` and values above 1000
+            (firmware committed markers) are normalized to the matching canonical region.
+            Other values map to "unset" and are ignored.
           type: integer
           nullable: true
           enum: [120, 230]
@@ -4232,8 +4389,8 @@ components:
         heaterVoltage:
           description: |
             Mains heater voltage hint. `120` = 110V region, `230` = 220V region.
-            Firmware adds 1000 to indicate the value has been committed (e.g. `1230`);
-            on read this is normalized back to the bare value.
+            Measured regional readings such as `110` or `220`, and firmware committed
+            markers such as `1120` or `1230`, are normalized to the canonical region.
           type: integer
           enum: [120, 230, -1]
         refillKitSetting:
@@ -4370,7 +4527,7 @@ components:
         lowBatteryBrightnessLimit:
           type: boolean
           nullable: true
-          description: When enabled and battery drops below 30%, screen brightness is capped at 20. Only effective on platforms with battery monitoring.
+          description: When enabled and battery drops below 30%, screen brightness is capped at 20. Only effective on platforms with battery monitoring. Default value is true.
         simulatedDevices:
           description: List of simulated device types to enable in scan results
           type: array
@@ -4596,6 +4753,25 @@ components:
           $ref: "#/components/schemas/HotWaterData"
         rinseData:
           $ref: "#/components/schemas/RinseData"
+        machine:
+          $ref: "#/components/schemas/WorkflowMachine"
+          description: |
+            Machine settings active when the shot was pulled — recorded onto the
+            shot, ignored on apply.
+
+    WorkflowMachine:
+      type: object
+      description: >
+        Machine-side settings snapshotted onto a shot (the part of the setup that
+        lives on the machine, not the recipe). Extensible; currently just the
+        flow-estimation calibration.
+      properties:
+        flowCalibration:
+          type: number
+          nullable: true
+          description: >
+            The DE1's flow-estimation calibration (calibration_flow_multiplier)
+            active when the shot was pulled.
 
     SteamSettings:
       type: object
@@ -4825,8 +5001,14 @@ components:
           type: number
         weightFlow:
           type: number
-        batteryLevel:
+        battery:
           type: integer
+          nullable: true
+          description: Scale battery level (0–100). Null if the scale does not report battery.
+        timerValue:
+          type: integer
+          nullable: true
+          description: Timer elapsed time in milliseconds. Null if scale doesn't support timers or timer hasn't been started.
 
     PluginManifest:
       type: object

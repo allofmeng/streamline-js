@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
@@ -1556,27 +1556,11 @@ export function renderTalkToDecentSettings() {
                         </svg>
                     </div>
                     <div class="flex flex-col gap-[8px]">
-                        <p class="text-[26px] font-bold text-[var(--text-primary)]">Sign in with your Decent account</p>
+                        <p class="text-[26px] font-bold text-[var(--text-primary)]">No Decent account linked</p>
                         <p class="text-[22px] text-[var(--low-contrast-white)] max-w-[500px] leading-[1.4]">
-                            Your message goes directly to Decent's support team, linked to your registered machine.
+                            Link your Decent account in the Decent app to send messages to support.
                         </p>
                     </div>
-                    <div class="flex flex-col gap-[12px] w-full max-w-[520px] mx-auto">
-                        <input id="talkdecent-email-input" type="email" placeholder="your@email.com"
-                               class="w-full h-[60px] px-[20px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none">
-                        <input id="talkdecent-password-input" type="password" placeholder="Password"
-                               class="w-full h-[60px] px-[20px] rounded-[12px] text-[22px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)] outline-none">
-                    </div>
-                    <div class="flex items-center gap-[16px]">
-                        <button onclick="window.talkDecentLogin()"
-                                class="h-[56px] px-[40px] rounded-[56px] bg-[#385a92] text-white text-[22px] font-semibold transition-opacity hover:opacity-90">
-                            Sign in
-                        </button>
-                        <span id="talkdecent-login-status" class="text-[20px] text-[var(--low-contrast-white)]"></span>
-                    </div>
-                    <p class="text-[18px] text-[var(--low-contrast-white)] opacity-60">
-                        Already signed in via Send Feedback? <button onclick="window.talkDecentSyncFromFeedback()" class="text-[#385a92] underline">Use that account</button>
-                    </p>
                 </div>
             </div>
 
@@ -1584,18 +1568,12 @@ export function renderTalkToDecentSettings() {
             <div id="talkdecent-logged-in" class="hidden w-full flex flex-col gap-[36px]">
 
                 <!-- Account badge -->
-                <div class="flex items-center justify-between p-[20px] rounded-[14px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)]">
-                    <div class="flex items-center gap-[14px]">
-                        <div class="w-[40px] h-[40px] rounded-full bg-[#385a92] flex items-center justify-center text-white text-[18px] font-bold" id="talkdecent-avatar">D</div>
-                        <div>
-                            <p class="text-[20px] font-semibold text-[var(--text-primary)]" id="talkdecent-account-email">—</p>
-                            <p class="text-[18px] text-[var(--low-contrast-white)]" id="talkdecent-account-serial"></p>
-                        </div>
+                <div class="flex items-center p-[20px] rounded-[14px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] gap-[14px]">
+                    <div class="w-[40px] h-[40px] rounded-full bg-[#385a92] flex items-center justify-center text-white text-[18px] font-bold">D</div>
+                    <div>
+                        <p class="text-[20px] font-semibold text-[var(--text-primary)]">Decent account linked</p>
+                        <p class="text-[18px] text-[var(--low-contrast-white)]" id="talkdecent-account-serial"></p>
                     </div>
-                    <button onclick="window.talkDecentLogout()"
-                            class="h-[40px] px-[20px] rounded-[40px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[18px]">
-                        Sign out
-                    </button>
                 </div>
 
                 <!-- Chat thread -->
@@ -1687,31 +1665,12 @@ export function renderFeedbackSettings() {
                 <p class="font-bold text-[#385a92] text-[22px]">Decent Account</p>
 
                 <div id="decent-logged-out">
-                    <p class="text-[19px] text-[var(--low-contrast-white)] mb-[10px]">Sign in to tag your feedback with your Decent account.</p>
-                    <div class="flex gap-[10px] mb-[10px]">
-                        <input id="decent-email-input" type="email" placeholder="your@email.com"
-                               class="flex-1 h-[50px] px-[16px] rounded-[10px] text-[20px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)]">
-                        <input id="decent-password-input" type="password" placeholder="Password"
-                               class="flex-1 h-[50px] px-[16px] rounded-[10px] text-[20px] bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)]">
-                    </div>
-                    <div class="flex items-center gap-[12px]">
-                        <button onclick="window.decentLogin()"
-                                class="h-[46px] px-[24px] rounded-[46px] bg-[#385a92] text-white text-[20px] font-semibold">
-                            Sign in
-                        </button>
-                        <span id="decent-login-status" class="text-[20px]"></span>
-                    </div>
+                    <p class="text-[19px] text-[var(--low-contrast-white)]">Link your Decent account in the Decent app to tag feedback with your account.</p>
                 </div>
 
                 <div id="decent-logged-in" class="hidden">
-                    <p class="text-[20px] text-[var(--text-primary)]">
-                        Signed in as <span id="decent-account-email" class="font-bold text-[#385a92]"></span>
-                    </p>
+                    <p class="text-[20px] text-[var(--text-primary)]">Decent account linked</p>
                     <p id="decent-account-serial" class="text-[18px] text-[var(--low-contrast-white)] mt-[4px]"></p>
-                    <button onclick="window.decentLogout()"
-                            class="mt-[10px] h-[42px] px-[18px] rounded-[42px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[18px]">
-                        Sign out
-                    </button>
                 </div>
             </div>
 
@@ -4412,77 +4371,36 @@ export async function initializeSettings() {
         }
     };
 
-    window.talkDecentLogin = async function() {
-        const email    = (document.getElementById('talkdecent-email-input')?.value || '').trim();
-        const password = document.getElementById('talkdecent-password-input')?.value || '';
-        const statusEl = document.getElementById('talkdecent-login-status');
-        if (!email || !password) {
-            if (statusEl) statusEl.innerHTML = '<span class="text-red-500">Enter email and password.</span>';
-            return;
-        }
-        if (statusEl) statusEl.textContent = 'Signing in…';
-        try {
-            const authHeader = 'Basic ' + btoa(`${email}:${password}`);
-            const res = await fetch('https://decentespresso.com/support/api/login_test', {
-                headers: { 'Authorization': authHeader }
-            });
-            const text = (await res.text()).trim();
-            if (!res.ok || text === '0' || text === '') throw new Error('Invalid credentials');
-            const cryptpw = text;
-            localStorage.setItem('decentEmail', email);
-            localStorage.setItem('decentCryptpw', cryptpw);
-            try {
-                const snRes = await fetch('https://decentespresso.com/support/api/sn', {
-                    headers: { 'Authorization': 'Basic ' + btoa(`${email}:${cryptpw}`) }
-                });
-                const snText = (await snRes.text()).trim();
-                const serial = snText.split(/[\r\n]/)[0].trim();
-                localStorage.setItem('decentSerial', serial || '');
-            } catch (_) {
-                localStorage.setItem('decentSerial', '');
-            }
-            document.getElementById('talkdecent-password-input').value = '';
-            window.updateTalkToDecentUI();
-        } catch (err) {
-            if (statusEl) statusEl.innerHTML = `<span class="text-red-500 text-[20px]">${err.message}</span>`;
-        }
-    };
-
-    window.talkDecentLogout = function() {
-        localStorage.removeItem('decentEmail');
-        localStorage.removeItem('decentCryptpw');
-        localStorage.removeItem('decentSerial');
-        window.updateTalkToDecentUI();
-        window.updateDecentAccountUI?.();
-    };
-
-    window.talkDecentSyncFromFeedback = function() {
-        const email = localStorage.getItem('decentEmail');
-        if (email) {
-            window.updateTalkToDecentUI();
-        } else {
-            const statusEl = document.getElementById('talkdecent-login-status');
-            if (statusEl) statusEl.innerHTML = '<span class="text-red-500 text-[20px]">No Decent account signed in yet. Use the fields above.</span>';
-        }
-    };
-
-    window.updateTalkToDecentUI = function() {
-        const email     = localStorage.getItem('decentEmail');
-        const serial    = localStorage.getItem('decentSerial');
+    window.updateTalkToDecentUI = async function() {
         const loggedOut = document.getElementById('talkdecent-logged-out');
         const loggedIn  = document.getElementById('talkdecent-logged-in');
         if (!loggedOut || !loggedIn) return;
-        if (email) {
-            loggedOut.classList.add('hidden');
-            loggedIn.classList.remove('hidden');
-            const emailEl = document.getElementById('talkdecent-account-email');
-            if (emailEl) emailEl.textContent = email;
-            const avatarEl = document.getElementById('talkdecent-avatar');
-            if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
-            const serialEl = document.getElementById('talkdecent-account-serial');
-            if (serialEl) serialEl.textContent = serial ? `Serial: ${serial}` : '';
-            window.talkDecentFetchEmails();
-        } else {
+        try {
+            const res = await fetch(`${API_BASE_URL}/account/decent`);
+            const { loggedIn: linked } = await res.json();
+            if (linked) {
+                loggedOut.classList.add('hidden');
+                loggedIn.classList.remove('hidden');
+                const token    = window.__REA_PROXY_TOKEN__;
+                const serialEl = document.getElementById('talkdecent-account-serial');
+                if (token && serialEl) {
+                    try {
+                        const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const snText = (await snRes.text()).trim();
+                        const serial = snText.split(/[\r\n]/)[0].trim();
+                        serialEl.textContent = serial ? `Serial: ${serial}` : '';
+                    } catch (_) {
+                        serialEl.textContent = '';
+                    }
+                }
+                window.talkDecentFetchEmails();
+            } else {
+                loggedIn.classList.add('hidden');
+                loggedOut.classList.remove('hidden');
+            }
+        } catch (_) {
             loggedIn.classList.add('hidden');
             loggedOut.classList.remove('hidden');
         }
@@ -4525,9 +4443,7 @@ export async function initializeSettings() {
         const message   = (document.getElementById('talkdecent-message')?.value || '').trim();
         const statusEl  = document.getElementById('talkdecent-send-status');
         const sendBtn   = document.getElementById('talkdecent-send-btn');
-        const email     = localStorage.getItem('decentEmail');
-        const cryptpw   = localStorage.getItem('decentCryptpw');
-        const serial    = localStorage.getItem('decentSerial');
+        const token     = window.__REA_PROXY_TOKEN__;
 
         if (!subject) {
             if (statusEl) statusEl.innerHTML = '<span class="text-red-500">Please enter a subject.</span>';
@@ -4537,8 +4453,8 @@ export async function initializeSettings() {
             if (statusEl) statusEl.innerHTML = '<span class="text-red-500">Please enter a message.</span>';
             return;
         }
-        if (!email || !cryptpw) {
-            if (statusEl) statusEl.innerHTML = '<span class="text-red-500">Sign in first.</span>';
+        if (!token) {
+            if (statusEl) statusEl.innerHTML = '<span class="text-red-500">No proxy token available.</span>';
             return;
         }
 
@@ -4551,19 +4467,17 @@ export async function initializeSettings() {
             let body = message;
             const machineInfo = settingsCache.machineInfo;
             const appInfo     = settingsCache.appInfo;
-            if (attachMachine && (machineInfo || appInfo || serial)) {
+            if (attachMachine && (machineInfo || appInfo)) {
                 body += '\n\n---\n**Machine Info**';
                 if (machineInfo?.model)        body += `\n- Model: ${machineInfo.model}`;
                 if (machineInfo?.version)      body += `\n- Firmware: ${machineInfo.version}`;
                 if (machineInfo?.serialNumber) body += `\n- Serial: ${machineInfo.serialNumber}`;
-                else if (serial)               body += `\n- Serial: ${serial}`;
                 if (appInfo?.version)          body += `\n- App version: ${appInfo.version}`;
             }
             const params = new URLSearchParams({ subject, body });
-            const authHeader = 'Basic ' + btoa(`${email}:${cryptpw}`);
             const res = await fetch(
-                `https://decentespresso.com/support/api/email?${params.toString()}`,
-                { headers: { 'Authorization': authHeader } }
+                `${API_BASE_URL}/account/proxy/support/api/email?${params.toString()}`,
+                { headers: { 'Authorization': `Bearer ${token}` } }
             );
             const text = (await res.text()).trim();
             if (!res.ok || text === '0') throw new Error('Message could not be delivered. Check your connection.');
@@ -4587,9 +4501,11 @@ export async function initializeSettings() {
     };
 
     window.talkDecentFetchEmails = async function() {
-        const email   = localStorage.getItem('decentEmail');
-        const cryptpw = localStorage.getItem('decentCryptpw');
-        if (!email || !cryptpw) return;
+        const token = window.__REA_PROXY_TOKEN__;
+        if (!token) {
+            await window.talkDecentRenderThread();
+            return;
+        }
 
         const statusEl   = document.getElementById('talkdecent-thread-status');
         const refreshBtn = document.getElementById('talkdecent-refresh-btn');
@@ -4597,11 +4513,11 @@ export async function initializeSettings() {
 
         try {
             const since = await getLatestEmailTimestamp();
-            const url = new URL('https://decentespresso.com/support/api/emails');
+            const url = new URL(`${API_BASE_URL}/account/proxy/support/api/emails`);
             if (since) url.searchParams.set('since', String(since));
 
             const res = await fetch(url.toString(), {
-                headers: { 'Authorization': 'Basic ' + btoa(`${email}:${cryptpw}`) }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             const text = await res.text();
             if (!res.ok || text.trim() === '0') throw new Error(`Failed to load messages`);
@@ -4687,66 +4603,35 @@ export async function initializeSettings() {
         container.scrollTop = container.scrollHeight;
     };
 
-    window.decentLogin = async function() {
-        const email    = (document.getElementById('decent-email-input')?.value || '').trim();
-        const password = document.getElementById('decent-password-input')?.value || '';
-        const statusEl = document.getElementById('decent-login-status');
-        if (!email || !password) {
-            statusEl.innerHTML = '<span class="text-red-500">Enter email and password.</span>';
-            return;
-        }
-        statusEl.textContent = 'Signing in…';
-        try {
-            const authHeader = 'Basic ' + btoa(`${email}:${password}`);
-            const res = await fetch('https://decentespresso.com/support/api/login_test', {
-                headers: { 'Authorization': authHeader }
-            });
-            const text = (await res.text()).trim();
-            if (!res.ok || text === '0' || text === '') throw new Error('Invalid credentials');
-
-            const cryptpw = text;
-            localStorage.setItem('decentEmail', email);
-            localStorage.setItem('decentCryptpw', cryptpw);
-
-            try {
-                const snRes = await fetch('https://decentespresso.com/support/api/sn', {
-                    headers: { 'Authorization': 'Basic ' + btoa(`${email}:${cryptpw}`) }
-                });
-                const snText = (await snRes.text()).trim();
-                const serial = snText.split(/[\r\n]/)[0].trim();
-                localStorage.setItem('decentSerial', serial || '');
-            } catch (_) {
-                localStorage.setItem('decentSerial', '');
-            }
-
-            document.getElementById('decent-password-input').value = '';
-            window.updateDecentAccountUI();
-        } catch (err) {
-            statusEl.innerHTML = `<span class="text-red-500 text-[22px]">${err.message}</span>`;
-        }
-    };
-
-    window.decentLogout = function() {
-        localStorage.removeItem('decentEmail');
-        localStorage.removeItem('decentCryptpw');
-        localStorage.removeItem('decentSerial');
-        window.updateDecentAccountUI();
-    };
-
-    window.updateDecentAccountUI = function() {
-        const email     = localStorage.getItem('decentEmail');
-        const serial    = localStorage.getItem('decentSerial');
+    window.updateDecentAccountUI = async function() {
         const loggedOut = document.getElementById('decent-logged-out');
         const loggedIn  = document.getElementById('decent-logged-in');
         if (!loggedOut || !loggedIn) return;
-        if (email) {
-            loggedOut.classList.add('hidden');
-            loggedIn.classList.remove('hidden');
-            const emailEl = document.getElementById('decent-account-email');
-            if (emailEl) emailEl.textContent = email;
-            const serialEl = document.getElementById('decent-account-serial');
-            if (serialEl) serialEl.textContent = serial ? `Serial: ${serial}` : '';
-        } else {
+        try {
+            const res = await fetch(`${API_BASE_URL}/account/decent`);
+            const { loggedIn: linked } = await res.json();
+            if (linked) {
+                loggedOut.classList.add('hidden');
+                loggedIn.classList.remove('hidden');
+                const token    = window.__REA_PROXY_TOKEN__;
+                const serialEl = document.getElementById('decent-account-serial');
+                if (token && serialEl) {
+                    try {
+                        const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const snText = (await snRes.text()).trim();
+                        const serial = snText.split(/[\r\n]/)[0].trim();
+                        serialEl.textContent = serial ? `Serial: ${serial}` : '';
+                    } catch (_) {
+                        serialEl.textContent = '';
+                    }
+                }
+            } else {
+                loggedIn.classList.add('hidden');
+                loggedOut.classList.remove('hidden');
+            }
+        } catch (_) {
             loggedIn.classList.add('hidden');
             loggedOut.classList.remove('hidden');
         }
@@ -4809,11 +4694,20 @@ export async function initializeSettings() {
         const ENCODE_KEY = 'itisadecentcupofcoffee';
         if (email) fullDesc += `\n\n---\n**Contact:** \`${xorEncode(email, ENCODE_KEY)}\``;
 
-        const decentEmail  = localStorage.getItem('decentEmail');
-        const decentSerial = localStorage.getItem('decentSerial');
-        if (decentEmail) {
-            fullDesc += `\n\n---\n**Decent Account:** \`${xorEncode(decentEmail, ENCODE_KEY)}\``;
-            if (decentSerial) fullDesc += `\n**Serial:** ${decentSerial}`;
+        const proxyToken = window.__REA_PROXY_TOKEN__;
+        if (proxyToken) {
+            try {
+                const accountRes = await fetch(`${API_BASE_URL}/account/decent`);
+                const { loggedIn: linked } = await accountRes.json();
+                if (linked) {
+                    const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
+                        headers: { 'Authorization': `Bearer ${proxyToken}` }
+                    });
+                    const snText = (await snRes.text()).trim();
+                    const serial = snText.split(/[\r\n]/)[0].trim();
+                    if (serial) fullDesc += `\n\n---\n**Serial:** ${serial}`;
+                }
+            } catch (_) {}
         }
 
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }

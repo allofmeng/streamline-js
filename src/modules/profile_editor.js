@@ -3,6 +3,8 @@ import { showToast, flashPlusMinusButton } from './ui.js';
 import { openModal, shouldUseNumpad, resetNumpadModal } from './numpad-modal.js';
 import { openNotesModal } from './notes-modal.js';
 import { getTranslation } from './i18n.js';
+import { callPluginEndpoint, getPluginSettings } from './api.js';
+import { validateProfileStructure } from './profileManager.js';
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -12,6 +14,12 @@ let editorState = {
     profile: null,
     activeTab: 0,
 };
+
+// IDs of profiles persisted to the server via share-code import during a
+// new-profile session. Cleaned up on cancel so no orphans are left behind.
+let _isNewProfileSession = false;
+let _sessionImportedIds = [];
+let _hasImportedInSession = false;
 
 // Which step indices have their temp ± buttons expanded
 let expandedTempSteps = new Set();
@@ -472,7 +480,7 @@ function renderStepCards() {
         const isFlow = step.pump !== 'pressure';
 
         // Header: step number + name input
-        const hCell = mkCell(R.HEADER, col, 'flex items-center justify-start px-[16px] py-[10px] border-r border-b-2 border-[var(--border-color)] bg-[var(--box-color)]');
+        const hCell = mkCell(R.HEADER, col, 'flex items-center justify-center px-[16px] py-[10px] border-r border-b-2 border-[var(--border-color)] bg-[var(--box-color)]');
         const nameWrapper = document.createElement('div');
         nameWrapper.className = 'flex items-center gap-[6px]';
         const numSpan = document.createElement('span');
@@ -492,7 +500,7 @@ function renderStepCards() {
 
         // Temp + Sensor combined row
         {
-            const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-start px-[16px] py-[8px] border-r border-b border-[var(--border-color)] gap-[8px]');
+            const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-center px-[16px] py-[8px] border-r border-b border-[var(--border-color)] gap-[8px]');
             const isExpanded = expandedTempSteps.has(index);
 
             let tempValue = step.temperature || 93;
@@ -641,7 +649,7 @@ function renderStepCards() {
 
         // Pump + Limit combined row — two lines
         {
-            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
+            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
 
             // ── Line 1: pump ─────────────────────────────────────────────────
             const pumpLine = document.createElement('div');
@@ -1025,7 +1033,7 @@ function renderStepCards() {
         }
 
         {
-            const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
+            const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
 
             const exitLine = document.createElement('div');
             exitLine.className = 'flex flex-col gap-[4px]';
@@ -1231,7 +1239,7 @@ function renderStepCards() {
         }
 
         {
-            const maxCell = mkCell(R.MAX, col, 'flex flex-col justify-center px-[16px] py-[4px] border-r border-b border-[var(--border-color)] gap-[6px]');
+            const maxCell = mkCell(R.MAX, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] border-r border-b border-[var(--border-color)] gap-[6px]');
 
             const maxTopRow = document.createElement('div');
             maxTopRow.className = 'flex items-center gap-[8px] flex-wrap';
@@ -1658,6 +1666,138 @@ function renderSettingsTab() {
     addFieldTo(middleCol, getTranslation('After preinfusion stop the shot at'), createSpinner(
         profile.target_volume || 0, 1, 'ml', (val) => { editorState.profile.target_volume = val; }, { min: 0, max: 500 }
     ));
+
+    // ── Middle column: Load Profile From (new profile only) ──
+
+    const isNewProfile = editorState.sourceProfileId === null;
+
+    function reloadEditorWithProfile(newProfile, sourceRecord) {
+        // Track any server record created during a new-profile session so cancel can delete it
+        if (_isNewProfileSession) {
+            _hasImportedInSession = true;
+            if (sourceRecord?.id && !_sessionImportedIds.includes(sourceRecord.id)) {
+                _sessionImportedIds.push(sourceRecord.id);
+            }
+        }
+        editorState.profile = deepCopy(newProfile);
+        editorState.sourceProfileRecord = sourceRecord || null;
+        editorState.sourceProfileId = sourceRecord?.id || null;
+        expandedTempSteps.clear();
+        expandedPumpSteps.clear();
+        expandedLimSteps.clear();
+        expandedMaxSteps.clear();
+        expandedExitSteps.clear();
+        expandedReviewField = null;
+        const titleDisplay = document.getElementById('editor-title-display');
+        if (titleDisplay) titleDisplay.textContent = editorState.profile.title || 'Untitled Profile';
+        renderStepCards();
+        renderSettingsTab();
+    }
+
+    if (isNewProfile) {
+        // Upload local file button
+        const uploadBtn = document.createElement('button');
+        uploadBtn.className = 'w-full h-[56px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold rounded-[12px] flex items-center justify-center gap-[10px] hover:opacity-90 transition-opacity';
+        const uploadIcon = document.createElement('span');
+        uploadIcon.innerHTML = `<svg class="w-[22px] h-[22px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>`;
+        const uploadText = document.createElement('span');
+        uploadText.textContent = getTranslation('Upload Local File');
+        uploadBtn.appendChild(uploadIcon);
+        uploadBtn.appendChild(uploadText);
+        uploadBtn.addEventListener('click', () => {
+            let fileInput = document.getElementById('pe-upload-input');
+            if (!fileInput) {
+                fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.id = 'pe-upload-input';
+                fileInput.accept = '.json';
+                fileInput.style.display = 'none';
+                document.body.appendChild(fileInput);
+            }
+            fileInput.value = '';
+            fileInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const parsed = JSON.parse(await file.text());
+                    const validation = validateProfileStructure(parsed);
+                    if (!validation.isValid) throw new Error(validation.errorMessage);
+                    reloadEditorWithProfile(parsed, null);
+                    showToast(`Loaded: ${parsed.title || 'Profile'}`, 2500, 'success');
+                } catch (err) {
+                    showToast(`Error: ${err.message}`, 4000, 'error');
+                }
+            };
+            fileInput.click();
+        });
+        addFieldTo(middleCol, getTranslation('Upload Local File'), uploadBtn);
+
+        // Import from share code
+        const shareSection = document.createElement('div');
+        shareSection.className = 'flex flex-col gap-[10px]';
+
+        const shareRow = document.createElement('div');
+        shareRow.className = 'flex gap-[10px]';
+
+        const shareInput = document.createElement('input');
+        shareInput.type = 'text';
+        shareInput.maxLength = 4;
+        shareInput.placeholder = 'ABCD';
+        shareInput.className = 'flex-1 h-[56px] text-[22px] font-bold text-center tracking-[6px] bg-[var(--box-color)] border-2 border-[var(--border-color)] rounded-[12px] outline-none focus:border-[var(--mimoja-blue)]';
+        shareInput.addEventListener('input', () => { shareInput.value = shareInput.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+
+        const shareImportBtn = document.createElement('button');
+        shareImportBtn.textContent = getTranslation('Import');
+        shareImportBtn.className = 'h-[56px] px-[24px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold rounded-[12px] hover:opacity-90 transition-opacity shrink-0';
+
+        const shareStatus = document.createElement('p');
+        shareStatus.className = 'text-[18px] text-[var(--low-contrast-white)] min-h-[24px]';
+
+        shareImportBtn.addEventListener('click', async () => {
+            const code = shareInput.value.trim();
+            if (code.length !== 4) {
+                shareStatus.textContent = getTranslation('Enter a 4-character code.');
+                return;
+            }
+            shareImportBtn.disabled = true;
+            shareImportBtn.textContent = getTranslation('Importing…');
+            shareStatus.textContent = '';
+            try {
+                const vizSettings = await getPluginSettings('visualizer.reaplugin');
+                const isConfigured = vizSettings?.Enabled !== false && !!(vizSettings?.Username && vizSettings?.Password);
+                if (!isConfigured) {
+                    shareStatus.innerHTML = 'No Visualizer account found. Go to <strong>Settings → Extensions → Visualizer</strong> to log in first.';
+                    return;
+                }
+                const result = await callPluginEndpoint('visualizer.reaplugin', 'import', { shareCode: code });
+                if (!result.success) {
+                    const msg = result.error || 'Import failed';
+                    const isAuthError = /credential|login|auth|unauthorized|password|username/i.test(msg);
+                    shareStatus.innerHTML = isAuthError
+                        ? `${msg} — Go to <strong>Settings → Extensions → Visualizer</strong> to log in.`
+                        : msg;
+                    return;
+                }
+                const { init: initPM, availableProfiles } = await import('./profileManager.js');
+                await initPM();
+                const rec = availableProfiles[result.profileId];
+                if (!rec) throw new Error('Profile not found after import');
+                reloadEditorWithProfile(rec.profile, rec);
+                showToast(`Imported: ${rec.profile.title}`, 2500, 'success');
+            } catch (err) {
+                shareStatus.textContent = err.message;
+            } finally {
+                shareImportBtn.disabled = false;
+                shareImportBtn.textContent = getTranslation('Import');
+            }
+        });
+
+        shareRow.appendChild(shareInput);
+        shareRow.appendChild(shareImportBtn);
+        shareSection.appendChild(shareRow);
+        shareSection.appendChild(shareStatus);
+        addFieldTo(middleCol, getTranslation('Import from Share Code'), shareSection);
+    }
 
     // ── Right column: Notes (tall textarea filling column height) ──
 
@@ -2612,7 +2752,30 @@ async function saveProfile() {
     }
 }
 
-function cancelEditor() {
+async function cancelEditor() {
+    if (_isNewProfileSession && _hasImportedInSession) {
+        const msg = getTranslation('Discard the imported profile? This cannot be undone.');
+        if (!confirm(msg)) return;
+    }
+    if (_isNewProfileSession && _sessionImportedIds.length > 0) {
+        try {
+            const { deleteKVValue, deleteProfile } = await import('./api.js');
+            const { availableProfiles } = await import('./profileManager.js');
+            for (const id of _sessionImportedIds) {
+                const rec = availableProfiles[id];
+                const isKV = !!rec?._kvKey || (typeof id === 'string' && id.startsWith('kv:'));
+                try {
+                    if (isKV) {
+                        const kvKey = rec?._kvKey || id.replace(/^kv:/, '');
+                        await deleteKVValue('streamline', kvKey);
+                    } else {
+                        await deleteProfile(id);
+                    }
+                } catch (_) {}
+                delete availableProfiles[id];
+            }
+        } catch (_) {}
+    }
     loadPage('index.html');
 }
 
@@ -2640,6 +2803,9 @@ export async function initializeProfileEditor() {
     editorState.sourceProfileId = profileRecord.id;
     editorState.profile = deepCopy(profileRecord.profile);
     editorState.activeTab = 0;
+    _isNewProfileSession = !profileRecord.id;
+    _sessionImportedIds = [];
+    _hasImportedInSession = false;
     expandedTempSteps.clear();
     expandedPumpSteps.clear();
     expandedLimSteps.clear();

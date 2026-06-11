@@ -1,4 +1,4 @@
-import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI } from './profileManager.js';
+import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI, favoriteAssignments } from './profileManager.js';
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
@@ -6,6 +6,7 @@ import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPlugin
 import { initChart, plotProfile } from './chart.js';
 import { translatePage } from './i18n.js';
 import { loadPage } from './router.js';
+import { openContextMenu, closeContextMenu } from './context-menu.js';
 
 // Visualizer credentials storage
 let cachedVisualizerCredentials = null;
@@ -517,6 +518,90 @@ function updateSelectedProfileView(profileItem) {
     }
 }
 
+// ─── Profile Context Menu ────────────────────────────────────────────────────
+
+async function unhideProfileEntry(key) {
+    if (key.startsWith('kv:')) {
+        const profileRecord = availableProfiles[key];
+        if (!profileRecord) return;
+        const kvKey = profileRecord._kvKey || key.replace(/^kv:/, '');
+        try {
+            const updatedRecord = { ...profileRecord, visibility: 'visible' };
+            await setKVValue('streamline', kvKey, updatedRecord);
+            availableProfiles[key] = updatedRecord;
+            showToast('Profile restored.', 2000, 'success');
+        } catch (_) { showToast('Failed to restore profile.', 3000, 'error'); }
+    } else {
+        await unhideProfile(key);
+    }
+}
+
+function showProfileContextMenu(key, profileRecord, anchorEl) {
+    const isHidden = profileRecord.visibility === 'hidden';
+
+    async function doHide() {
+        if (key.startsWith('kv:')) {
+            const kvKey = profileRecord._kvKey || key.replace(/^kv:/, '');
+            try {
+                const updatedRecord = { ...profileRecord, visibility: 'hidden' };
+                await setKVValue('streamline', kvKey, updatedRecord);
+                availableProfiles[key] = updatedRecord;
+                if (selectedProfileKey === key) { selectedProfileKey = null; updateSelectedProfileView(null); }
+                renderProfiles();
+                showToast('Profile hidden.', 2000, 'success');
+            } catch (_) { showToast('Failed to hide profile.', 3000, 'error'); }
+        } else {
+            await deleteOrHideProfile(key);
+            const container = document.getElementById('profile-list');
+            if (container) {
+                const item = container.querySelector(`[data-profile-key="${key}"]`);
+                if (item) item.click(); else updateSelectedProfileView(null);
+            }
+        }
+    }
+
+    async function doAssign(slotIndex) {
+        try {
+            const wasAlreadyAssigned = Object.values(favoriteAssignments).includes(key);
+            await assignProfile(slotIndex, key);
+            const pr = availableProfiles[key];
+            if (pr?.profile) {
+                const meta = pr.metadata || {};
+                const dose     = meta.targetDoseWeight ?? (pr.profile.dose_weight || 18);
+                const yieldVal = meta.targetYield ?? parseFloat(pr.profile.target_weight);
+                const grind    = meta.grinderSetting ?? null;
+                try {
+                    await updateWorkflow({ profile: pr.profile, context: { targetDoseWeight: dose, targetYield: isNaN(yieldVal) ? 0 : yieldVal, grinderSetting: grind } });
+                    setActiveProfile(key);
+                    updateProfileName(pr.profile.title);
+                } catch (_) {}
+                if (!wasAlreadyAssigned) {
+                    showToast(`Assigned '${pr.profile.title}' to favourite ${slotIndex + 1}`, 3000, 'success');
+                }
+            }
+        } catch (e) { logger.warn('assignProfile error:', e.message); }
+    }
+
+    const items = [
+        ...(!isHidden ? [{ label: 'Hide', onSelect: doHide }] : []),
+        { divider: true },
+        ...Array.from({ length: FAV_COUNT }, (_, i) => ({
+            label: `Assign to favourite ${i + 1}`,
+            onSelect: () => doAssign(i),
+        })),
+        { divider: true },
+        {
+            label: 'Edit',
+            onSelect: () => {
+                window.__pendingEditProfile = profileRecord;
+                loadPage('src/profiles/profile_editor.html');
+            },
+        },
+    ];
+
+    openContextMenu(anchorEl, items);
+}
+
 function renderProfiles() {
     console.log('renderProfiles: Starting to render profiles, isShowingHidden =', isShowingHidden);
     logger.info('Profile Editor: Rendering profiles...');
@@ -606,7 +691,7 @@ function renderProfiles() {
                 unhideButton.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     console.log('renderProfiles: Unhide button clicked for profile', key);
-                    await unhideProfile(key);
+                    await unhideProfileEntry(key);
                     renderProfiles();
                 });
                 div.appendChild(unhideButton);
@@ -615,6 +700,41 @@ function renderProfiles() {
                 if (key === selectedProfileKey) {
                     div.classList.add('bg-[#385a92]', 'text-white', 'rounded-[8px]');
                 }
+            }
+
+            // ── Long-press → context menu ─────────────────────────────────
+            {
+                let lpTimer = null;
+                let lpFired = false;
+                let lpStartX = 0, lpStartY = 0;
+
+                const lpStart = (e) => {
+                    const pt = e.touches ? e.touches[0] : e;
+                    lpStartX = pt.clientX; lpStartY = pt.clientY;
+                    lpFired = false;
+                    clearTimeout(lpTimer);
+                    lpTimer = setTimeout(() => {
+                        lpFired = true;
+                        // Select the profile first so context menu actions act on it
+                        div.click();
+                        showProfileContextMenu(key, profileRecord, div);
+                    }, LONG_PRESS_DURATION);
+                };
+                const lpCancel = (e) => {
+                    const pt = e.touches ? e.touches[0] : e;
+                    if (pt) {
+                        const dx = pt.clientX - lpStartX, dy = pt.clientY - lpStartY;
+                        if (Math.hypot(dx, dy) > 10) clearTimeout(lpTimer);
+                    } else {
+                        clearTimeout(lpTimer);
+                    }
+                };
+                const lpUp = () => clearTimeout(lpTimer);
+
+                div.addEventListener('pointerdown',  lpStart);
+                div.addEventListener('pointermove',  lpCancel);
+                div.addEventListener('pointerup',    lpUp);
+                div.addEventListener('pointercancel',lpUp);
             }
 
             div.addEventListener('click', (e) => {
@@ -1138,7 +1258,7 @@ function filterProfiles(searchTerm) {
             unhideButton.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 console.log('filterProfiles: Unhide button clicked for profile', key);
-                await unhideProfile(key);
+                await unhideProfileEntry(key);
                 filterProfiles(searchTerm); // Re-filter after unhiding
             });
             div.appendChild(unhideButton);
@@ -1253,7 +1373,65 @@ export async function initializeProfileSelector() {
         originalAddProfileButton.parentNode.replaceChild(newAddProfileButton, originalAddProfileButton);
 
         newAddProfileButton.addEventListener('click', () => {
-            showAddProfileModal();
+            window.__pendingEditProfile = {
+                id: null,
+                profile: {
+                    title: 'New Profile',
+                    version: '2',
+                    beverage_type: 'espresso',
+                    target_weight: 0,
+                    tank_temperature: 93,
+                    target_volume: 0,
+                    target_volume_count_start: 0,
+                    author: '',
+                    notes: '',
+                    steps: [
+                        {
+                            name: 'Preinfusion',
+                            pump: 'flow',
+                            transition: 'fast',
+                            flow: 2.0,
+                            pressure: 6.0,
+                            temperature: 93,
+                            sensor: 'coffee',
+                            seconds: 10,
+                            weight: 0,
+                            volume: 0,
+                            exit: { type: 'pressure', condition: 'over', value: 4.0 },
+                            limiter: { value: 4.0, range: 0.6 },
+                        },
+                        {
+                            name: 'Ramp',
+                            pump: 'flow',
+                            transition: 'fast',
+                            flow: 6.0,
+                            pressure: 6.0,
+                            temperature: 93,
+                            sensor: 'coffee',
+                            seconds: 20,
+                            weight: 0,
+                            volume: 0,
+                            exit: { type: 'pressure', condition: 'over', value: 9.0 },
+                            limiter: { value: 9.0, range: 0.6 },
+                        },
+                        {
+                            name: 'Extraction',
+                            pump: 'pressure',
+                            transition: 'fast',
+                            flow: 6.0,
+                            pressure: 9.0,
+                            temperature: 93,
+                            sensor: 'coffee',
+                            seconds: 40,
+                            weight: 37,
+                            volume: 0,
+                            exit: { type: 'weight', condition: 'over', value: 37 },
+                            limiter: { value: 0, range: 0.6 },
+                        },
+                    ],
+                },
+            };
+            loadPage('src/profiles/profile_editor.html');
         });
         // Also handle the file input to prevent duplicate listeners
         const originalFileInput = document.getElementById('profile-upload-input');

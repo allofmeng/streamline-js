@@ -157,15 +157,13 @@ export function openContextMenu(anchorEl, items, options = {}) {
         if (first) first.focus();
     });
 
-    const onBackdropDown = (e) => {
-        if (e.target === backdrop) {
-            e.preventDefault();
-            e.stopPropagation();
-            close();
-        }
+    // Dismiss on click (fires after the full touch sequence ends). Listening on
+    // touchstart with preventDefault left the in-progress touch bound to the
+    // now-hidden backdrop and broke the next pan on the profile list.
+    const onBackdropClick = (e) => {
+        if (e.target === backdrop) close();
     };
-    backdrop.addEventListener('mousedown', onBackdropDown);
-    backdrop.addEventListener('touchstart', onBackdropDown, { passive: false });
+    backdrop.addEventListener('click', onBackdropClick);
 
     const detachKeyboard = attachKeyboard(menu, close);
 
@@ -177,8 +175,7 @@ export function openContextMenu(anchorEl, items, options = {}) {
         anchor: anchorEl,
         detachKeyboard: () => {
             detachKeyboard();
-            backdrop.removeEventListener('mousedown', onBackdropDown);
-            backdrop.removeEventListener('touchstart', onBackdropDown);
+            backdrop.removeEventListener('click', onBackdropClick);
         },
         onClose: options.onClose,
     };
