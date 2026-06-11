@@ -1538,18 +1538,22 @@ function renderSettingsTab() {
 
     const profile = editorState.profile;
 
-    // Create 3 column containers
+    // Create 3 column containers. Use flex ratios (1:1:2) so columns divide the
+    // ACTUAL available row space (after padding + gaps), not the parent's full
+    // width — otherwise widths sum to 100% + 160px and rightCol overflows back
+    // onto middleCol, clipping the Import button on tablet. min-w-0 lets
+    // children shrink below their intrinsic min-content width.
     const leftCol = document.createElement('div');
-    leftCol.className = 'flex flex-col gap-[45px]';
-    leftCol.style.width = '25%';
+    leftCol.className = 'flex flex-col gap-[45px] min-w-0';
+    leftCol.style.flex = '1 1 0';
 
     const middleCol = document.createElement('div');
-    middleCol.className = 'flex flex-col gap-[45px]';
-    middleCol.style.width = '25%';
+    middleCol.className = 'flex flex-col gap-[45px] min-w-0';
+    middleCol.style.flex = '1 1 0';
 
     const rightCol = document.createElement('div');
-    rightCol.className = 'flex flex-col gap-[24px]';
-    rightCol.style.width = '50%';
+    rightCol.className = 'flex flex-col gap-[24px] min-w-0';
+    rightCol.style.flex = '2 1 0';
 
     container.appendChild(leftCol);
     container.appendChild(middleCol);
