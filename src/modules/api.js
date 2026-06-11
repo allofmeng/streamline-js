@@ -1530,6 +1530,75 @@ export async function signalHeartbeat() {
     }
 }
 
+// --- Manual WiFi scale endpoints ---------------------------------------------
+// Auto-discovered (DNS-SD) WiFi scales show up in the device list with no extra
+// calls; these drive MANUAL IP/hostname entry for networks where mDNS is blocked.
+
+/** List manually-added WiFi scale endpoints → ["192.168.1.42", ...]. */
+export async function listWifiScales() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/devices/wifi`);
+        if (!response.ok) throw new Error(`Failed to list WiFi scales: ${response.status}`);
+        const data = await response.json();
+        return data.endpoints || [];
+    } catch (error) {
+        logger.error('Error listing WiFi scales:', error);
+        throw error;
+    }
+}
+
+/** Add a WiFi scale by IP/hostname. Returns the updated endpoint list. */
+export async function addWifiScale(host) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/devices/wifi`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host }),
+        });
+        if (!response.ok) throw new Error(`Failed to add WiFi scale: ${response.status}`);
+        const data = await response.json();
+        return data.endpoints || [];
+    } catch (error) {
+        logger.error('Error adding WiFi scale:', error);
+        throw error;
+    }
+}
+
+/** Remove a manual WiFi scale endpoint. Returns the updated endpoint list. */
+export async function removeWifiScale(host) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/devices/wifi`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host }),
+        });
+        if (!response.ok) throw new Error(`Failed to remove WiFi scale: ${response.status}`);
+        const data = await response.json();
+        return data.endpoints || [];
+    } catch (error) {
+        logger.error('Error removing WiFi scale:', error);
+        throw error;
+    }
+}
+
+// Forget a remembered device: drops it from the persistent registry so a
+// currently-absent (`available: false`) device stops appearing in the list.
+// deviceId goes in the body (serial/WiFi ids aren't URL-path-safe).
+export async function forgetDevice(deviceId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/devices/forget`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId }),
+        });
+        if (!response.ok) throw new Error(`Failed to forget device: ${response.status}`);
+        return true;
+    } catch (error) {
+        logger.error('Error forgetting device:', error);
+        throw error;
+    }
+}
+
 // Presence API functions
 export async function getPresenceSettings() {
     try {
