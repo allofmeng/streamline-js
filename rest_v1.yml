@@ -36,12 +36,55 @@ paths:
                     type:
                       type: string
                       enum: [machine, scale, sensor]
+                    available:
+                      type: boolean
+                      description: >
+                        true if the device is currently present in discovery;
+                        false for a remembered device that is not present
+                        (reported with state "disconnected"). Remembered devices
+                        are those the user has connected to; they persist across
+                        restarts until forgotten via /api/v1/devices/forget.
         "500":
           description: Internal Server Error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/devices/forget:
+    put:
+      summary: Forget a remembered device
+      description: >
+        Removes a device from the persistent remembered-devices registry. If the
+        device is not currently present it then no longer appears in
+        /api/v1/devices. If it is present it stays listed (as available) but is
+        no longer remembered when it next goes away. deviceId is taken from the
+        JSON body or a query parameter (serial ids are paths and WiFi ids
+        contain ':', so they are not URL-path-safe).
+      tags: [Devices]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceId:
+                  type: string
+      parameters:
+        - in: query
+          name: deviceId
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Forgotten (or already absent)
+        "400":
+          description: Missing deviceId
+        "503":
+          description: >
+            Remembered-devices feature unavailable (the registry controller is
+            not wired). Not returned in normal operation.
   /api/v1/devices/scan:
     get:
       summary: Scan for Devices
@@ -3697,6 +3740,46 @@ paths:
                   - appStore
                   - fullVersion
                   - localIp
+  /api/v1/logs:
+    get:
+      summary: Get recent log entries
+      description: Returns the last N kilobytes of the app log file. Query parameter `kb` controls the size (default: 16).
+      tags: [System]
+      parameters:
+        - name: kb
+          in: query
+          schema:
+            type: integer
+          description: Number of kilobytes to return (default: 16)
+      responses:
+        "200":
+          description: Recent log entries as plain text
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/v1/webview/logs:
+    get:
+      summary: Get WebView console logs
+      description: Returns console log messages forwarded from in-app WebViews.
+      tags: [System]
+      responses:
+        "200":
+          description: WebView console log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    timestamp:
+                      type: string
+                      format: date-time
+                    level:
+                      type: string
+                    message:
+                      type: string
   /api/v1/debug/scale/{command}:
     post:
       summary: Control mock scale (simulate mode only)

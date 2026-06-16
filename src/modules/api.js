@@ -775,6 +775,28 @@ export async function updateWorkflow(data) {
     convertGrinderSettingToFloat(dataToSend);
     if (dataToSend.profile) {
         convertGrinderSettingToFloat(dataToSend.profile);
+        // Strip legacy TCL profile fields not in Rea v2 schema. Rea's strict
+        // Dart deserializer rejects them; keeping them stalls PUT /workflow.
+        delete dataToSend.profile.type;
+        delete dataToSend.profile.legacy_profile_type;
+        delete dataToSend.profile.lang;
+        delete dataToSend.profile.hidden;
+        delete dataToSend.profile.reference_file;
+        delete dataToSend.profile.changes_since_last_espresso;
+        // Step shape sanitization: Rea's ProfileStep is discriminated on
+        // `pump`, and ExitType enum is {pressure, flow} only. Sending mixed
+        // pump fields or weight/time/off exits trips ArgumentError inside a
+        // Timer callback in WorkflowHandler → completer never resolves → hang.
+        if (Array.isArray(dataToSend.profile.steps)) {
+            for (const step of dataToSend.profile.steps) {
+                if (step.pump === 'flow') delete step.pressure;
+                else if (step.pump === 'pressure') delete step.flow;
+                if (step.limiter && step.limiter.value === 0) step.limiter = null;
+                if (step.exit && step.exit.type !== 'pressure' && step.exit.type !== 'flow') {
+                    step.exit = null;
+                }
+            }
+        }
     }
 
     const response = await fetch(`${API_BASE_URL}/workflow`, {
@@ -785,7 +807,10 @@ export async function updateWorkflow(data) {
         body: JSON.stringify(dataToSend),
     });
     if (!response.ok) {
-        throw new Error('Failed to update workflow');
+        const body = await response.text();
+        logger.error('updateWorkflow failed', response.status, body);
+        logger.error('updateWorkflow payload was', JSON.stringify(dataToSend));
+        throw new Error(`Failed to update workflow: ${response.status} ${body}`);
     }
     return response.json();
 }

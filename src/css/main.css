@@ -371,3 +371,14 @@ body {
 [data-theme='dark'] .pe-focus-overlay {
   background: rgba(0, 0, 0, 0.55);
 }
+
+/* Save-As / Overwrite dialog backdrop — matches the focus-overlay scrim
+   look, plus a soft blur behind the modal so the editor reads as dimmed. */
+.pe-save-dialog::backdrop {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+[data-theme='dark'] .pe-save-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
