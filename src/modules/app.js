@@ -24,6 +24,24 @@ window.resetDataTimeout = resetDataTimeout;
 window.onScaleDisconnect = onScaleDisconnect;
 window.onScaleReconnect = onScaleReconnect;
 
+function initClockTicker() {
+    const el = document.getElementById('data-clock');
+    if (!el) return;
+    const tick = () => {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        el.textContent = `${h}:${m}`;
+    };
+    tick();
+    // Re-align to wall-clock minute so updates land on the second hand crossing 0.
+    const msToNextMinute = (60 - new Date().getSeconds()) * 1000;
+    setTimeout(() => {
+        tick();
+        setInterval(tick, 60_000);
+    }, msToNextMinute);
+}
+
 function initMobileValueInputs() {
     if (!shouldUseNumpad()) return;
     
@@ -1055,6 +1073,7 @@ async function initMainPageOnce() {
         connectScaleWebSocket(handleScaleData, onScaleReconnect, onScaleDisconnect);
         connectDeviceWebSocket(handleDeviceWsData, () => {}, () => {}, handleDeviceConnectionError);
         initWaterTankSocket();
+        initClockTicker();
         connectTimeToReadyWebSocket(handleTimeToReadyData);
         connectDisplayWebSocket((data) => logger.debug('Display state updated:', data));
         ensureGatewayModeTracking();

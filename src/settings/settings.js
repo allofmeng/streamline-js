@@ -316,7 +316,6 @@ const settingsTree = {
             { id: 'wakelock', name: 'Wake Lock', settingsCategory: 'wakelock' },
             { id: 'presence', name: 'Presence Detection', settingsCategory: 'presence' },
             { id: 'fontsize', name: 'Display Size', settingsCategory: 'fontsize' },
-            { id: 'resolution', name: 'Resolution', settingsCategory: 'resolution' },
             { id: 'screensaver', name: 'Screen Saver', settingsCategory: 'screensaver' },
             { id: 'machineadvancedsettings', name: 'Machine Advanced Settings', settingsCategory: 'de1advanced' },
             { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' }
@@ -1296,7 +1295,7 @@ export function renderUsbChargerModeSettings(settings) {
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="usbChargerModeToggle"
                            class="sr-only peer"
-                           ${settings.usb ? 'checked' : ''}
+                           ${(settings.usb === true || settings.usb === 'enable') ? 'checked' : ''}
                            onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
                     <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                     <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
@@ -2157,6 +2156,9 @@ function initFontSizeSettings() {
     select.addEventListener('change', (e) => {
         const multiplier = UI_ZOOM_MAP[e.target.value] ?? '1.0';
         localStorage.setItem('uiZoom', multiplier);
+        // scaling.js only re-reads uiZoom inside its resize handler — kick it
+        // so the new size applies immediately instead of after the next reload.
+        window.dispatchEvent(new Event('resize'));
     });
 }
 
@@ -2763,6 +2765,31 @@ export function renderWaterTankSettings() {
                         Alert when tank water level drops below this height (0, 5, 10, 15, 20, 25, 30 mm)
                     </p>
                 </div>
+
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                    <div class="content-stretch flex items-center relative shrink-0">
+                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
+                            Display Unit
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-[8px]" role="group" aria-label="Water tank display unit">
+                        <button class="h-[80px] w-[200px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200
+                            ${getWaterTankUnit() === 'mm' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
+                            aria-pressed="${getWaterTankUnit() === 'mm'}"
+                            onclick="window.setWaterTankUnit('mm')">
+                            mm
+                        </button>
+                        <button class="h-[80px] w-[200px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200
+                            ${getWaterTankUnit() === 'ml' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
+                            aria-pressed="${getWaterTankUnit() === 'ml'}"
+                            onclick="window.setWaterTankUnit('ml')">
+                            mL
+                        </button>
+                    </div>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                        Show tank level on the home screen in millimeters or millilitres
+                    </p>
+                </div>
             </div>
         </div>
     `;
@@ -2783,6 +2810,11 @@ function snapWaterAlertLevel(value) {
 function getWaterAlertLevel() {
     const stored = parseInt(localStorage.getItem('waterRefillLevel'), 10);
     return WATER_ALERT_LEVELS.includes(stored) ? stored : 15;
+}
+
+// Read persisted water tank display unit ('mm' default, or 'ml').
+function getWaterTankUnit() {
+    return localStorage.getItem('waterTankUnit') === 'ml' ? 'ml' : 'mm';
 }
 
 // Render quick adjustments settings
@@ -4255,6 +4287,13 @@ export async function initializeSettings() {
     window.setScreensaverEnabled = function(enabled) {
         localStorage.setItem('screensaverEnabled', enabled ? 'true' : 'false');
         ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
+    };
+
+    window.setWaterTankUnit = function(unit) {
+        const next = unit === 'ml' ? 'ml' : 'mm';
+        localStorage.setItem('waterTankUnit', next);
+        if (typeof window.refreshWaterTankUnit === 'function') window.refreshWaterTankUnit();
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     };
 
     window.addScreensaverFiles = async function(files) {

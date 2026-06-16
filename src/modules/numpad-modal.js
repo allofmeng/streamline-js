@@ -1,4 +1,17 @@
 import { getValueFromStore, setValueInStore, getShots } from './api.js';
+import { flashElement } from './ui.js';
+
+const fieldDisplayElementIds = {
+    'dose-in': 'dose-in-value',
+    'drink-out': 'drink-out-value',
+    'temperature': 'temp-value',
+    'grind': 'grind-value',
+    'steam-duration': 'steam-duration-value',
+    'steam-flow': 'steam-flow-value',
+    'flush': 'flush-value',
+    'hot-water-vol': 'hot-water-vol-value',
+    'hot-water-temp': 'hot-water-temp-value',
+};
 
 let numpadModalInitialized = false;
 let currentInputElement = null;
@@ -263,7 +276,9 @@ function handleBackspace() {
 function handlePreviousValue(value) {
     currentValue = value;
     isFirstInput = false;
-    updateDisplay();
+    const displayId = fieldDisplayElementIds[currentFieldType];
+    if (displayId) flashElement(document.getElementById(displayId));
+    handleConfirm();
 }
 
 function renderPreviousValues() {

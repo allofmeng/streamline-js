@@ -531,7 +531,7 @@ export function setupPressAndHold(element, clickCallback, longPressCallback, opt
     });
 }
 
-function flashElement(element) {
+export function flashElement(element) {
     if (element) {
         element.classList.add('flash');
         setTimeout(() => {
@@ -2381,13 +2381,14 @@ export function showGhcControls() {
 
     // Resize Plotly: clear inline width (set by Plotly at init) then relayout to new size.
     // 1920px canvas - 480px left aside - 172px GHC = 1268px chart width.
-    // Bump right margin so trace labels (anchored at last data point with xshift)
-    // have room to render instead of being clipped at the chart's right edge.
+    // Right margin is computed dynamically from label widths — refresh after resize
+    // so labels stay inside the new plot box.
     const chartEl = document.getElementById('plotly-chart');
     if (chartEl) {
         chartEl.style.width = '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
-            Plotly.relayout(chartEl, { width: 1268, 'margin.r': 11 });
+            Plotly.relayout(chartEl, { width: 1268 });
+            chart.refreshLabelMargin();
         }));
     }
 }
@@ -2412,12 +2413,13 @@ export function hideGhcControls() {
     });
 
     // Restore chart to full main width: 1920px - 480px left aside = 1440px.
-    // Reset right margin to the baseLayout default.
+    // Right margin recomputed from label widths.
     const chartEl = document.getElementById('plotly-chart');
     if (chartEl) {
         chartEl.style.width = '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
             Plotly.relayout(chartEl, { width: 1460 });
+            chart.refreshLabelMargin();
         }));
     }
 }

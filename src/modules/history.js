@@ -91,7 +91,9 @@ async function displayShot(index) {
     const grindSizeEl = document.getElementById('history-grind-size');
 
     if (doseInEl) {
-        const doseIn = shot.workflow?.context?.targetDoseWeight ?? shot.workflow?.doseData?.doseIn;
+        const doseIn = shot.annotations?.actualDoseWeight
+            ?? shot.workflow?.context?.targetDoseWeight
+            ?? shot.workflow?.doseData?.doseIn;
         if (typeof doseIn !== 'undefined' && doseIn !== null) {
             doseInEl.textContent = `In ${doseIn}g`;
         } else {

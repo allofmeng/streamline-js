@@ -778,7 +778,7 @@ function renderProfiles() {
             yoursList.forEach(renderProfileItem);
         }
         if (defaultsList.length > 0) {
-            renderSectionHeader('Defaults');
+            renderSectionHeader('Built-In Profiles');
             defaultsList.forEach(renderProfileItem);
         }
 

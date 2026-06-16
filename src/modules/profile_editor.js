@@ -291,7 +291,7 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
 
     const minusBtn = document.createElement('button');
     minusBtn.type = 'button';
-    minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
     minusBtn.textContent = '\u2212';
     minusBtn.setAttribute('aria-label', 'Decrease');
 
@@ -300,7 +300,7 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
 
     const plusBtn = document.createElement('button');
     plusBtn.type = 'button';
-    plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
     plusBtn.textContent = '+';
     plusBtn.setAttribute('aria-label', 'Increase');
 
@@ -545,7 +545,7 @@ function renderStepCards() {
 
             const minusBtn = document.createElement('button');
             minusBtn.type = 'button';
-            minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             minusBtn.textContent = '\u2212';
             minusBtn.style.position = 'absolute';
             minusBtn.style.right = '100%';
@@ -556,7 +556,7 @@ function renderStepCards() {
 
             const plusBtn = document.createElement('button');
             plusBtn.type = 'button';
-            plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             plusBtn.textContent = '+';
             plusBtn.style.position = 'absolute';
             plusBtn.style.left = '100%';
@@ -722,7 +722,7 @@ function renderStepCards() {
 
             const targetMinus = document.createElement('button');
             targetMinus.type = 'button';
-            targetMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            targetMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             targetMinus.textContent = '\u2212';
             targetMinus.style.position = 'absolute';
             targetMinus.style.right = '100%';
@@ -733,7 +733,7 @@ function renderStepCards() {
 
             const targetPlus = document.createElement('button');
             targetPlus.type = 'button';
-            targetPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            targetPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             targetPlus.textContent = '+';
             targetPlus.style.position = 'absolute';
             targetPlus.style.left = '100%';
@@ -919,7 +919,7 @@ function renderStepCards() {
 
             const limMinus = document.createElement('button');
             limMinus.type = 'button';
-            limMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            limMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             limMinus.textContent = '\u2212';
             limMinus.style.position = 'absolute';
             limMinus.style.right = '100%';
@@ -930,7 +930,7 @@ function renderStepCards() {
 
             const limPlus = document.createElement('button');
             limPlus.type = 'button';
-            limPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            limPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             limPlus.textContent = '+';
             limPlus.style.position = 'absolute';
             limPlus.style.left = '100%';
@@ -1081,7 +1081,7 @@ function renderStepCards() {
 
             const exitMinus = document.createElement('button');
             exitMinus.type = 'button';
-            exitMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            exitMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             exitMinus.textContent = '\u2212';
             exitMinus.style.position = 'absolute';
             exitMinus.style.right = '100%';
@@ -1092,7 +1092,7 @@ function renderStepCards() {
 
             const exitPlus = document.createElement('button');
             exitPlus.type = 'button';
-            exitPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            exitPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             exitPlus.textContent = '+';
             exitPlus.style.position = 'absolute';
             exitPlus.style.left = '100%';
@@ -1409,7 +1409,7 @@ function renderStepCards() {
 
                 const minusBtn = document.createElement('button');
                 minusBtn.type = 'button';
-                minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+                minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
                 minusBtn.textContent = '\u2212';
                 minusBtn.style.position = 'absolute';
                 minusBtn.style.right = '100%';
@@ -1420,7 +1420,7 @@ function renderStepCards() {
 
                 const plusBtn = document.createElement('button');
                 plusBtn.type = 'button';
-                plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+                plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
                 plusBtn.textContent = '+';
                 plusBtn.style.position = 'absolute';
                 plusBtn.style.left = '100%';
