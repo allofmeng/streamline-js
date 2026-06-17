@@ -1,0 +1,384 @@
+/* Scaling container - initially hidden until scaled */
+#scaling-container {
+    overflow: hidden;
+}
+
+#scaled-content {
+    width: 1920px;
+    height: 1200px;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+#subpage-host {
+    width: 1920px;
+    height: 1200px;
+}
+
+#scaled-content.scaled {
+    visibility: visible;
+    opacity: 1;
+}
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-Thin.ttf') format('truetype'); font-weight: 100; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-ExtraLight.ttf') format('truetype'); font-weight: 200; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-Light.ttf') format('truetype'); font-weight: 300; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-Regular.ttf') format('truetype'); font-weight: 400; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-Medium.ttf') format('truetype'); font-weight: 500; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-SemiBold.ttf') format('truetype'); font-weight: 600; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-Bold.ttf') format('truetype'); font-weight: 700; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-ExtraBold.ttf') format('truetype'); font-weight: 800; }
+@font-face { font-family: 'Inter'; src: url('../ui/Inter-Black.ttf') format('truetype'); font-weight: 900; }
+
+@font-face { font-family: 'NotoSansMono'; src: url('../ui/NotoSansMono-SemiBold.ttf') format('truetype'); font-weight: 600; }
+@font-face { font-family: 'NotoSansMono'; src: url('../ui/NotoSansMono-ExtraBold.ttf') format('truetype'); font-weight: 800; }
+
+html, body {
+    overflow: hidden;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+.font-mono-custom {
+    font-family: 'NotoSansMono', monospace;
+}
+
+.font-inter-custom {
+    font-family: 'Inter', sans-serif;
+}
+
+:root {
+    --mimoja-blue-v2: #385A92;
+    --mimoja-blue: #385A92;
+
+    --profile-button-outline-color: #c5cdda;
+    --profile-button-background-color: #FFFFFF;
+    --profile-button-text-color: #7583b0;
+    --box-color: #f8f9fb;
+    --profileselectorbg: #FFFFFF;
+    --low-contrast-white: #959595;
+    --text-primary: #121212; /* Renamed from --dark-gray */
+    --text-primary-disabled: #c8cacc;
+    --preset-value-color: #AAAAAA;
+    --preset-value-color-disabled: #e3e4e6;
+    --preset-label-selected-color: #777777;
+    --green: #65Ac8a;
+    --button-grey: #EDEDED;
+
+    /* Plus Minus Flash Colors (Light Mode) */
+    --plus-minus-flash-on-color: #b8b8b8;
+    --plus-minus-flash-on-color2: #cfcfcf;
+    --plus-minus-flash-off-color: #ededed;
+
+    /* Theme toggle colors */
+    --bg--togglebtn: #FFFFFF;
+    --btn-togglebgcolor: #959595;
+    --bgmain-color : #FFFFFF;
+    --data-card-title-text-color:#707485;
+    /* left label text colors */
+    --left-label-text : #385992;
+    /*status mesg */
+    --heatingstatus:#1967d4;
+    --status-ready-green:#17c29a;
+    --status-green-color: #0CA581;
+    --status-red-color: #DA515E;
+    --status-clickable-color: #1967d4;
+    --fav-button-wait:#e3e4e6;
+
+    /* Wake Lock and Presence Settings (Light Mode) */
+    --wakelock-card-bg: #385a92;
+    --wakelock-card-text: #ffffff;
+    --presence-card-bg: #f8f9fb;
+    --presence-card-alt-bg: #ffffff;
+    --presence-card-text: #121212;
+    --presence-input-bg: #ffffff;
+    --presence-input-text: #121212;
+    --presence-input-border: #c5cdda;
+    --button-primary-bg: #385a92;
+    --button-primary-text: #ffffff;
+    --button-secondary-bg: #e8e8e8;
+    --button-secondary-text: #121212;
+    /* bg colors in profile editor */
+    --secondary-button-bg:#b6c3d7; 
+    --secondary-button-outline:#385a92;
+}
+
+[data-theme='dark'] {
+    --profile-button-outline-color: #17191e;
+    --profile-button-background-color: #292c38;
+    --profile-button-text-color: #FFFFFF;
+    --box-color: #17191e;
+    --profileselectorbg:#17191e;
+    --button-grey: #2a2d36;
+    --secondary-button-bg: #2a3a5a;
+    /* Plus Minus Flash Colors (Dark Mode) */
+    --plus-minus-flash-on-color: #4a4f5e;
+    --plus-minus-flash-on-color2: #3a3e4a;
+    --plus-minus-flash-off-color: #2a2d36;
+    --bgmain-color : #101217;
+    --mimoja-blue-v2: #415996;
+    --text-primary: #e8e8e8;
+    --text-primary-disabled: #4a4a4a;
+    --preset-value-color: #4e5559;
+    --preset-value-color-disabled: #262a2c;
+    --preset-label-selected-color: #999999;
+    --data-card-title-text-color:#707485;
+     /* left label text colors */
+    --left-label-text :#415996;
+    --status-green-color: #0CA581; /* Same as light mode */
+    --status-red-color: #DA515E;   /* Same as light mode */
+    --status-clickable-color: #415996;
+
+    /* Wake Lock and Presence Settings (Dark Mode) */
+    --wakelock-card-bg: #415996;
+    --wakelock-card-text: #e8e8e8;
+    --presence-card-bg: #17181D;
+    --presence-card-alt-bg: #2d3a52;
+    --presence-card-text: #e8e8e8;
+    --presence-input-bg: #292c38;
+    --presence-input-text: #e8e8e8;
+    --presence-input-border: #415996;
+    --button-primary-bg: #415996;
+    --button-primary-text: #e8e8e8;
+    --button-secondary-bg: #292c38;
+    --button-secondary-text: #e8e8e8;
+}
+
+/* New classes for status messages */
+.status-msg-green {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 30px;
+    color: var(--status-green-color);
+}
+
+.status-msg-red {
+    font-family: 'Inter', sans-serif;
+    font-weight: 800; /* Inter-HeavyBold24 */
+    font-size: 30px;
+    color: var(--status-red-color);
+}
+
+.status-msg-clickable {
+    font-family: 'NotoSansMono', monospace;
+    font-weight: 400; /* mono18, assuming Regular is 400 */
+    font-size: 18px;
+    color: var(--status-clickable-color);
+    cursor: pointer;
+}
+
+.profile-selector-bg {
+    background-color: var(--profileselectorbg);
+}
+
+.flash {
+    background-color: #395ab9 !important;
+    color: white !important;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+#theme-toggle:checked + .togglebtn-change::before {
+    transition: 0.3s;
+    transform: translateX(23px);
+}
+
+.togglebtn-change {
+    background-color: var(--bg--togglebtn);
+}
+
+.togglebtn-change::before {
+    content: '';
+    display: block;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background-color: var(--btn-togglebgcolor);
+    transition: 0.3s;
+    transform: translateX(0);
+}
+
+.no-select {
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes button-flash {
+    0% { background-color: var(--plus-minus-flash-on-color2); }
+    14% { background-color: var(--plus-minus-flash-on-color); } /* Approximately 40ms into a 280ms animation */
+    71% { background-color: var(--plus-minus-flash-on-color2); } /* Approximately 200ms into a 280ms animation */
+    100% { background-color: transparent; } /* Revert to original, allowing CSS classes to take over */
+}
+
+.flash-animation {
+    animation: button-flash 0.28s linear forwards; /* 'forwards' keeps the end state */
+}
+
+/* Brightness Slider Styling */
+.brightness-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 200px;
+  height: 8px;
+  border-radius: 5px;
+  background: linear-gradient(to right, #385a92 0%, #385a92 75%, #e8e8e8 75%, #e8e8e8 100%);
+  outline: none;
+  cursor: pointer;
+}
+
+.brightness-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #385a92;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 2px solid #c5cdda;
+  transition: all 0.2s ease;
+}
+
+.brightness-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(56, 90, 146, 0.4);
+}
+
+.brightness-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #385a92;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 2px solid #c5cdda;
+  transition: all 0.2s ease;
+}
+
+.brightness-slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(56, 90, 146, 0.4);
+}
+
+.brightness-slider::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+.brightness-slider::-moz-range-progress {
+  background: #385a92;
+  height: 8px;
+  border-radius: 5px;
+}
+
+/* Brightness Toggle Button Styling */
+.brightness-toggle-checkbox {
+  display: none;
+}
+
+.brightness-toggle-label {
+  display: block;
+  width: 104.8px;
+  height: 62.88px;
+  background-color: #e8e8e8;
+  border: 2px solid #c9c9c9;
+  border-radius: 2617.374px;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.3s ease;
+}
+
+.brightness-toggle-label::after {
+  content: '';
+  position: absolute;
+  width: 41.92px;
+  height: 41.92px;
+  background-color: #c9c9c9;
+  border-radius: 50%;
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  transition: left 0.3s ease;
+}
+
+.brightness-toggle-checkbox:checked + .brightness-toggle-label {
+  background-color: #385a92;
+  border-color: #385a92;
+}
+
+.brightness-toggle-checkbox:checked + .brightness-toggle-label::after {
+  background-color: #ffffff;
+  left: calc(100% - 41.92px - 8px);
+}
+
+/* Button styling for Wake Lock and Presence Settings */
+.btn.btn-primary {
+  background-color: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  border-color: var(--button-primary-bg);
+}
+
+.btn.btn-primary:hover {
+  background-color: var(--button-primary-bg);
+  opacity: 0.9;
+}
+
+.btn {
+  background-color: var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  border-color: var(--button-secondary-bg);
+}
+
+.btn:hover {
+  background-color: var(--button-secondary-bg);
+  opacity: 0.9;
+}
+
+/* Toggle styling for Wake Lock and Presence Settings */
+.toggle {
+  background-color: #e8e8e8;
+  border-color: #c5cdda;
+}
+
+.toggle:checked {
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-bg);
+}
+
+[data-theme='dark'] .toggle {
+  background-color: #292c38;
+  border-color: #415996;
+}
+
+[data-theme='dark'] .toggle:checked {
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-bg);
+}
+
+/* Profile editor focus-blur scrim (4 sides around the focused control) */
+.pe-focus-overlay {
+  background: rgba(255, 255, 255, 0.7);
+}
+[data-theme='dark'] .pe-focus-overlay {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* Save-As / Overwrite dialog backdrop — matches the focus-overlay scrim
+   look, plus a soft blur behind the modal so the editor reads as dimmed. */
+.pe-save-dialog::backdrop {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+[data-theme='dark'] .pe-save-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}

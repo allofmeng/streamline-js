@@ -1,0 +1,552 @@
+.numpad-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(6px);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.numpad-modal-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+
+.numpad-modal-container {
+    width: 100%;
+    height: 100%;
+    background-color: white;
+    border-radius: 0;
+    padding: 24px;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+.numpad-modal-overlay.active .numpad-modal-container {
+    transform: translateY(0);
+}
+
+.numpad-modal-scaled-inner {
+    width: 100%;
+    height: 100%;
+}
+
+.numpad-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    padding-bottom: 24px;
+}
+
+.numpad-modal-header-divider {
+    width: 100%;
+    height: 1px;
+    background-color: #121212;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.numpad-modal-title {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    font-size: 58.5px;
+    color: #121212;
+}
+
+.numpad-modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #121212;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+}
+
+.numpad-modal-content {
+    display: flex;
+    gap: 0;
+    flex: 1;
+    height: 100%;
+}
+
+.numpad-modal-left {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    padding-bottom: 350px;
+}
+
+.numpad-modal-right {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    padding-bottom: 350px;
+}
+
+.numpad-modal-divider {
+    width: 1px;
+    background-color: #121212;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    margin-bottom: -24px;
+}
+
+.numpad-modal-input-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    justify-content: center;
+}
+
+.numpad-modal-input-label {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 400;
+    font-size: 30px;    
+    color: #666;
+    padding-top: 130px;
+}
+
+.numpad-modal-input-box {
+    position: relative;
+    width: 440px;
+    height: 110px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.numpad-modal-input-box * {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    pointer-events: none;
+}
+
+.numpad-modal-input-border {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 2.5px solid #1867d6;
+    border-radius: 14px;
+    box-sizing: border-box;
+}
+
+.numpad-modal-input-cursor {
+    display: inline-block;
+    width: 3px;
+    height: 0.75em;
+    background-color: #1867d6;
+    border-radius: 2px;
+    vertical-align: middle;
+    margin: 0 3px;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.numpad-modal-input-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    font-size: 48px;
+    line-height: 1;
+    white-space: nowrap;
+    color: #121212;
+    display: flex;
+    align-items: center;
+}
+
+.numpad-modal-previous-values {
+    margin-bottom: 16px;
+}
+
+.numpad-previous-divider {
+    width: 100%;
+    height: 1px;
+    background-color: #121212;
+    margin-top: auto;
+    margin-bottom: 90px;
+    flex-shrink: 0;
+}
+
+.numpad-modal-previous-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 45px;
+}
+
+.numpad-modal-previous-title {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 400;
+    font-size: 30px;
+    color: #666;
+    text-align: center;
+    margin-bottom: 0;
+    transform: translateY(-30px);
+}
+
+.numpad-modal-previous-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 45px;
+    align-items: center;
+}
+
+.numpad-previous-row {
+    display: flex;
+    gap: 60px;
+    justify-content: center;
+}
+
+.numpad-modal-previous-btn {
+    min-width: 240px;
+    padding: 32px 80px;
+    border-radius: 60px;
+    background: transparent;
+    border: 1px solid #121212;
+    cursor: pointer;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 36px;
+    font-weight: 400;
+    color: #121212;
+    transition: background-color 0.2s;
+}
+
+.numpad-modal-previous-btn:active {
+    background-color: #f3f4f6;
+}
+
+.numpad-modal-numpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 52px;
+    flex: 1;
+    align-content: end;
+}
+
+.numpad-modal-numpad-btn {
+    background-color: #c9c9c9;
+    border: none;
+    border-radius: 200px;
+    padding: 37.5px 75px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 36px;
+    font-weight: 500;
+    color: #121212;
+    cursor: pointer;
+    transition: all 0.15s;
+    
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.numpad-modal-numpad-btn:active {
+    background-color: #d0d0d0;
+    transform: scale(0.96);
+}
+
+.numpad-modal-numpad-btn.numpad-decimal {
+    font-weight: 700;
+}
+
+.numpad-modal-numpad-btn.numpad-delete {
+}
+
+.numpad-modal-numpad-btn.numpad-delete:active {
+}
+
+.numpad-modal-numpad-btn .delete-icon-small {
+    width: 48px;
+    height: 40px;
+}
+
+.numpad-modal-actions {
+    display: flex;
+    gap: 16px;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+.numpad-modal-cancel {
+    width: 240px;
+    height: 82px;
+    padding: 26px 67.5px;
+    border-radius: 67.5px;
+    background: transparent;
+    border: 1.5px solid var(--mimoja-blue);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    font-size: 24px;
+    color: var(--mimoja-blue);
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.numpad-modal-cancel:active {
+    background-color: rgba(56, 90, 146, 0.08);
+}
+
+.numpad-modal-confirm {
+    width: 240px;
+    height: 82px;
+    padding: 26px 67.5px;
+    border-radius: 67.5px;
+    background-color: var(--mimoja-blue);
+    border: none;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    font-size: 24px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.numpad-modal-confirm:active {
+    background-color: #2d4a72;
+}
+
+/* Dark Theme Styles */
+[data-theme='dark'] .numpad-modal-overlay {
+    background-color: rgba(0, 0, 0, 0.75);
+}
+
+[data-theme='dark'] .numpad-modal-container {
+    background-color: #101217;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .numpad-modal-title {
+    color: #ffffff;
+}
+
+[data-theme='dark'] .numpad-modal-close {
+    color: #ffffff;
+}
+
+[data-theme='dark'] .numpad-modal-divider,
+[data-theme='dark'] .numpad-modal-header-divider {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .numpad-modal-input-label {
+    color: var(--low-contrast-white, #959595);
+}
+
+[data-theme='dark'] .numpad-modal-input-border {
+    border-color: #385A92;
+}
+
+[data-theme='dark'] .numpad-modal-input-cursor {
+    background-color: #385A92;
+}
+
+[data-theme='dark'] .numpad-modal-input-value {
+    color: #ffffff;
+}
+
+[data-theme='dark'] .numpad-modal-previous-title {
+    color: var(--low-contrast-white, #959595);
+}
+
+[data-theme='dark'] .numpad-previous-divider {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme='dark'] .numpad-modal-previous-btn {
+    background-color: #1F2234;
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+[data-theme='dark'] .numpad-modal-previous-btn:active {
+    background-color: #2b3048;
+}
+
+[data-theme='dark'] .numpad-modal-numpad-btn {
+    background-color: #1F2234;
+    color: #ffffff;
+}
+
+[data-theme='dark'] .numpad-modal-numpad-btn:active {
+    background-color: #3c4671;
+}
+
+[data-theme='dark'] .numpad-modal-numpad-btn:hover {
+    background-color: #2b3048;
+}
+
+[data-theme='dark'] .numpad-modal-numpad-btn.numpad-delete {
+}
+
+[data-theme='dark'] .numpad-modal-numpad-btn.numpad-delete:active {
+}
+
+[data-theme='dark'] .numpad-modal-cancel {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+[data-theme='dark'] .numpad-modal-cancel:active {
+    background-color: #1F2234;
+}
+
+[data-theme='dark'] .numpad-modal-confirm {
+    background-color: #385A92;
+}
+
+[data-theme='dark'] .numpad-modal-confirm:active {
+    background-color: #2d4a72;
+}
+
+@media (max-width: 400px) {
+    .numpad-modal-numpad-btn {
+        padding: 14px;
+        font-size: 22px;
+        min-height: 52px;
+    }
+
+    .numpad-modal-input-value {
+        font-size: 28px;
+    }
+
+    .numpad-modal-input-box {
+        height: 72px;
+    }
+
+    .numpad-modal-content {
+        flex-direction: column;
+    }
+
+    .numpad-modal-divider {
+        display: none;
+    }
+
+    .numpad-modal-left,
+    .numpad-modal-right {
+        width: 100%;
+    }
+}
+
+@media (min-width: 400px) {
+    .numpad-modal-numpad-btn {
+        padding: 16px;
+        font-size: 26px;
+        min-height: 56px;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1200px) {
+    .numpad-modal-numpad {
+        gap: 32px;
+    }
+    
+    .numpad-modal-numpad-btn {
+        padding: 28px 56px;
+        font-size: 28px;
+    }
+    
+    .numpad-modal-input-label {
+        font-size: 24px;
+        padding-top: 80px;
+    }
+    
+    .numpad-modal-input-value {
+        font-size: 36px;
+    }
+    
+    .numpad-modal-input-box {
+        width: 450px;
+        height: 96px;
+    }
+}
+
+@media (min-width: 1201px) and (max-width: 1600px) {
+    .numpad-modal-numpad {
+        gap: 40px;
+    }
+    
+    .numpad-modal-numpad-btn {
+        padding: 32px 64px;
+        font-size: 32px;
+    }
+    
+    .numpad-modal-input-label {
+        font-size: 26px;
+        padding-top: 100px;
+    }
+    
+    .numpad-modal-input-value {
+        font-size: 42px;
+    }
+}
+
+@media (min-width: 768px) {
+    .numpad-modal-overlay {
+align-items: center;
+    }
+
+    .numpad-modal-container {
+        width: 100%;
+        max-width: 100%;
+        height: 100%;
+        border-radius: 0;
+        padding: 32px;
+    }
+
+    .numpad-modal-numpad-btn {
+        padding: 37.5px 75px;
+        font-size: 36px;
+    }
+
+    .numpad-modal-input-value {
+        font-size: 48px;
+    }
+
+    .numpad-modal-content {
+        gap: 32px;
+    }
+}
