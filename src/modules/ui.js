@@ -2422,7 +2422,7 @@ export function showGhcControls() {
 
     const status = document.getElementById('machine-status');
     if (status) {
-        status.style.right = '200px'; // 172px GHC + 20px gap
+        status.style.right = '100px'; // 172px GHC + 20px gap
         status.style.width = 'auto';  // size to content; right edge stays anchored, box grows leftward
     }
 

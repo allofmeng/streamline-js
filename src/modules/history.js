@@ -147,6 +147,18 @@ async function displayShot(index) {
     }
 }
 
+// Re-plot the currently selected history shot. The main-page chart shares the
+// `plotly-chart` id with the profile selector, so the selector's plotProfile()
+// paints over it; call this when returning to the main page to restore history.
+export function refreshCurrentShot() {
+    if (currentShotIndex >= 0 && shots[currentShotIndex]?.measurements) {
+        chart.plotHistoricalShot(shots[currentShotIndex].measurements, shots[currentShotIndex].workflow);
+        renderPastShot(shots[currentShotIndex]);
+    } else {
+        chart.clearChart();
+    }
+}
+
 export async function initHistory() {
     try {
         await openDB();

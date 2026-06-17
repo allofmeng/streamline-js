@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
@@ -123,7 +123,9 @@ let settingsCache = {
     allSkins: null,
     allSkinsLoading: false,
     allSkinsError: null,
-    githubLatestVersion: null
+    githubLatestVersion: null,
+    appUpdateState: null,
+    appUpdateChecked: false
 };
 
 let activeSettingsCategory = null; // New global variable to track the currently active category
@@ -241,6 +243,9 @@ function updateSettingsContentArea(category) {
         }
         if (category === 'talkdecent') {
             setTimeout(() => window.updateTalkToDecentUI?.(), 0);
+        }
+        if (category === 'firmware' || category === 'firmwareupdate') {
+            setTimeout(initAppUpdateSection, 0);
         }
         setTimeout(attachSettingsNumpad, 0);
     }
@@ -3283,8 +3288,8 @@ export function renderSkinSettings() {
                             <div class="flex items-center gap-[10px]">
                                 ${s.version ? `<span class="text-[17px] font-['Inter:Regular',sans-serif] opacity-80">v${s.version}</span>` : ''}
                                 ${s.isBundled && /streamline/i.test(s.name) && versionKnown ? (isLatest
-                                    ? `<span class="text-[13px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#0ca581]/15 text-[#0ca581]'}">Latest</span>`
-                                    : `<span class="text-[13px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#da515e]/15 text-[#da515e]'}">Update available</span>`)
+                                    ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#0ca581]/15 text-[#0ca581]'}">Latest</span>`
+                                    : `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#da515e]/15 text-[#da515e]'}">Update available</span>`)
                                 : ''}
                                 <span class="text-[14px] font-['Inter:Regular',sans-serif] opacity-60 uppercase tracking-wider">${s.isBundled ? 'Bundled' : 'Installed'}</span>
                             </div>
@@ -3783,10 +3788,110 @@ export function renderFirmwareUpdateSettings() {
                 <div class="flex flex-col gap-4">
                     <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decent.app Information</p>
                     ${appInfoDetails}
+                    <div id="app-update-section" class="mt-2">${renderAppUpdateBlock(settingsCache.appUpdateState)}</div>
                 </div>
             </div>
         </div>
     `;
+}
+
+// Render the app-update panel from an AppUpdateState snapshot (ws/v1/update).
+// Re-rendered in place on every state change by initAppUpdateSection().
+function renderAppUpdateBlock(state) {
+    const phase = state?.phase || 'idle';
+    const latest = state?.latestVersion;
+    const pct = Math.round((state?.progress || 0) * 100);
+
+    // After a check, the backend returns idle + latestVersion:null when up to date —
+    // indistinguishable from the never-checked idle state, so gate "up to date" on
+    // having actually run a check this session.
+    const checked = settingsCache.appUpdateChecked;
+    const current = state?.currentVersion;
+
+    // Same pill style as Theme & Updates skin cards.
+    const hasUpdate = phase === 'available';
+    const isLatest = !hasUpdate && phase === 'idle' && checked && !state?.error
+        && (!latest || (current && latest === current));
+    const pill = hasUpdate
+        ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#da515e]/15 text-[#da515e]">Update available</span>`
+        : isLatest
+            ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#0ca581]/15 text-[#0ca581]">Latest</span>`
+            : '';
+
+    // Right-hand action depends on phase. Default: Check button.
+    let action = `<button onclick="window.checkAppUpdate()" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Check for Updates</button>`;
+    if (phase === 'checking') {
+        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Checking…</button>`;
+    } else if (phase === 'available') {
+        action = state?.installable
+            ? `<button onclick="window.installAppUpdate()" class="bg-[#2e7d32] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Install ${latest ? 'v' + latest : 'Update'}</button>`
+            : `<a href="${state?.releaseUrl || '#'}" target="_blank" rel="noopener" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold flex items-center">View Release</a>`;
+    } else if (phase === 'downloading' || phase === 'installing') {
+        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${phase === 'downloading' ? 'Downloading…' : 'Installing…'}</button>`;
+    }
+
+    // Status line beneath the header.
+    const statusByPhase = {
+        idle:        isLatest ? `Up to date${current ? ` (v${current})` : ''}` : `Check for the latest application version`,
+        checking:    `Checking for updates…`,
+        available:   `Update available${latest ? `: v${latest}` : ''}`,
+        downloading: `Downloading update… ${pct}%`,
+        installing:  `Launching installer…`,
+        error:       state?.error ? `Update failed: ${state.error}` : `Update failed`,
+    };
+    const status = statusByPhase[phase] || '';
+    const statusColor = phase === 'error' ? 'text-[#da515e]'
+        : phase === 'available' ? 'text-[#2e7d32]'
+        : 'text-[var(--text-primary)]';
+
+    const progressBar = phase === 'downloading'
+        ? `<div class="w-full h-[10px] rounded-full bg-[#c9c9c9] overflow-hidden mt-1"><div class="h-full bg-[#385a92] transition-[width] duration-200" style="width:${pct}%"></div></div>`
+        : '';
+
+    const notes = (phase === 'available' && state?.releaseNotes)
+        ? `<p class="text-[18px] text-[var(--text-secondary)] whitespace-pre-line leading-[1.4] mt-1">${state.releaseNotes}</p>`
+        : '';
+
+    return `
+        <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)] flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-4">
+                <div class="flex flex-col gap-1 min-w-0">
+                    <div class="flex items-center gap-[10px]">
+                        <p class="text-[24px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">App Update</p>
+                        ${pill}
+                    </div>
+                    <p class="text-[20px] ${statusColor}">${status}</p>
+                </div>
+                ${action}
+            </div>
+            ${progressBar}
+            ${notes}
+        </div>
+    `;
+}
+
+// Connect ws/v1/update and keep #app-update-section in sync with AppUpdateState.
+// Exposes window.checkAppUpdate / window.installAppUpdate for the buttons.
+function initAppUpdateSection() {
+    window.checkAppUpdate = () => {
+        settingsCache.appUpdateChecked = true;
+        sendUpdateCommand({ command: 'check' });
+    };
+    window.installAppUpdate = () => sendUpdateCommand({ command: 'install' });
+
+    connectUpdateWebSocket((data) => {
+        // Command-level errors arrive as a direct {error[, url]} reply.
+        if (data && data.error && !data.phase) {
+            ui.showToast(data.url ? `${data.error} — ${data.url}` : data.error, 5000, 'error');
+            return;
+        }
+        settingsCache.appUpdateState = data;
+        const section = document.getElementById('app-update-section');
+        if (section) section.innerHTML = renderAppUpdateBlock(data);
+    });
+
+    // Auto-check on entering the page so the status pill resolves without a manual click.
+    window.checkAppUpdate();
 }
 
 // Render updates settings
@@ -4657,7 +4762,7 @@ export async function initializeSettings() {
                                 ${msg.automsg ? '<span class="text-[12px] px-[6px] py-[1px] rounded-full bg-[var(--button-grey)] text-[var(--low-contrast-white)]">auto</span>' : ''}
                                 <span class="text-[14px] text-[var(--low-contrast-white)] opacity-60">${date}</span>
                             </div>
-                            <div class="bg-[var(--bg-color,white)] border border-[var(--profile-button-outline-color)] rounded-[16px] rounded-tl-[4px] overflow-hidden">
+                            <div class="bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[16px] rounded-tl-[4px] overflow-hidden">
                                 ${subjectText ? `<div class="px-[16px] pt-[10px] pb-[8px] border-b border-[var(--profile-button-outline-color)]"><p class="text-[15px] font-semibold text-[var(--low-contrast-white)]">${subjectText}</p></div>` : ''}
                                 <div class="px-[16px] py-[12px] text-[19px] text-[var(--text-primary)] whitespace-pre-wrap leading-[1.5]">${bodyText}</div>
                             </div>

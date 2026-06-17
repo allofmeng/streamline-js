@@ -3740,17 +3740,37 @@ paths:
                   - appStore
                   - fullVersion
                   - localIp
+  /api/v1/update:
+    get:
+      summary: Get app update state
+      description: |
+        Returns a snapshot of the app-update state machine. Pure read — does
+        NOT trigger a network check (force a re-check via the
+        `/ws/v1/update` WebSocket `{"command":"check"}`).
+
+        `installable` is true only on Android AND when an update is available;
+        on other platforms hand the user off to `releaseUrl`.
+      tags: [System]
+      responses:
+        "200":
+          description: Current update state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppUpdateState'
   /api/v1/logs:
     get:
       summary: Get recent log entries
-      description: Returns the last N kilobytes of the app log file. Query parameter `kb` controls the size (default: 16).
+      description: |
+      Returns the last N kilobytes of the app log file. Query parameter `kb` controls the size (default: 16).
       tags: [System]
       parameters:
         - name: kb
           in: query
           schema:
             type: integer
-          description: Number of kilobytes to return (default: 16)
+          description: |
+          Number of kilobytes to return (default: 16)
       responses:
         "200":
           description: Recent log entries as plain text
@@ -3927,6 +3947,43 @@ paths:
 
 components:
   schemas:
+    AppUpdateState:
+      type: object
+      description: Snapshot of the app-update state machine.
+      properties:
+        phase:
+          type: string
+          enum: [idle, checking, available, downloading, installing, error]
+        currentVersion:
+          type: string
+          description: The running app version.
+        latestVersion:
+          type: string
+          nullable: true
+          description: The offered version, once known.
+        releaseNotes:
+          type: string
+          nullable: true
+        releaseUrl:
+          type: string
+          description: Release tag URL when known, otherwise the releases page. Always present.
+        installable:
+          type: boolean
+          description: True only on Android AND when an update is available.
+        progress:
+          type: number
+          format: float
+          nullable: true
+          description: Download progress 0..1 while phase is downloading.
+        error:
+          type: string
+          nullable: true
+          description: Set while phase is error.
+      required:
+        - phase
+        - currentVersion
+        - releaseUrl
+        - installable
     Error:
       type: object
       properties:

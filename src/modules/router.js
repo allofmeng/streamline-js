@@ -79,8 +79,18 @@ function showMainPage() {
 
     // Ensure main-page data init has run — booting on a sub-page URL skips it,
     // so without this the main page would render static HTML with no data.
+    // Afterwards, repaint the current history shot: the profile selector shares
+    // the `plotly-chart` id and leaves a profile curve on the shared element,
+    // so the main-page chart must restore history on return (unless a shot is
+    // live, in which case the websocket is already driving the chart).
     if (window.app?.initMainPageOnce) {
-        window.app.initMainPageOnce().catch(e => console.error('initMainPageOnce error:', e));
+        window.app.initMainPageOnce()
+            .then(() => {
+                if (!window.app?.isShotActive?.()) {
+                    return import('./history.js').then(m => m.refreshCurrentShot?.());
+                }
+            })
+            .catch(e => console.error('initMainPageOnce error:', e));
     }
 
     // Re-render favorite buttons now that they're visible — avoids stale font-size

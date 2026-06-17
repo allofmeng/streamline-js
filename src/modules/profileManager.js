@@ -1,5 +1,5 @@
 import { logger } from './logger.js';
-import { updateWorkflow,sendProfile, getWorkflow, getValueFromStore, setValueInStore, getProfiles, deleteProfile, updateProfileVisibility, uploadProfile, updateProfile, updateProfileMetadata, getShots, getKVKeys, getKVValue } from './api.js';
+import { updateWorkflow,sendProfile, getWorkflow, getValueFromStore, setValueInStore, getProfiles, deleteProfile, updateProfileVisibility, uploadProfile, uploadProfileWithParent, updateProfile, updateProfileMetadata, getShots, getKVKeys, getKVValue, deleteKVValue } from './api.js';
 import { updateProfileName, updateTemperatureDisplay, updateDrinkOut, updateDrinkRatio, updateDoseInDisplay, updateGrindDisplay, updateSteamDisplay, updateHotWaterDisplay, updateFlushDisplay, showToast, setupPressAndHold} from './ui.js';
 import { openContextMenu } from './context-menu.js';
 import { openDB, getSetting, setSetting } from './idb.js';
@@ -104,29 +104,64 @@ export function translateProfileTitle(title) {
     return translatedTitle === title ? title : translatedTitle;
 }
 
-async function mergeKVProfiles() {
+const KV_MIGRATED_FLAG = 'kv-profiles-migrated';
+
+// One-time migration: move legacy user profiles out of the private `streamline`
+// KV namespace and into the shared /api/v1/profiles store so every skin sees
+// them. Idempotent — guarded by a persisted flag; only flips the flag once all
+// records moved, so a partial failure retries on next load. KV records are
+// deleted only after a successful POST, so nothing is lost on error.
+async function migrateKvProfilesToRest() {
+    if (await getSetting(KV_MIGRATED_FLAG)) return;
+
+    let kvKeys = [];
     try {
-        const kvKeys = await getKVKeys('streamline');
-        if (!kvKeys || kvKeys.length === 0) return;
-        await Promise.all(kvKeys.map(async (key) => {
-            try {
-                const kvRecord = await getKVValue('streamline', key);
-                if (kvRecord && kvRecord.profile) {
-                    availableProfiles[kvRecord.id || `kv:${key}`] = kvRecord;
-                }
-            } catch (e) {
-                logger.warn(`Failed to load KV profile ${key}:`, e);
-            }
-        }));
-        logger.info(`Merged ${kvKeys.length} user profile(s) from KV store.`);
-        await setSetting(PROFILES_CACHE_KEY, availableProfiles);
+        kvKeys = await getKVKeys('streamline');
     } catch (e) {
-        logger.warn('Could not load KV profiles:', e);
+        // No KV namespace or server unreachable — nothing to migrate now.
+        return;
     }
+    if (!kvKeys || kvKeys.length === 0) {
+        await setSetting(KV_MIGRATED_FLAG, true);
+        return;
+    }
+
+    let migrated = 0;
+    for (const key of kvKeys) {
+        try {
+            const rec = await getKVValue('streamline', key);
+            if (!rec || !rec.profile) { migrated++; continue; } // nothing usable — count as handled
+            // Only carry a parentId that points at a real REST profile id (defaults), not a kv: id.
+            const parent = rec.parentId && !String(rec.parentId).startsWith('kv:') ? rec.parentId : null;
+            const saved = await uploadProfileWithParent(rec.profile, parent);
+            if (rec.metadata && Object.keys(rec.metadata).length) {
+                try { await updateProfileMetadata(saved.id, rec.metadata); } catch (_) {}
+            }
+            await deleteKVValue('streamline', key);
+            migrated++;
+        } catch (e) {
+            logger.warn(`KV→REST migrate failed for ${key}; leaving KV record intact.`, e);
+        }
+    }
+    logger.info(`Migrated ${migrated}/${kvKeys.length} legacy KV profile(s) to /profiles.`);
+    if (migrated === kvKeys.length) await setSetting(KV_MIGRATED_FLAG, true);
+}
+
+// Repoint any favorite slot holding oldId to newId. Called after an edit whose
+// content-hash id changed, so the favorite follows the edited profile.
+export async function remapFavorite(oldId, newId) {
+    let changed = false;
+    for (const [slot, id] of Object.entries(favoriteAssignments)) {
+        if (id === oldId) { favoriteAssignments[slot] = newId; changed = true; }
+    }
+    if (changed) await saveAssignments({ markUserInitialized: false });
 }
 
 export async function loadAvailableProfiles() {
     try {
+        // Move legacy KV profiles into /profiles first so getProfiles() returns them.
+        await migrateKvProfilesToRest();
+
         logger.info('Attempting to load profiles from API...');
         const profilesFromApi = await getProfiles(); // This is an array of ProfileRecords
 
@@ -142,8 +177,6 @@ export async function loadAvailableProfiles() {
         await setSetting(PROFILES_CACHE_KEY, availableProfiles);
         logger.info('Successfully synced profiles to IndexedDB cache.');
 
-        await mergeKVProfiles();
-
         return { profilesFrom: 'API' };
 
     } catch (apiError) {
@@ -154,18 +187,15 @@ export async function loadAvailableProfiles() {
             if (profilesFromCache && Object.keys(profilesFromCache).length > 0) {
                 availableProfiles = profilesFromCache;
                 logger.info(`Successfully loaded ${Object.keys(availableProfiles).length} profiles from IndexedDB cache.`);
-                await mergeKVProfiles();
                 return { profilesFrom: 'IDB_CACHE' };
             } else {
                 logger.error('API failed and IndexedDB cache is empty. No profiles could be loaded.');
                 availableProfiles = {};
-                await mergeKVProfiles();
                 return { profilesFrom: 'NONE' };
             }
         } catch (idbError) {
             logger.error('CRITICAL: API failed and also failed to read from IndexedDB cache.', idbError);
             availableProfiles = {};
-            await mergeKVProfiles();
             return { profilesFrom: 'NONE' };
         }
     }
@@ -298,15 +328,9 @@ export async function saveContextToActiveProfile(fields) {
     const profileRecord = availableProfiles[activeProfileId];
     const updatedMetadata = { ...(profileRecord.metadata || {}), ...fields };
     try {
-        let updatedRecord;
-        if (activeProfileId.startsWith('kv:')) {
-            // KV-store profile — save back via KV API, not /profiles REST.
-            const kvKey = activeProfileId.slice(3);
-            updatedRecord = { ...profileRecord, metadata: updatedMetadata };
-            await setValueInStore('streamline', kvKey, updatedRecord);
-        } else {
-            updatedRecord = await updateProfileMetadata(activeProfileId, updatedMetadata);
-        }
+        // Metadata-only PUT — the profile (execution) hash is untouched, so the
+        // id stays stable; no favorite remap needed.
+        const updatedRecord = await updateProfileMetadata(activeProfileId, updatedMetadata);
         availableProfiles[activeProfileId] = updatedRecord;
         await setSetting(PROFILES_CACHE_KEY, availableProfiles);
         logger.info(`Saved context to profile ${activeProfileId}:`, fields);

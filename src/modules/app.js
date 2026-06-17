@@ -1091,6 +1091,9 @@ async function initMainPageOnce() {
     return mainPageInitPromise;
 }
 window.app.initMainPageOnce = initMainPageOnce;
+// True while a shot is being recorded — lets the router skip repainting history
+// over a live chart when returning to the main page.
+window.app.isShotActive = () => shotStartTime !== null;
 
 async function prefetchSettingsToIDB() {
     try {

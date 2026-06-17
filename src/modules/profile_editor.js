@@ -2710,6 +2710,18 @@ function promptOverwriteOrSaveAs(currentTitle, suggestedNewTitle) {
     });
 }
 
+// Presentation fields don't feed the execution hash — REA treats a change to
+// only these as a metadata update (same id). Everything else is execution.
+const PRESENTATION_FIELDS = ['title', 'author', 'notes'];
+function executionChanged(orig, edited) {
+    const strip = p => {
+        const c = { ...p };
+        PRESENTATION_FIELDS.forEach(k => delete c[k]);
+        return JSON.stringify(c);
+    };
+    return strip(orig) !== strip(edited);
+}
+
 async function saveProfile() {
     if (!editorState.profile.title?.trim()) {
         showToast('Profile needs a name', 3000, 'error');
@@ -2721,8 +2733,8 @@ async function saveProfile() {
     }
 
     try {
-        const { setKVValue } = await import('./api.js');
-        const { availableProfiles } = await import('./profileManager.js');
+        const { updateProfile, uploadProfileWithParent } = await import('./api.js');
+        const { availableProfiles, remapFavorite } = await import('./profileManager.js');
 
         // No-op save guard — if the profile is byte-identical to its source,
         // skip writing a new KV record. Prevents duplicating a default the user
@@ -2739,27 +2751,15 @@ async function saveProfile() {
             return;
         }
 
-        // Overwrite-or-save-as prompt: only when editing an existing user-created
-        // KV profile with changes and the title hasn't been edited yet. Built-in
-        // defaults always clone on first save (separate path), and a renamed
-        // title already signals fork intent.
-        const sourceIdForKvCheck = editorState.sourceProfileId || editorState.sourceProfileRecord?.id || '';
-        const isKvProfile = !!editorState.sourceProfileRecord?._kvKey
-            || (typeof sourceIdForKvCheck === 'string' && sourceIdForKvCheck.startsWith('kv:'));
-        const sourceTitleOrig = (editorState.sourceProfileRecord?.profile?.title || '').trim();
+        // Overwrite-or-save-as prompt: only when editing an existing non-default
+        // profile with changes and the title hasn't been edited yet. Defaults
+        // fork on execution change (separate path), and a renamed title already
+        // signals "save as new".
+        const src = editorState.sourceProfileRecord;
+        const isExistingUserProfile = !!src && !src.isDefault;
+        const sourceTitleOrig = (src?.profile?.title || '').trim();
         const currentTitleNow = editorState.profile.title.trim();
-        console.log('[saveProfile prompt-gate]', {
-            sourceProfileId: editorState.sourceProfileId,
-            recordId: editorState.sourceProfileRecord?.id,
-            _kvKey: editorState.sourceProfileRecord?._kvKey,
-            sourceIdForKvCheck,
-            isKvProfile,
-            sourceTitleOrig,
-            currentTitleNow,
-            titlesEqual: currentTitleNow === sourceTitleOrig,
-            willPrompt: isKvProfile && !!sourceTitleOrig && currentTitleNow === sourceTitleOrig,
-        });
-        if (isKvProfile && sourceTitleOrig && currentTitleNow === sourceTitleOrig) {
+        if (isExistingUserProfile && sourceTitleOrig && currentTitleNow === sourceTitleOrig) {
             const existingTitlesForSuggest = new Set(
                 Object.values(availableProfiles).map(r => r.profile?.title).filter(Boolean)
             );
@@ -2780,37 +2780,27 @@ async function saveProfile() {
             // 'overwrite' → fall through unchanged → updates in place.
         }
 
-        // Title change at save = user intent to fork into a brand-new profile.
-        // Compare trimmed current title against source's original title.
-        const sourceTitle = (editorState.sourceProfileRecord?.profile?.title || '').trim();
+        // Title change at save = user intent to save as a brand-new profile.
+        const sourceTitle = (src?.profile?.title || '').trim();
         const currentTitle = editorState.profile.title.trim();
         const titleChanged = sourceTitle && currentTitle !== sourceTitle;
 
-        // Resolve save target — clone-on-first-edit for built-in defaults:
-        // if source has no _kvKey but a kv clone already exists for this default,
-        // update that clone in place instead of minting another one.
-        // Skipped entirely when titleChanged → forces the create branch below.
-        const existingClone = !titleChanged && !editorState.sourceProfileRecord?._kvKey
-            ? Object.values(availableProfiles).find(
-                r => r._kvKey && r.parentId === editorState.sourceProfileId
-              )
-            : null;
-        const targetRecord = titleChanged
-            ? null
-            : editorState.sourceProfileRecord?._kvKey
-                ? editorState.sourceProfileRecord
-                : existingClone;
-        const isUpdate = !!targetRecord;
+        // Decide before stripping legacy fields (source still carries them too,
+        // so the comparison is apples-to-apples).
+        const execChanged = !src || executionChanged(src.profile, editorState.profile);
 
-        // Auto-suffix title if name already taken — exclude the resolved target when updating
+        // Auto-suffix title only when minting a NEW record (a save-as, a fresh
+        // profile, or a default forked on execution change). An in-place PUT can
+        // keep its own title, so exclude self from the collision set.
+        const willCreateNew = !src || titleChanged || (src.isDefault && execChanged);
         const existingTitles = new Set(
             Object.values(availableProfiles)
-                .filter(r => !isUpdate || r.id !== targetRecord.id)
+                .filter(r => r.id !== src?.id)
                 .map(r => r.profile?.title)
                 .filter(Boolean)
         );
         let finalTitle = editorState.profile.title.trim();
-        if (existingTitles.has(finalTitle)) {
+        if (willCreateNew && existingTitles.has(finalTitle)) {
             let n = 2;
             while (existingTitles.has(`${finalTitle} (${n})`)) n++;
             finalTitle = `${finalTitle} (${n})`;
@@ -2819,59 +2809,40 @@ async function saveProfile() {
             if (titleDisplay) titleDisplay.textContent = finalTitle;
         }
 
-        // Only `version` survives from the v2 spec; legacy TCL fields (type,
-        // legacy_profile_type, lang, hidden, reference_file,
-        // changes_since_last_espresso) are not part of Rea's Profile model and
-        // are stripped — keeping them just bloated KV records and forced an
-        // api.js workaround. See profile.dart Profile class for the canonical
-        // shape.
-        editorState.profile.version = editorState.profile.version || '2';
-        delete editorState.profile.type;
-        delete editorState.profile.legacy_profile_type;
-        delete editorState.profile.lang;
-        delete editorState.profile.hidden;
-        delete editorState.profile.reference_file;
-        delete editorState.profile.changes_since_last_espresso;
+        // Legacy-field stripping + REA Profile-model adaptation happens at the
+        // api.js write boundary (sanitizeProfileForRea), covering every path.
 
-        const now = new Date().toISOString();
-        let kvKey, kvRecord;
-
-        if (isUpdate) {
-            // Update in place — reuse the resolved target's KV key and id
-            kvKey = targetRecord._kvKey;
-            kvRecord = {
-                ...targetRecord,
-                profile: editorState.profile,
-                updatedAt: now,
-                parentId: targetRecord.parentId ?? null,
-            };
+        // Save routing (REA versioning model):
+        //  - default + execution change → POST fork (PUT would be rejected); the
+        //    default stays as the parent/reset point.
+        //  - new profile or explicit save-as → POST (parentId links the source).
+        //  - otherwise → PUT in place; the server keeps the id on a
+        //    presentation-only change or rehashes it (deleting the old) on a
+        //    user execution change.
+        let saved;
+        if (src?.isDefault && execChanged) {
+            saved = await uploadProfileWithParent(editorState.profile, src.id);
+        } else if (!src || titleChanged) {
+            saved = await uploadProfileWithParent(editorState.profile, src?.id ?? null);
         } else {
-            // Create new KV entry (new profile or editing a built-in default)
-            kvKey = crypto.randomUUID();
-            kvRecord = {
-                id: `kv:${kvKey}`,
-                profile: editorState.profile,
-                isDefault: false,
-                isFavorite: false,
-                visibility: 'visible',
-                parentId: editorState.sourceProfileId,
-                createdAt: now,
-                updatedAt: now,
-                _kvKey: kvKey,
-            };
+            saved = await updateProfile(src.id, editorState.profile);
         }
 
-        await setKVValue('streamline', kvKey, kvRecord);
+        const oldId = editorState.sourceProfileId;
+        availableProfiles[saved.id] = saved;
 
-        // Inject into live cache so selector shows it immediately without reload.
-        availableProfiles[kvRecord.id] = kvRecord;
+        // Only an in-place user PUT replaces the old hash — follow the favorite then.
+        if (oldId && oldId !== saved.id && !src?.isDefault && !titleChanged) {
+            delete availableProfiles[oldId];
+            await remapFavorite(oldId, saved.id);
+        }
 
         // Rebind editor to the saved record so repeat saves update in place.
-        editorState.sourceProfileRecord = kvRecord;
-        editorState.sourceProfileId = kvRecord.id;
+        editorState.sourceProfileRecord = saved;
+        editorState.sourceProfileId = saved.id;
 
         // Hint to selector so it pre-selects the profile we just edited.
-        sessionStorage.setItem('lastEditedProfileKey', kvRecord.id);
+        sessionStorage.setItem('lastEditedProfileKey', saved.id);
 
         showToast('Profile saved!', 2000, 'success');
         setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 1000);
@@ -2888,19 +2859,10 @@ async function cancelEditor() {
     }
     if (_isNewProfileSession && _sessionImportedIds.length > 0) {
         try {
-            const { deleteKVValue, deleteProfile } = await import('./api.js');
+            const { deleteProfile } = await import('./api.js');
             const { availableProfiles } = await import('./profileManager.js');
             for (const id of _sessionImportedIds) {
-                const rec = availableProfiles[id];
-                const isKV = !!rec?._kvKey || (typeof id === 'string' && id.startsWith('kv:'));
-                try {
-                    if (isKV) {
-                        const kvKey = rec?._kvKey || id.replace(/^kv:/, '');
-                        await deleteKVValue('streamline', kvKey);
-                    } else {
-                        await deleteProfile(id);
-                    }
-                } catch (_) {}
+                try { await deleteProfile(id); } catch (_) {}
                 delete availableProfiles[id];
             }
         } catch (_) {}
