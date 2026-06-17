@@ -160,16 +160,18 @@ export function renderPastShot(shotRecord) {
         substates: [],
         volumes: [],
         preinfusionEndIndex: -1,
-        finalWeight: null,
+        finalWeight: shotRecord.annotations?.actualYield ?? null,
     };
 
-    // Scan unfiltered measurements for the last non-null scale weight — captures
-    // drip-down after pouringDone that the substate filter below would skip.
-    for (let i = shotRecord.measurements.length - 1; i >= 0; i--) {
-        const w = shotRecord.measurements[i].scale?.weight;
-        if (w !== null && w !== undefined) {
-            pastShotData.finalWeight = w;
-            break;
+    // Fallback: scan unfiltered measurements for the last non-null scale weight —
+    // captures drip-down after pouringDone that the substate filter below would skip.
+    if (pastShotData.finalWeight === null) {
+        for (let i = shotRecord.measurements.length - 1; i >= 0; i--) {
+            const w = shotRecord.measurements[i].scale?.weight;
+            if (w !== null && w !== undefined) {
+                pastShotData.finalWeight = w;
+                break;
+            }
         }
     }
 

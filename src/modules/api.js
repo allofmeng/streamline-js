@@ -36,6 +36,8 @@ let previousMachineState = null;
 let scaleWebSocket = null;
 let displayWebSocket = null;
 let displayWebSocketReady = false;
+let updateWebSocket = null;
+let updateWebSocketReady = false;
 
 // Local cache for current shot settings, initialized with default values and correct types
 let currentShotSettings = {
@@ -543,6 +545,85 @@ export function getDisplayWebSocket() {
     return displayWebSocket;
 }
 
+/**
+ * Initialize the app-update WebSocket connection (ws/v1/update).
+ * Emits an AppUpdateState snapshot on connect and on every state change,
+ * plus direct {error} replies for bad commands. Both are passed to onData.
+ * @param {Function} onData - Callback for update-state / error messages
+ */
+export function connectUpdateWebSocket(onData) {
+    if (updateWebSocket && updateWebSocket.readyState === WebSocket.OPEN) {
+        logger.info('Update WebSocket already connected');
+        return;
+    }
+
+    updateWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/update`, [], {
+        debug: true,
+        reconnectInterval: 3000,
+    });
+
+    updateWebSocket.onopen = () => {
+        logger.info('Update WebSocket connected');
+        updateWebSocketReady = true;
+    };
+
+    updateWebSocket.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (onData) onData(data);
+        } catch (error) {
+            logger.error('Error parsing update WebSocket message:', error);
+        }
+    };
+
+    updateWebSocket.onerror = (error) => {
+        logger.error('Update WebSocket error:', error);
+    };
+
+    updateWebSocket.onclose = () => {
+        logger.info('Update WebSocket closed');
+        updateWebSocketReady = false;
+    };
+}
+
+/**
+ * Send a command to the app-update WebSocket channel.
+ * @param {Object} command - { command: 'check' | 'install' }
+ */
+export function sendUpdateCommand(command) {
+    if (!updateWebSocket) {
+        logger.error('Update WebSocket not initialized. Cannot send command.');
+        return;
+    }
+
+    if (!updateWebSocketReady || updateWebSocket.readyState !== WebSocket.OPEN) {
+        logger.warn('Update WebSocket not ready. Retrying command:', command);
+        setTimeout(() => {
+            if (updateWebSocketReady && updateWebSocket.readyState === WebSocket.OPEN) {
+                try {
+                    updateWebSocket.send(JSON.stringify(command));
+                } catch (error) {
+                    logger.error('Error sending update command on retry:', error);
+                }
+            } else {
+                logger.error('Update WebSocket still not ready after retry.');
+            }
+        }, 100);
+        return;
+    }
+
+    try {
+        updateWebSocket.send(JSON.stringify(command));
+        logger.info('Update command sent:', command);
+    } catch (error) {
+        logger.error('Error sending update command:', error);
+    }
+}
+
+export function getUpdateWebSocket() {
+    return updateWebSocket;
+}
+
 export function initDeviceWebSocketWithCallback(onReady, onData, onReconnect, onDisconnect, onError) {
     if (deviceWebSocket && deviceWebSocket.readyState === WebSocket.OPEN) {
         logger.info('Device WebSocket already connected');
@@ -575,6 +656,7 @@ export async function getProfiles() {
 }
 
 export async function uploadProfile(profileData) {
+    profileData = sanitizeProfileForRea(profileData);
     const response = await fetch(`${API_BASE_URL}/profiles`, {
         method: 'POST',
         headers: {
@@ -626,7 +708,35 @@ export async function deleteKVValue(namespace, key) {
 
 // ─── Profile API ─────────────────────────────────────────────────────────────
 
+// Adapt an internal DE1 v2 profile to REA's stricter Profile model before any
+// write. Returns a sanitized clone; the caller's object is left untouched.
+//  - Strips legacy TCL fields not part of Rea's Profile model (it tolerates
+//    them, but they bloat records). See profile.dart for the canonical shape.
+//  - REA's StepExitCondition.type enum is [pressure, flow] only — a
+//    weight-triggered step exit (a valid DE1 feature the old KV store accepted
+//    raw) is rejected; REA represents "stop at weight" via the step's `weight`
+//    field instead, so fold the threshold in and drop the unsupported exit.
+function sanitizeProfileForRea(profileData) {
+    const profile = structuredClone(profileData);
+
+    profile.version = profile.version || '2';
+    for (const k of ['type', 'legacy_profile_type', 'lang', 'hidden', 'reference_file', 'changes_since_last_espresso']) {
+        delete profile[k];
+    }
+
+    if (Array.isArray(profile?.steps)) {
+        for (const step of profile.steps) {
+            if (step?.exit && step.exit.type === 'weight') {
+                if (!step.weight) step.weight = step.exit.value;
+                delete step.exit;
+            }
+        }
+    }
+    return profile;
+}
+
 export async function uploadProfileWithParent(profileData, parentId = null) {
+    profileData = sanitizeProfileForRea(profileData);
     const body = { profile: profileData };
     if (parentId) body.parentId = parentId;
     const response = await fetch(`${API_BASE_URL}/profiles`, {
@@ -666,6 +776,7 @@ export async function updateProfileVisibility(profileId, visibility) {
 }
 
 export async function updateProfile(profileId, profileData) {
+    profileData = sanitizeProfileForRea(profileData);
     const response = await fetch(`${API_BASE_URL}/profiles/${profileId}`, {
         method: 'PUT',
         headers: {
@@ -775,6 +886,28 @@ export async function updateWorkflow(data) {
     convertGrinderSettingToFloat(dataToSend);
     if (dataToSend.profile) {
         convertGrinderSettingToFloat(dataToSend.profile);
+        // Strip legacy TCL profile fields not in Rea v2 schema. Rea's strict
+        // Dart deserializer rejects them; keeping them stalls PUT /workflow.
+        delete dataToSend.profile.type;
+        delete dataToSend.profile.legacy_profile_type;
+        delete dataToSend.profile.lang;
+        delete dataToSend.profile.hidden;
+        delete dataToSend.profile.reference_file;
+        delete dataToSend.profile.changes_since_last_espresso;
+        // Step shape sanitization: Rea's ProfileStep is discriminated on
+        // `pump`, and ExitType enum is {pressure, flow} only. Sending mixed
+        // pump fields or weight/time/off exits trips ArgumentError inside a
+        // Timer callback in WorkflowHandler → completer never resolves → hang.
+        if (Array.isArray(dataToSend.profile.steps)) {
+            for (const step of dataToSend.profile.steps) {
+                if (step.pump === 'flow') delete step.pressure;
+                else if (step.pump === 'pressure') delete step.flow;
+                if (step.limiter && step.limiter.value === 0) step.limiter = null;
+                if (step.exit && step.exit.type !== 'pressure' && step.exit.type !== 'flow') {
+                    step.exit = null;
+                }
+            }
+        }
     }
 
     const response = await fetch(`${API_BASE_URL}/workflow`, {
@@ -785,7 +918,10 @@ export async function updateWorkflow(data) {
         body: JSON.stringify(dataToSend),
     });
     if (!response.ok) {
-        throw new Error('Failed to update workflow');
+        const body = await response.text();
+        logger.error('updateWorkflow failed', response.status, body);
+        logger.error('updateWorkflow payload was', JSON.stringify(dataToSend));
+        throw new Error(`Failed to update workflow: ${response.status} ${body}`);
     }
     return response.json();
 }

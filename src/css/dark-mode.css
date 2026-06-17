@@ -101,3 +101,22 @@
     background-color: #385a92;
     color: white;
 }
+
+/* Themed scrollbars app-wide in dark mode */
+[data-theme="dark"] {
+    scrollbar-color: #4a4a52 transparent; /* thumb, track — Firefox + Chromium 121+; inherits to descendants */
+}
+[data-theme="dark"] ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: transparent;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background-color: #4a4a52;
+    border-radius: 8px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background-color: #5a5a64;
+}

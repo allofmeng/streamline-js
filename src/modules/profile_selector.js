@@ -2,7 +2,7 @@ import { init as initProfileManager, unhideProfile,availableProfiles, assignProf
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
-import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, getKVKeys, getKVValue, setKVValue, deleteKVValue, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
+import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, uploadProfileWithParent, deleteProfile, updateProfileVisibility, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
 import { initChart, plotProfile } from './chart.js';
 import { translatePage } from './i18n.js';
 import { loadPage } from './router.js';
@@ -521,42 +521,18 @@ function updateSelectedProfileView(profileItem) {
 // ─── Profile Context Menu ────────────────────────────────────────────────────
 
 async function unhideProfileEntry(key) {
-    if (key.startsWith('kv:')) {
-        const profileRecord = availableProfiles[key];
-        if (!profileRecord) return;
-        const kvKey = profileRecord._kvKey || key.replace(/^kv:/, '');
-        try {
-            const updatedRecord = { ...profileRecord, visibility: 'visible' };
-            await setKVValue('streamline', kvKey, updatedRecord);
-            availableProfiles[key] = updatedRecord;
-            showToast('Profile restored.', 2000, 'success');
-        } catch (_) { showToast('Failed to restore profile.', 3000, 'error'); }
-    } else {
-        await unhideProfile(key);
-    }
+    await unhideProfile(key);
 }
 
 function showProfileContextMenu(key, profileRecord, anchorEl) {
     const isHidden = profileRecord.visibility === 'hidden';
 
     async function doHide() {
-        if (key.startsWith('kv:')) {
-            const kvKey = profileRecord._kvKey || key.replace(/^kv:/, '');
-            try {
-                const updatedRecord = { ...profileRecord, visibility: 'hidden' };
-                await setKVValue('streamline', kvKey, updatedRecord);
-                availableProfiles[key] = updatedRecord;
-                if (selectedProfileKey === key) { selectedProfileKey = null; updateSelectedProfileView(null); }
-                renderProfiles();
-                showToast('Profile hidden.', 2000, 'success');
-            } catch (_) { showToast('Failed to hide profile.', 3000, 'error'); }
-        } else {
-            await deleteOrHideProfile(key);
-            const container = document.getElementById('profile-list');
-            if (container) {
-                const item = container.querySelector(`[data-profile-key="${key}"]`);
-                if (item) item.click(); else updateSelectedProfileView(null);
-            }
+        await deleteOrHideProfile(key);
+        const container = document.getElementById('profile-list');
+        if (container) {
+            const item = container.querySelector(`[data-profile-key="${key}"]`);
+            if (item) item.click(); else updateSelectedProfileView(null);
         }
     }
 
@@ -778,7 +754,7 @@ function renderProfiles() {
             yoursList.forEach(renderProfileItem);
         }
         if (defaultsList.length > 0) {
-            renderSectionHeader('Defaults');
+            renderSectionHeader('Built-In Profiles');
             defaultsList.forEach(renderProfileItem);
         }
 
@@ -929,22 +905,6 @@ function initDeleteButton() {
 
         console.log('initDeleteButton: Proceeding with delete/hide operation');
         const keyToActOn = selectedProfileKey; // Preserve key
-
-        if (keyToActOn.startsWith('kv:')) {
-            // User-created KV profile — delete from KV store
-            const kvKey = profileRecord._kvKey || keyToActOn.replace(/^kv:/, '');
-            try {
-                await deleteKVValue('streamline', kvKey);
-                delete availableProfiles[keyToActOn];
-                selectedProfileKey = null;
-                renderProfiles();
-                updateSelectedProfileView(null);
-                showToast('Profile deleted.', 2000, 'success');
-            } catch (e) {
-                showToast('Failed to delete profile.', 3000, 'error');
-            }
-            return;
-        }
 
         await deleteOrHideProfile(keyToActOn);
 
@@ -1391,7 +1351,6 @@ export async function initializeProfileSelector() {
                             pump: 'flow',
                             transition: 'fast',
                             flow: 2.0,
-                            pressure: 6.0,
                             temperature: 93,
                             sensor: 'coffee',
                             seconds: 10,
@@ -1405,7 +1364,6 @@ export async function initializeProfileSelector() {
                             pump: 'flow',
                             transition: 'fast',
                             flow: 6.0,
-                            pressure: 6.0,
                             temperature: 93,
                             sensor: 'coffee',
                             seconds: 20,
@@ -1418,15 +1376,14 @@ export async function initializeProfileSelector() {
                             name: 'Extraction',
                             pump: 'pressure',
                             transition: 'fast',
-                            flow: 6.0,
                             pressure: 9.0,
                             temperature: 93,
                             sensor: 'coffee',
                             seconds: 40,
                             weight: 37,
                             volume: 0,
-                            exit: { type: 'weight', condition: 'over', value: 37 },
-                            limiter: { value: 0, range: 0.6 },
+                            exit: null,
+                            limiter: null,
                         },
                     ],
                 },
@@ -1526,7 +1483,7 @@ export async function initializeProfileSelector() {
             const profileRecord = availableProfiles[selectedProfileKey];
             if (!profileRecord) return;
 
-            if (!selectedProfileKey.startsWith('kv:')) {
+            if (!profileRecord.parentId) {
                 showToast('This is an original profile — nothing to reset.', 3000, 'info');
                 return;
             }
@@ -1561,16 +1518,16 @@ export async function initializeProfileSelector() {
     if (resetConfirmBtn) {
         resetConfirmBtn.addEventListener('click', async () => {
             document.getElementById('reset-profile-modal')?.close();
-            if (!selectedProfileKey?.startsWith('kv:')) return;
+            if (!selectedProfileKey) return;
 
             const profileRecord = availableProfiles[selectedProfileKey];
-            const kvKey = profileRecord?._kvKey || selectedProfileKey.replace(/^kv:/, '');
             const parentId = profileRecord?.parentId || null;
+            if (!parentId) return;
 
             try {
-                await deleteKVValue('streamline', kvKey);
+                await deleteProfile(selectedProfileKey);
                 delete availableProfiles[selectedProfileKey];
-                selectedProfileKey = parentId && availableProfiles[parentId] ? parentId : null;
+                selectedProfileKey = availableProfiles[parentId] ? parentId : null;
                 renderProfiles();
                 // updateSelectedProfileView expects the rendered DOM element, not the record
                 const nextItem = selectedProfileKey
@@ -1639,27 +1596,13 @@ async function handleGeneratedProfile(data) {
 
     if (data.title && !profileJson.title) profileJson.title = data.title;
 
-    const kvKey = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const kvRecord = {
-        id: `kv:${kvKey}`,
-        profile: profileJson,
-        isDefault: false,
-        isFavorite: false,
-        visibility: 'visible',
-        parentId: null,
-        createdAt: now,
-        updatedAt: now,
-        _kvKey: kvKey,
-    };
-
     try {
-        await setKVValue('streamline', kvKey, kvRecord);
-        availableProfiles[kvRecord.id] = kvRecord;
+        const saved = await uploadProfileWithParent(profileJson, null);
+        availableProfiles[saved.id] = saved;
         document.dispatchEvent(new CustomEvent('profiles-updated'));
         showToast(`AI profile "${profileJson.title || 'Untitled'}" imported.`, 4000, 'success');
     } catch (e) {
-        logger.error('Failed to save generated profile to KV:', e);
+        logger.error('Failed to save generated profile:', e);
         showToast('Failed to save AI profile.', 4000, 'error');
     }
 }

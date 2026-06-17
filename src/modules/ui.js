@@ -531,7 +531,7 @@ export function setupPressAndHold(element, clickCallback, longPressCallback, opt
     });
 }
 
-function flashElement(element) {
+export function flashElement(element) {
     if (element) {
         element.classList.add('flash');
         setTimeout(() => {
@@ -801,11 +801,35 @@ export function showScaleInfo() {
 // Screensaver functionality
 let screensaverActive = false;
 let screensaverElement = null;
+let screensaverDimOverlay = null;
 let screensaverImages = [];
 let screensaverCurrentIndex = 0;
 let screensaverCycleInterval = null;
-const SCREENSAVER_CYCLE_MS = 10000;
+const DEFAULT_SCREENSAVER_CYCLE_SECONDS = 10;
+const MIN_SCREENSAVER_CYCLE_SECONDS = 2;
+const MAX_SCREENSAVER_CYCLE_SECONDS = 600;
 const DEFAULT_SCREENSAVER = 'url("src/ui/saver-1.jpg")';
+
+function getScreensaverCycleMs() {
+    const raw = parseInt(localStorage.getItem('screensaverCycleSeconds'), 10);
+    const secs = Number.isFinite(raw) ? raw : DEFAULT_SCREENSAVER_CYCLE_SECONDS;
+    const clamped = Math.min(MAX_SCREENSAVER_CYCLE_SECONDS, Math.max(MIN_SCREENSAVER_CYCLE_SECONDS, secs));
+    return clamped * 1000;
+}
+
+// Detect in-app webview (mirrors logic in app.js initialization). In a native
+// webview the host OS dims the actual hardware display, so we skip the CSS
+// overlay. In a regular browser there's no hardware control — apply a gray
+// overlay so the user sees a visible "dim" while the screensaver is up.
+function isInWebView() {
+    const ua = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/i.test(ua) || (ua.includes('Mac') && 'ontouchend' in document);
+    const isStandalone = window.navigator.standalone === true;
+    const isAndroidWebView = /Android/.test(ua) && /wv/.test(ua);
+    const isIOSWebView = isIOS && !isStandalone && !/Safari\//.test(ua);
+    const isDecentWebView = ua.includes('Decent');
+    return isAndroidWebView || isIOSWebView || isDecentWebView;
+}
 
 export async function initScreensaver() {
     screensaverElement = document.createElement('div');
@@ -821,6 +845,16 @@ export async function initScreensaver() {
     screensaverElement.style.display = 'none';
     screensaverElement.style.justifyContent = 'center';
     screensaverElement.style.alignItems = 'center';
+
+    // Dim overlay child — gray semi-transparent layer used in browser mode.
+    screensaverDimOverlay = document.createElement('div');
+    screensaverDimOverlay.id = 'screensaver-dim-overlay';
+    screensaverDimOverlay.style.position = 'absolute';
+    screensaverDimOverlay.style.inset = '0';
+    screensaverDimOverlay.style.backgroundColor = 'rgba(40, 40, 40, 0.55)';
+    screensaverDimOverlay.style.pointerEvents = 'none';
+    screensaverDimOverlay.style.display = 'none';
+    screensaverElement.appendChild(screensaverDimOverlay);
 
     screensaverElement.addEventListener('click', deactivateScreensaver);
     screensaverElement.addEventListener('touchstart', deactivateScreensaver);
@@ -854,6 +888,21 @@ export function setScreensaverImages(images) {
     _applyScreensaverImage();
 }
 
+// Called by settings UI when user changes cycle seconds — restart the
+// interval so the new cadence takes effect immediately if active.
+export function setScreensaverCycleSeconds(seconds) {
+    const clamped = Math.min(MAX_SCREENSAVER_CYCLE_SECONDS, Math.max(MIN_SCREENSAVER_CYCLE_SECONDS, parseInt(seconds, 10) || DEFAULT_SCREENSAVER_CYCLE_SECONDS));
+    localStorage.setItem('screensaverCycleSeconds', String(clamped));
+    if (screensaverActive && screensaverCycleInterval) {
+        clearInterval(screensaverCycleInterval);
+        screensaverCycleInterval = setInterval(() => {
+            screensaverCurrentIndex = (screensaverCurrentIndex + 1) % screensaverImages.length;
+            _applyScreensaverImage();
+        }, getScreensaverCycleMs());
+    }
+    return clamped;
+}
+
 export function activateScreensaver() {
     if (!screensaverElement) {
         console.error('Screensaver element not initialized');
@@ -861,6 +910,9 @@ export function activateScreensaver() {
     }
     screensaverCurrentIndex = 0;
     _applyScreensaverImage();
+    if (screensaverDimOverlay) {
+        screensaverDimOverlay.style.display = isInWebView() ? 'none' : 'block';
+    }
     screensaverElement.style.display = 'flex';
     screensaverActive = true;
 
@@ -868,7 +920,7 @@ export function activateScreensaver() {
         screensaverCycleInterval = setInterval(() => {
             screensaverCurrentIndex = (screensaverCurrentIndex + 1) % screensaverImages.length;
             _applyScreensaverImage();
-        }, SCREENSAVER_CYCLE_MS);
+        }, getScreensaverCycleMs());
     }
 }
 
@@ -2370,7 +2422,7 @@ export function showGhcControls() {
 
     const status = document.getElementById('machine-status');
     if (status) {
-        status.style.right = '200px'; // 172px GHC + 20px gap
+        status.style.right = '100px'; // 172px GHC + 20px gap
         status.style.width = 'auto';  // size to content; right edge stays anchored, box grows leftward
     }
 
@@ -2381,13 +2433,14 @@ export function showGhcControls() {
 
     // Resize Plotly: clear inline width (set by Plotly at init) then relayout to new size.
     // 1920px canvas - 480px left aside - 172px GHC = 1268px chart width.
-    // Bump right margin so trace labels (anchored at last data point with xshift)
-    // have room to render instead of being clipped at the chart's right edge.
+    // Right margin is computed dynamically from label widths — refresh after resize
+    // so labels stay inside the new plot box.
     const chartEl = document.getElementById('plotly-chart');
     if (chartEl) {
         chartEl.style.width = '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
-            Plotly.relayout(chartEl, { width: 1268, 'margin.r': 11 });
+            Plotly.relayout(chartEl, { width: 1268 });
+            chart.refreshLabelMargin();
         }));
     }
 }
@@ -2412,12 +2465,13 @@ export function hideGhcControls() {
     });
 
     // Restore chart to full main width: 1920px - 480px left aside = 1440px.
-    // Reset right margin to the baseLayout default.
+    // Right margin recomputed from label widths.
     const chartEl = document.getElementById('plotly-chart');
     if (chartEl) {
         chartEl.style.width = '';
         requestAnimationFrame(() => requestAnimationFrame(() => {
             Plotly.relayout(chartEl, { width: 1460 });
+            chart.refreshLabelMargin();
         }));
     }
 }

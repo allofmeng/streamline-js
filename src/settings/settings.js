@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
@@ -123,7 +123,9 @@ let settingsCache = {
     allSkins: null,
     allSkinsLoading: false,
     allSkinsError: null,
-    githubLatestVersion: null
+    githubLatestVersion: null,
+    appUpdateState: null,
+    appUpdateChecked: false
 };
 
 let activeSettingsCategory = null; // New global variable to track the currently active category
@@ -242,6 +244,9 @@ function updateSettingsContentArea(category) {
         if (category === 'talkdecent') {
             setTimeout(() => window.updateTalkToDecentUI?.(), 0);
         }
+        if (category === 'firmware' || category === 'firmwareupdate') {
+            setTimeout(initAppUpdateSection, 0);
+        }
         setTimeout(attachSettingsNumpad, 0);
     }
 }
@@ -316,7 +321,6 @@ const settingsTree = {
             { id: 'wakelock', name: 'Wake Lock', settingsCategory: 'wakelock' },
             { id: 'presence', name: 'Presence Detection', settingsCategory: 'presence' },
             { id: 'fontsize', name: 'Display Size', settingsCategory: 'fontsize' },
-            { id: 'resolution', name: 'Resolution', settingsCategory: 'resolution' },
             { id: 'screensaver', name: 'Screen Saver', settingsCategory: 'screensaver' },
             { id: 'machineadvancedsettings', name: 'Machine Advanced Settings', settingsCategory: 'de1advanced' },
             { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' }
@@ -1296,7 +1300,7 @@ export function renderUsbChargerModeSettings(settings) {
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="usbChargerModeToggle"
                            class="sr-only peer"
-                           ${settings.usb ? 'checked' : ''}
+                           ${(settings.usb === true || settings.usb === 'enable') ? 'checked' : ''}
                            onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
                     <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                     <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
@@ -1740,6 +1744,7 @@ export function renderFeedbackSettings() {
 export function renderScreenSaverSettings() {
     const enabled = localStorage.getItem('screensaverEnabled') !== 'false';
     const hasCustom = screensaverImagesCache.length > 0;
+    const cycleSeconds = parseInt(localStorage.getItem('screensaverCycleSeconds'), 10) || 10;
 
     const thumbnails = screensaverImagesCache.map((src, i) => `
         <div class="relative w-[120px] h-[80px] rounded-[10px] overflow-hidden flex-shrink-0">
@@ -1760,7 +1765,7 @@ export function renderScreenSaverSettings() {
             </button>
         </div>
         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full">
-            ${screensaverImagesCache.length} image${screensaverImagesCache.length !== 1 ? 's' : ''} selected${screensaverImagesCache.length > 1 ? ' — cycles every 10s' : ''}
+            ${screensaverImagesCache.length} image${screensaverImagesCache.length !== 1 ? 's' : ''} selected
         </p>
     ` : `
         <div class="flex items-center gap-[16px]">
@@ -1805,6 +1810,30 @@ export function renderScreenSaverSettings() {
                     <p class="leading-[1.2]">Images</p>
                 </div>
                 ${imageSection}
+            </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative ${screensaverImagesCache.length > 1 ? 'text-[#385a92]' : 'text-[var(--text-secondary)] opacity-50'} text-[30px]">
+                        <p class="leading-[1.2]">Time Between Images (s)</p>
+                    </div>
+                    <input type="number"
+                           id="screensaver-cycle-seconds"
+                           min="2"
+                           max="600"
+                           step="1"
+                           value="${cycleSeconds}"
+                           ${screensaverImagesCache.length > 1 ? '' : 'disabled'}
+                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                           onchange="window.handleScreensaverCycleChange(this.value)">
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    ${screensaverImagesCache.length > 1
+                        ? 'Seconds between image swaps (2 – 600).'
+                        : 'Add more than one image to enable cycling.'}
+                </p>
             </div>
 
             <input type="file" id="screensaver-file-input" class="hidden" multiple accept="image/*"
@@ -2157,6 +2186,9 @@ function initFontSizeSettings() {
     select.addEventListener('change', (e) => {
         const multiplier = UI_ZOOM_MAP[e.target.value] ?? '1.0';
         localStorage.setItem('uiZoom', multiplier);
+        // scaling.js only re-reads uiZoom inside its resize handler — kick it
+        // so the new size applies immediately instead of after the next reload.
+        window.dispatchEvent(new Event('resize'));
     });
 }
 
@@ -2763,6 +2795,31 @@ export function renderWaterTankSettings() {
                         Alert when tank water level drops below this height (0, 5, 10, 15, 20, 25, 30 mm)
                     </p>
                 </div>
+
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                    <div class="content-stretch flex items-center relative shrink-0">
+                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
+                            Display Unit
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-[8px]" role="group" aria-label="Water tank display unit">
+                        <button class="h-[80px] w-[200px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200
+                            ${getWaterTankUnit() === 'mm' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
+                            aria-pressed="${getWaterTankUnit() === 'mm'}"
+                            onclick="window.setWaterTankUnit('mm')">
+                            mm
+                        </button>
+                        <button class="h-[80px] w-[200px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200
+                            ${getWaterTankUnit() === 'ml' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
+                            aria-pressed="${getWaterTankUnit() === 'ml'}"
+                            onclick="window.setWaterTankUnit('ml')">
+                            mL
+                        </button>
+                    </div>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                        Show tank level on the home screen in millimeters or millilitres
+                    </p>
+                </div>
             </div>
         </div>
     `;
@@ -2783,6 +2840,11 @@ function snapWaterAlertLevel(value) {
 function getWaterAlertLevel() {
     const stored = parseInt(localStorage.getItem('waterRefillLevel'), 10);
     return WATER_ALERT_LEVELS.includes(stored) ? stored : 15;
+}
+
+// Read persisted water tank display unit ('mm' default, or 'ml').
+function getWaterTankUnit() {
+    return localStorage.getItem('waterTankUnit') === 'ml' ? 'ml' : 'mm';
 }
 
 // Render quick adjustments settings
@@ -3226,8 +3288,8 @@ export function renderSkinSettings() {
                             <div class="flex items-center gap-[10px]">
                                 ${s.version ? `<span class="text-[17px] font-['Inter:Regular',sans-serif] opacity-80">v${s.version}</span>` : ''}
                                 ${s.isBundled && /streamline/i.test(s.name) && versionKnown ? (isLatest
-                                    ? `<span class="text-[13px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#0ca581]/15 text-[#0ca581]'}">Latest</span>`
-                                    : `<span class="text-[13px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#da515e]/15 text-[#da515e]'}">Update available</span>`)
+                                    ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#0ca581]/15 text-[#0ca581]'}">Latest</span>`
+                                    : `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#da515e]/15 text-[#da515e]'}">Update available</span>`)
                                 : ''}
                                 <span class="text-[14px] font-['Inter:Regular',sans-serif] opacity-60 uppercase tracking-wider">${s.isBundled ? 'Bundled' : 'Installed'}</span>
                             </div>
@@ -3726,10 +3788,110 @@ export function renderFirmwareUpdateSettings() {
                 <div class="flex flex-col gap-4">
                     <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decent.app Information</p>
                     ${appInfoDetails}
+                    <div id="app-update-section" class="mt-2">${renderAppUpdateBlock(settingsCache.appUpdateState)}</div>
                 </div>
             </div>
         </div>
     `;
+}
+
+// Render the app-update panel from an AppUpdateState snapshot (ws/v1/update).
+// Re-rendered in place on every state change by initAppUpdateSection().
+function renderAppUpdateBlock(state) {
+    const phase = state?.phase || 'idle';
+    const latest = state?.latestVersion;
+    const pct = Math.round((state?.progress || 0) * 100);
+
+    // After a check, the backend returns idle + latestVersion:null when up to date —
+    // indistinguishable from the never-checked idle state, so gate "up to date" on
+    // having actually run a check this session.
+    const checked = settingsCache.appUpdateChecked;
+    const current = state?.currentVersion;
+
+    // Same pill style as Theme & Updates skin cards.
+    const hasUpdate = phase === 'available';
+    const isLatest = !hasUpdate && phase === 'idle' && checked && !state?.error
+        && (!latest || (current && latest === current));
+    const pill = hasUpdate
+        ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#da515e]/15 text-[#da515e]">Update available</span>`
+        : isLatest
+            ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#0ca581]/15 text-[#0ca581]">Latest</span>`
+            : '';
+
+    // Right-hand action depends on phase. Default: Check button.
+    let action = `<button onclick="window.checkAppUpdate()" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Check for Updates</button>`;
+    if (phase === 'checking') {
+        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Checking…</button>`;
+    } else if (phase === 'available') {
+        action = state?.installable
+            ? `<button onclick="window.installAppUpdate()" class="bg-[#2e7d32] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Install ${latest ? 'v' + latest : 'Update'}</button>`
+            : `<a href="${state?.releaseUrl || '#'}" target="_blank" rel="noopener" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold flex items-center">View Release</a>`;
+    } else if (phase === 'downloading' || phase === 'installing') {
+        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${phase === 'downloading' ? 'Downloading…' : 'Installing…'}</button>`;
+    }
+
+    // Status line beneath the header.
+    const statusByPhase = {
+        idle:        isLatest ? `Up to date${current ? ` (v${current})` : ''}` : `Check for the latest application version`,
+        checking:    `Checking for updates…`,
+        available:   `Update available${latest ? `: v${latest}` : ''}`,
+        downloading: `Downloading update… ${pct}%`,
+        installing:  `Launching installer…`,
+        error:       state?.error ? `Update failed: ${state.error}` : `Update failed`,
+    };
+    const status = statusByPhase[phase] || '';
+    const statusColor = phase === 'error' ? 'text-[#da515e]'
+        : phase === 'available' ? 'text-[#2e7d32]'
+        : 'text-[var(--text-primary)]';
+
+    const progressBar = phase === 'downloading'
+        ? `<div class="w-full h-[10px] rounded-full bg-[#c9c9c9] overflow-hidden mt-1"><div class="h-full bg-[#385a92] transition-[width] duration-200" style="width:${pct}%"></div></div>`
+        : '';
+
+    const notes = (phase === 'available' && state?.releaseNotes)
+        ? `<p class="text-[18px] text-[var(--text-secondary)] whitespace-pre-line leading-[1.4] mt-1">${state.releaseNotes}</p>`
+        : '';
+
+    return `
+        <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)] flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-4">
+                <div class="flex flex-col gap-1 min-w-0">
+                    <div class="flex items-center gap-[10px]">
+                        <p class="text-[24px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">App Update</p>
+                        ${pill}
+                    </div>
+                    <p class="text-[20px] ${statusColor}">${status}</p>
+                </div>
+                ${action}
+            </div>
+            ${progressBar}
+            ${notes}
+        </div>
+    `;
+}
+
+// Connect ws/v1/update and keep #app-update-section in sync with AppUpdateState.
+// Exposes window.checkAppUpdate / window.installAppUpdate for the buttons.
+function initAppUpdateSection() {
+    window.checkAppUpdate = () => {
+        settingsCache.appUpdateChecked = true;
+        sendUpdateCommand({ command: 'check' });
+    };
+    window.installAppUpdate = () => sendUpdateCommand({ command: 'install' });
+
+    connectUpdateWebSocket((data) => {
+        // Command-level errors arrive as a direct {error[, url]} reply.
+        if (data && data.error && !data.phase) {
+            ui.showToast(data.url ? `${data.error} — ${data.url}` : data.error, 5000, 'error');
+            return;
+        }
+        settingsCache.appUpdateState = data;
+        const section = document.getElementById('app-update-section');
+        if (section) section.innerHTML = renderAppUpdateBlock(data);
+    });
+
+    // Auto-check on entering the page so the status pill resolves without a manual click.
+    window.checkAppUpdate();
 }
 
 // Render updates settings
@@ -4254,7 +4416,27 @@ export async function initializeSettings() {
     window.updateDe1AdvancedSetting = updateDe1AdvancedSetting;
     window.setScreensaverEnabled = function(enabled) {
         localStorage.setItem('screensaverEnabled', enabled ? 'true' : 'false');
+        // If turning OFF while currently shown, hide immediately — the gate in
+        // app.js only checks on state transition, so without this the overlay
+        // would persist until next wake.
+        if (!enabled && ui.isScreensaverActive()) {
+            ui.deactivateScreensaver();
+        }
         ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
+    };
+
+    window.handleScreensaverCycleChange = function(value) {
+        const applied = ui.setScreensaverCycleSeconds(value);
+        const input = document.getElementById('screensaver-cycle-seconds');
+        if (input) input.value = applied;
+        ui.showToast(`Cycle set to ${applied}s`, 2000, 'success');
+    };
+
+    window.setWaterTankUnit = function(unit) {
+        const next = unit === 'ml' ? 'ml' : 'mm';
+        localStorage.setItem('waterTankUnit', next);
+        if (typeof window.refreshWaterTankUnit === 'function') window.refreshWaterTankUnit();
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     };
 
     window.addScreensaverFiles = async function(files) {
@@ -4580,7 +4762,7 @@ export async function initializeSettings() {
                                 ${msg.automsg ? '<span class="text-[12px] px-[6px] py-[1px] rounded-full bg-[var(--button-grey)] text-[var(--low-contrast-white)]">auto</span>' : ''}
                                 <span class="text-[14px] text-[var(--low-contrast-white)] opacity-60">${date}</span>
                             </div>
-                            <div class="bg-[var(--bg-color,white)] border border-[var(--profile-button-outline-color)] rounded-[16px] rounded-tl-[4px] overflow-hidden">
+                            <div class="bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[16px] rounded-tl-[4px] overflow-hidden">
                                 ${subjectText ? `<div class="px-[16px] pt-[10px] pb-[8px] border-b border-[var(--profile-button-outline-color)]"><p class="text-[15px] font-semibold text-[var(--low-contrast-white)]">${subjectText}</p></div>` : ''}
                                 <div class="px-[16px] py-[12px] text-[19px] text-[var(--text-primary)] whitespace-pre-wrap leading-[1.5]">${bodyText}</div>
                             </div>

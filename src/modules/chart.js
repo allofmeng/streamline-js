@@ -1,4 +1,18 @@
 import { logger } from './logger.js';
+import { getTranslation } from './i18n.js';
+
+// Maps internal trace key → i18n key used for the chart label.
+const LABEL_KEYS = {
+    pressure: 'Pressure',
+    flow: 'Flow',
+    groupTemperature: 'Temperature',
+    weight: 'Weight'
+};
+
+function getLabelText(traceName, fallback) {
+    const key = LABEL_KEYS[traceName];
+    return key ? getTranslation(key) : fallback;
+}
 
 // Define colors for step markers
 const STEP_MARKER_COLORS = {
@@ -163,73 +177,157 @@ const labelColors = {
     }
 };
 
+const LABEL_FONT_SIZE = 16;
+const LABEL_FONT_CSS = `${LABEL_FONT_SIZE}px Inter, sans-serif`;
+const LABEL_X_GAP = 6;     // px between line end and label text
+const LABEL_X_PAD = 10;    // px breathing room past the widest label
+
+let _measureCanvasCtx = null;
+function measureTextWidth(text) {
+    if (!_measureCanvasCtx) {
+        const canvas = document.createElement('canvas');
+        _measureCanvasCtx = canvas.getContext('2d');
+    }
+    _measureCanvasCtx.font = LABEL_FONT_CSS;
+    return _measureCanvasCtx.measureText(text).width;
+}
+
+// Plot pixel width (between left and right margin). Falls back to a sensible
+// default when the chart element is hidden or hasn't been measured yet —
+// returning a tiny value here would blow up `rangeMaxForLabels`.
+const DEFAULT_PLOT_PX_WIDTH = 1360; // baseline 1460 chart - margin.l(50) - margin.r(50)
+function getPlotPixelWidth() {
+    const element = getChartElement();
+    const cssWidth = element ? element.clientWidth : 0;
+    const usable = cssWidth - 100; // baseLayout margin.l + margin.r
+    return usable > 200 ? usable : DEFAULT_PLOT_PX_WIDTH;
+}
+
+const DEFAULT_PLOT_PX_HEIGHT = 590; // baseline 650 chart - margin.t(20) - margin.b(40)
+function getPlotPixelHeight() {
+    const element = getChartElement();
+    const cssHeight = element ? element.clientHeight : 0;
+    const usable = cssHeight - 60;
+    return usable > 100 ? usable : DEFAULT_PLOT_PX_HEIGHT;
+}
+
+const MIN_LABEL_SEP_PX = LABEL_FONT_SIZE + 2; // minimum vertical gap between label centers
+const BOTTOM_EDGE_PAD_PX = 8;
+
+// Y-axis is fixed [0, 10]. Returns label's natural pixel offset from plot top.
+function dataYToPixelY(y, plotPxHeight) {
+    return (10 - y) / 10 * plotPxHeight;
+}
+
+// Push labels apart vertically when they collide. Mutates `annotations` by
+// setting `yshift` (negative px = moved DOWN from the trace endpoint).
+function applyLabelCollisionAvoidance(annotations) {
+    if (annotations.length < 2) return;
+    const plotPxH = getPlotPixelHeight();
+    const maxPxY = plotPxH - BOTTOM_EDGE_PAD_PX;
+
+    const items = annotations.map(a => ({
+        annotation: a,
+        naturalPxY: dataYToPixelY(a.y, plotPxH)
+    }));
+    items.sort((a, b) => a.naturalPxY - b.naturalPxY); // top → bottom
+
+    let prevPxY = -Infinity;
+    for (const item of items) {
+        let desired = Math.max(item.naturalPxY, prevPxY + MIN_LABEL_SEP_PX);
+        if (desired > maxPxY) desired = maxPxY;
+        const shiftDownPx = desired - item.naturalPxY;
+        if (shiftDownPx > 0) item.annotation.yshift = -shiftDownPx;
+        prevPxY = desired;
+    }
+}
+
+// Given the data's x-max, return the range max that leaves room for the widest
+// (translated) label INSIDE the plot area. Solved from
+//   range = dataMax + labelPx * (range - rangeMin) / plotPxWidth
+function rangeMaxForLabels(dataMax, rangeMin = 0) {
+    let maxLabelPx = 0;
+    for (const traceName in chartData) {
+        if (traceName === 'targetPressure' || traceName === 'targetFlow' || traceName === 'targetTemperature') continue;
+        const trace = chartData[traceName];
+        if (trace.x.length === 0) continue;
+        const w = measureTextWidth(getLabelText(traceName, trace.name));
+        if (w > maxLabelPx) maxLabelPx = w;
+    }
+    if (maxLabelPx === 0) return dataMax;
+    const padPx = maxLabelPx + LABEL_X_GAP + LABEL_X_PAD;
+    const plotPxWidth = getPlotPixelWidth();
+    const factor = Math.max(0.05, 1 - padPx / plotPxWidth);
+    return rangeMin + (dataMax - rangeMin) / factor;
+}
+
 function getAnnotations() {
     const theme = localStorage.getItem('theme') || 'light';
     const annotations = [];
-    const labelCandidates = [];
 
-    // 1. Collect potential labels
     for (const traceName in chartData) {
-        if (traceName === 'targetPressure' || traceName === 'targetFlow' || traceName === 'targetTemperature') {
-            continue;
-        }
+        if (traceName === 'targetPressure' || traceName === 'targetFlow' || traceName === 'targetTemperature') continue;
         const trace = chartData[traceName];
-        if (trace.x.length > 0) {
-            labelCandidates.push({
-                name: trace.name,
-                x: trace.x[trace.x.length - 1],
-                y: trace.y[trace.y.length - 1],
-                color: (labelColors[theme] && labelColors[theme][traceName]) ? labelColors[theme][traceName] : trace.line.color
-            });
-        }
-    }
-
-    // Place each label INSIDE the chart, just below its trace's last point.
-    // Anchor right of the data point so text extends leftward (stays in plot area)
-    // and anchor top so text sits below the line. A solid background fill matches
-    // the chart bg so the label visually masks any trace line it might cross.
-    const minVerticalSeparation = 0.7; // y-axis units between adjacent labels
-    const minAxisBuffer = 0.3;          // floor — don't sink labels into the x-axis
-    const belowLineOffset = 0.5;        // initial drop below each line's last y
-    const labelBgColor = theme === 'dark' ? '#0d0e14' : '#ffffff';
-
-    // Sort top → bottom so collisions push subsequent labels DOWN, matching
-    // the "below the lines" intent.
-    labelCandidates.sort((a, b) => b.y - a.y);
-
-    let lastY = Infinity;
-    for (const candidate of labelCandidates) {
-        let finalY = candidate.y - belowLineOffset;
-
-        if (lastY - finalY < minVerticalSeparation) {
-            finalY = lastY - minVerticalSeparation;
-        }
-        if (finalY < minAxisBuffer) {
-            finalY = minAxisBuffer;
-        }
+        if (trace.x.length === 0) continue;
 
         annotations.push({
-            x: candidate.x,
-            y: finalY,
+            x: trace.x[trace.x.length - 1],
+            y: trace.y[trace.y.length - 1],
             xref: 'x',
             yref: 'y',
-            text: candidate.name,
+            text: getLabelText(traceName, trace.name),
             showarrow: false,
-            xanchor: 'right',
-            yanchor: 'top',
-            xshift: -5,
-            bgcolor: labelBgColor,
-            borderpad: 2,
+            xanchor: 'left',
+            yanchor: 'middle',
+            xshift: LABEL_X_GAP,
             font: {
-                color: candidate.color,
-                size: 16
+                color: (labelColors[theme] && labelColors[theme][traceName]) ? labelColors[theme][traceName] : trace.line.color,
+                size: LABEL_FONT_SIZE
             }
         });
-
-        lastY = finalY;
     }
 
+    applyLabelCollisionAvoidance(annotations);
     return annotations;
+}
+
+// Apply current labels + restore default right margin. Use before
+// Plotly.newPlot / Plotly.react.
+function applyLabelLayout(layout) {
+    layout.annotations = getAnnotations();
+    layout.margin = { ...(layout.margin || {}), r: 50 };
+}
+
+// Re-measure labels and refresh annotations + x-range so labels stay inside
+// the plot area after the chart width changes (e.g. GHC column toggling).
+export function refreshLabelMargin() {
+    const element = getChartElement();
+    if (!element) return;
+
+    // Find current data max across labelled traces.
+    let dataMax = 0;
+    for (const traceName in chartData) {
+        if (traceName === 'targetPressure' || traceName === 'targetFlow' || traceName === 'targetTemperature') continue;
+        const trace = chartData[traceName];
+        if (trace.x.length === 0) continue;
+        const lastX = trace.x[trace.x.length - 1];
+        if (lastX > dataMax) dataMax = lastX;
+    }
+    if (dataMax === 0) {
+        // idle / cleared chart — let Plotly autoscale, don't pin a max.
+        Plotly.relayout(element, {
+            annotations: getAnnotations(),
+            'xaxis.autorange': true
+        });
+        return;
+    }
+
+    const rangeMax = rangeMaxForLabels(dataMax);
+    Plotly.relayout(element, {
+        annotations: getAnnotations(),
+        'xaxis.range': [0, rangeMax],
+        'xaxis.autorange': false
+    });
 }
 
 // Helper function to add vertical lines for substate changes and annotations
@@ -407,24 +505,37 @@ export function updateChart(shotStartTime, data, weight, filterToPouring = true)
         dtickValue = 30;
     }
 
-    // Re-enable x autorange on shot start so extendTraces can grow past the idle [0,60] range.
-    if (isFirstDataPoint) {
-        Plotly.relayout(element, { 'xaxis.autorange': true });
-    }
-
     Plotly.extendTraces(element, {
         x: [[time], [time], [time], [time], [time], [time]],
         y: [[pressureY], [flowY], [targetPressureY], [targetFlowY], [groupTemperatureY], [weightY]]
     }, [0, 1, 2, 3, 4, 5]);
 
+    // Manage x-range manually so labels (right of each line's last point) stay
+    // INSIDE the plot area instead of being clipped at the right edge.
+    const rangeMax = rangeMaxForLabels(time);
+
     // If a step marker was added, we need to use Plotly.react to update shapes
     if (stepMarkerAdded) {
         const layout = theme === 'dark' ? darkLayout : lightLayout;
+        applyLabelLayout(layout);
         Plotly.react(element, Object.values(chartData), layout);
-    } else {
         Plotly.relayout(element, {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
             'xaxis.dtick': dtickValue
         });
+    } else {
+        // Throttle annotation refresh so we don't relayout on every tick.
+        annotationUpdateCounter++;
+        const relayoutPayload = {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        };
+        if (isFirstDataPoint || annotationUpdateCounter % 10 === 0) {
+            relayoutPayload.annotations = getAnnotations();
+        }
+        Plotly.relayout(element, relayoutPayload);
     }
 }
 
@@ -460,8 +571,7 @@ export function clearChart() {
         return;
     }
     Plotly.react(element, Object.values(chartData), layout);
-    // Plotly defaults empty-trace x-axis to [-1, 6]. Force it to start at 0.
-    Plotly.relayout(element, { 'xaxis.range': [0, 60], 'xaxis.autorange': false });
+    Plotly.relayout(element, { 'xaxis.autorange': true });
 }
 
 export function plotHistoricalShot(measurements, workflow = null) {
@@ -667,7 +777,7 @@ export function plotHistoricalShot(measurements, workflow = null) {
 
     const theme = localStorage.getItem('theme') || 'light';
     const layout = theme === 'dark' ? darkLayout : lightLayout;
-    layout.annotations = getAnnotations();
+    applyLabelLayout(layout);
 
     const element = getChartElement();
     if (!element) {
@@ -676,11 +786,19 @@ export function plotHistoricalShot(measurements, workflow = null) {
     }
     Plotly.react(element, Object.values(chartData), layout, {displayModeBar: false});
 
-    Plotly.relayout(element, {
-        'xaxis.range': [0, maxTime || 60],
-        'xaxis.autorange': false,
-        'xaxis.dtick': dtickValue
-    });
+    if (maxTime > 0) {
+        const rangeMax = rangeMaxForLabels(maxTime);
+        Plotly.relayout(element, {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        });
+    } else {
+        Plotly.relayout(element, {
+            'xaxis.autorange': true,
+            'xaxis.dtick': dtickValue
+        });
+    }
 }
 
 // Helper function to check if exit condition is met
@@ -853,13 +971,12 @@ export function initChart() {
     updateChartColors(theme); // Apply theme-specific colors
 
     const layout = theme === 'dark' ? darkLayout : lightLayout;
-    layout.annotations = getAnnotations();
+    applyLabelLayout(layout);
 
     console.log('initChart: About to call Plotly.newPlot');
     try {
         Plotly.newPlot(element, Object.values(chartData), layout, {displayModeBar: false});
-        // Plotly defaults empty-trace x-axis to [-1, 6]. Force it to start at 0.
-        Plotly.relayout(element, { 'xaxis.range': [0, 60], 'xaxis.autorange': false });
+        Plotly.relayout(element, { 'xaxis.autorange': true });
         console.log('initChart: Plotly.newPlot completed successfully');
     } catch (error) {
         console.error('initChart: Error in Plotly.newPlot:', error);
@@ -876,6 +993,10 @@ export function initChart() {
                 console.log('initChart: Chart element is visible, attempting resize');
                 try {
                     Plotly.Plots.resize(resizeElement);
+                    // Recompute label range against the now-visible width — fixes
+                    // bogus ranges left over from a live tick that fired while
+                    // the chart was hidden (clientWidth = 0).
+                    refreshLabelMargin();
                     console.log('initChart: Chart resized successfully');
                 } catch (error) {
                     console.warn('Could not resize chart, element may not be visible:', error);
@@ -893,7 +1014,13 @@ export function initChart() {
             setTheme(newTheme);
         }
     });
-    
+
+    // Re-render labels and grow the plot range when the UI language changes —
+    // translated label widths differ, so range padding must follow.
+    document.addEventListener('streamline:languagechange', () => {
+        refreshLabelMargin();
+    });
+
     console.log('initChart: Chart initialization completed');
 }
 
@@ -901,7 +1028,7 @@ export function setTheme(theme) {
     updateChartColors(theme); // Apply theme-specific colors
 
     const layoutUpdate = theme === 'dark' ? darkLayout : lightLayout;
-    layoutUpdate.annotations = getAnnotations();
+    applyLabelLayout(layoutUpdate);
     const data = Object.values(chartData);
     const element = getChartElement();
     if (!element) {

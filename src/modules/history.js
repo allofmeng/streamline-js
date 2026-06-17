@@ -91,7 +91,9 @@ async function displayShot(index) {
     const grindSizeEl = document.getElementById('history-grind-size');
 
     if (doseInEl) {
-        const doseIn = shot.workflow?.context?.targetDoseWeight ?? shot.workflow?.doseData?.doseIn;
+        const doseIn = shot.annotations?.actualDoseWeight
+            ?? shot.workflow?.context?.targetDoseWeight
+            ?? shot.workflow?.doseData?.doseIn;
         if (typeof doseIn !== 'undefined' && doseIn !== null) {
             doseInEl.textContent = `In ${doseIn}g`;
         } else {
@@ -142,6 +144,18 @@ async function displayShot(index) {
     // Transparently prefetch next page when approaching the end
     if (currentShotIndex >= shots.length - 3 && shots.length < totalAvailable) {
         loadMoreShots();
+    }
+}
+
+// Re-plot the currently selected history shot. The main-page chart shares the
+// `plotly-chart` id with the profile selector, so the selector's plotProfile()
+// paints over it; call this when returning to the main page to restore history.
+export function refreshCurrentShot() {
+    if (currentShotIndex >= 0 && shots[currentShotIndex]?.measurements) {
+        chart.plotHistoricalShot(shots[currentShotIndex].measurements, shots[currentShotIndex].workflow);
+        renderPastShot(shots[currentShotIndex]);
+    } else {
+        chart.clearChart();
     }
 }
 

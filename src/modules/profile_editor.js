@@ -225,25 +225,40 @@ function inlineEditValue(displayEl, currentValue, { min, max, step, unit, onComm
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const EXIT_TYPES    = ['pressure', 'flow', 'weight', 'time', 'off'];
-const EXIT_UNIT_MAP = { pressure: 'bar', flow: 'mL/s', weight: 'g', time: 'sec' };
-const EXIT_STEP_MAP = { pressure: 0.1, flow: 0.1, weight: 0.5, time: 1 };
-const EXIT_MAX_MAP  = { pressure: 12,  flow: 8,   weight: 1000, time: 300 };
+// Rea API only supports pressure/flow exit types (profile.dart:129 ExitType
+// enum). 'off' is a UI-only state that maps to `step.exit = null` on save.
+// Weight-based stop is expressed via profile-level `target_weight`; time-based
+// stop is expressed via step `seconds`.
+const EXIT_TYPES    = ['pressure', 'flow', 'off'];
+const EXIT_UNIT_MAP = { pressure: 'bar', flow: 'mL/s' };
+const EXIT_STEP_MAP = { pressure: 0.1, flow: 0.1 };
+const EXIT_MAX_MAP  = { pressure: 12,  flow: 8 };
+
+// Seed values used when the pump-toggle switches between flow and pressure
+// modes. Not part of the persisted step shape — see makeNewStep().
+const PUMP_SEED_FLOW = 6.0;
+const PUMP_SEED_PRESSURE = 6.0;
 
 const DEFAULT_STEP = {
     name: 'New Step',
     pump: 'flow',
     transition: 'fast',
-    flow: 6.0,
-    pressure: 6.0,
+    flow: PUMP_SEED_FLOW,
     temperature: 93,
     sensor: 'coffee',
     seconds: 30,
     weight: 0,
     volume: 0,
     exit: { type: 'pressure', condition: 'over', value: 9.0 },
-    limiter: { value: 9.0, range: 0.6 },
+    limiter: null,
 };
+
+// Factory for new steps inserted from the "+" button. Returns a deep copy of
+// DEFAULT_STEP. Kept as a function so future variants (e.g. seeded from the
+// previous step) can branch here.
+function makeNewStep() {
+    return JSON.parse(JSON.stringify(DEFAULT_STEP));
+}
 
 const TAB_COUNT = 3;
 
@@ -276,7 +291,7 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
 
     const minusBtn = document.createElement('button');
     minusBtn.type = 'button';
-    minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
     minusBtn.textContent = '\u2212';
     minusBtn.setAttribute('aria-label', 'Decrease');
 
@@ -285,7 +300,7 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
 
     const plusBtn = document.createElement('button');
     plusBtn.type = 'button';
-    plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
     plusBtn.textContent = '+';
     plusBtn.setAttribute('aria-label', 'Increase');
 
@@ -430,6 +445,8 @@ function renderStepCards() {
     container.style.gridTemplateRows = `60px 1fr 1fr 1fr 1fr 60px`;
     container.style.height = '100%';
     container.style.width = '100%';
+    // Match the data rows to the header/label background (transparent cells pick this up).
+    container.style.backgroundColor = 'var(--box-color)';
 
     // Helper: create a grid cell, append to container
     function mkCell(row, col, className) {
@@ -510,7 +527,7 @@ function renderStepCards() {
             let sensorValue = step.sensor || 'coffee';
             const sensorBtn = document.createElement('button');
             sensorBtn.type = 'button';
-            sensorBtn.className = 'text-[var(--text-primary)] border border-[var(--secondary-button-outline)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            sensorBtn.className = 'text-[var(--text-primary)] border border-[var(--secondary-button-outline)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
             sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
             sensorBtn.addEventListener('click', () => {
                 sensorValue = sensorValue === 'coffee' ? 'water' : 'coffee';
@@ -519,7 +536,7 @@ function renderStepCards() {
             });
 
             const tempDisplay = document.createElement('span');
-            tempDisplay.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            tempDisplay.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
             tempDisplay.style.position = 'relative';
             tempDisplay.style.minWidth = '80px';
             tempDisplay.style.textAlign = 'center';
@@ -530,7 +547,7 @@ function renderStepCards() {
 
             const minusBtn = document.createElement('button');
             minusBtn.type = 'button';
-            minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             minusBtn.textContent = '\u2212';
             minusBtn.style.position = 'absolute';
             minusBtn.style.right = '100%';
@@ -541,7 +558,7 @@ function renderStepCards() {
 
             const plusBtn = document.createElement('button');
             plusBtn.type = 'button';
-            plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             plusBtn.textContent = '+';
             plusBtn.style.position = 'absolute';
             plusBtn.style.left = '100%';
@@ -649,7 +666,7 @@ function renderStepCards() {
 
         // Pump + Limit combined row — two lines
         {
-            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
+            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[16px] border-r border-b border-[var(--border-color)]');
 
             // ── Line 1: pump ─────────────────────────────────────────────────
             const pumpLine = document.createElement('div');
@@ -667,20 +684,20 @@ function renderStepCards() {
 
             const transBtn = document.createElement('button');
             transBtn.type = 'button';
-            transBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            transBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
             transBtn.textContent = transValue === 'fast' ? getTranslation('Quick') : getTranslation('Smooth');
 
             const rampText = document.createElement('span');
-            rampText.className = 'text-[20px] text-[var(--text-primary)] select-none';
+            rampText.className = 'text-[24px] text-[var(--text-primary)] select-none';
             rampText.textContent = getTranslation('ramp');
 
             const targetDisplay = document.createElement('span');
-            targetDisplay.className = 'font-bold text-[20px] text-white px-[8px] py-[2px] cursor-pointer select-none';
+            targetDisplay.className = 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none';
             targetDisplay.textContent = `${roundTo(targetValue, tStep)}`;
 
             const unitBtn = document.createElement('button');
             unitBtn.type = 'button';
-            unitBtn.className = 'text-white px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none bg-transparent';
+            unitBtn.className = 'text-white px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none bg-transparent';
             unitBtn.textContent = targetUnit;
 
             const targetWrapper = document.createElement('div');
@@ -694,8 +711,8 @@ function renderStepCards() {
             function updateTargetStyle() {
                 const active = targetValue > 0;
                 targetWrapper.style.background = active ? 'var(--button-primary-bg)' : 'var(--secondary-button-bg)';
-                const txtCls = active ? 'font-bold text-[20px] text-white px-[8px] py-[2px] cursor-pointer select-none' : 'font-bold text-[20px] text-white px-[8px] py-[2px] cursor-pointer select-none';
-                const unitCls = active ? 'text-white px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none bg-transparent' : 'text-white px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none bg-transparent';
+                const txtCls = active ? 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none' : 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none';
+                const unitCls = active ? 'text-white px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none bg-transparent' : 'text-white px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none bg-transparent';
                 targetDisplay.className = txtCls;
                 unitBtn.className = unitCls;
                 wrapDivider.style.opacity = active ? '' : '0';
@@ -707,7 +724,7 @@ function renderStepCards() {
 
             const targetMinus = document.createElement('button');
             targetMinus.type = 'button';
-            targetMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            targetMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             targetMinus.textContent = '\u2212';
             targetMinus.style.position = 'absolute';
             targetMinus.style.right = '100%';
@@ -718,7 +735,7 @@ function renderStepCards() {
 
             const targetPlus = document.createElement('button');
             targetPlus.type = 'button';
-            targetPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            targetPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             targetPlus.textContent = '+';
             targetPlus.style.position = 'absolute';
             targetPlus.style.left = '100%';
@@ -819,14 +836,15 @@ function renderStepCards() {
             });
 
             unitBtn.addEventListener('click', () => {
+                const s = editorState.profile.steps[index];
                 if (isFlow) {
-                    editorState.profile.steps[index].pump = 'pressure';
-                    if (!editorState.profile.steps[index].pressure)
-                        editorState.profile.steps[index].pressure = DEFAULT_STEP.pressure;
+                    s.pump = 'pressure';
+                    if (!s.pressure) s.pressure = PUMP_SEED_PRESSURE;
+                    delete s.flow;
                 } else {
-                    editorState.profile.steps[index].pump = 'flow';
-                    if (!editorState.profile.steps[index].flow)
-                        editorState.profile.steps[index].flow = DEFAULT_STEP.flow;
+                    s.pump = 'flow';
+                    if (!s.flow) s.flow = PUMP_SEED_FLOW;
+                    delete s.pressure;
                 }
                 renderStepCards();
             });
@@ -869,7 +887,7 @@ function renderStepCards() {
             let limTimer = null;
 
             const withText = document.createElement('span');
-            withText.className = 'text-[20px] text-[var(--text-primary)] select-none';
+            withText.className = 'text-[24px] text-[var(--text-primary)] select-none';
             withText.textContent = getTranslation('Limit to');
 
             const limDisplay = document.createElement('span');
@@ -890,8 +908,8 @@ function renderStepCards() {
             function updateLimStyle() {
                 const active = limValue > 0;
                 limWrapper.style.background = active ? 'var(--button-primary-bg)' : 'var(--secondary-button-bg)';
-                const txtCls = active ? 'font-bold text-[20px] text-white px-[8px] py-[2px] cursor-pointer select-none' : 'font-bold text-[20px] text-white px-[8px] py-[2px] cursor-pointer select-none';
-                const unitCls = active ? 'text-white px-[8px] py-[2px] text-[20px] font-semibold select-none' : 'text-white px-[8px] py-[2px] text-[20px] font-semibold select-none';
+                const txtCls = active ? 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none' : 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none';
+                const unitCls = active ? 'text-white px-[8px] py-[2px] text-[24px] font-semibold select-none' : 'text-white px-[8px] py-[2px] text-[24px] font-semibold select-none';
                 limDisplay.className = txtCls;
                 limUnitText.className = unitCls;
                 limDivider.style.opacity = active ? '' : '0';
@@ -903,7 +921,7 @@ function renderStepCards() {
 
             const limMinus = document.createElement('button');
             limMinus.type = 'button';
-            limMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            limMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             limMinus.textContent = '\u2212';
             limMinus.style.position = 'absolute';
             limMinus.style.right = '100%';
@@ -914,7 +932,7 @@ function renderStepCards() {
 
             const limPlus = document.createElement('button');
             limPlus.type = 'button';
-            limPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            limPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             limPlus.textContent = '+';
             limPlus.style.position = 'absolute';
             limPlus.style.left = '100%';
@@ -1044,8 +1062,8 @@ function renderStepCards() {
             let exitValue  = exitDef.value ?? 0;
             let exitTimer = null;
 
-            const btnGray = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
-            const btnGrayFlash = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            const btnGray = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
+            const btnGrayFlash = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
 
             const typeBtn = document.createElement('button');
             typeBtn.type = 'button';
@@ -1060,12 +1078,12 @@ function renderStepCards() {
             const isExitExpanded = expandedExitSteps.has(index);
 
             const valueDisplay = document.createElement('span');
-            valueDisplay.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none whitespace-nowrap';
+            valueDisplay.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none whitespace-nowrap';
             valueDisplay.textContent = exitType !== 'off' ? `${exitValue} ${EXIT_UNIT_MAP[exitType]}` : '';
 
             const exitMinus = document.createElement('button');
             exitMinus.type = 'button';
-            exitMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            exitMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             exitMinus.textContent = '\u2212';
             exitMinus.style.position = 'absolute';
             exitMinus.style.right = '100%';
@@ -1076,7 +1094,7 @@ function renderStepCards() {
 
             const exitPlus = document.createElement('button');
             exitPlus.type = 'button';
-            exitPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+            exitPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
             exitPlus.textContent = '+';
             exitPlus.style.position = 'absolute';
             exitPlus.style.left = '100%';
@@ -1257,8 +1275,8 @@ function renderStepCards() {
             const fieldRefs = [];
             let maxTimer = null;
 
-            const blueDisplayClass = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
-            const grayDisplayClass = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[20px] font-semibold cursor-pointer select-none';
+            const blueDisplayClass = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
+            const grayDisplayClass = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
 
             const maxPlaceholder = document.createElement('span');
             maxPlaceholder.className = grayDisplayClass;
@@ -1393,7 +1411,7 @@ function renderStepCards() {
 
                 const minusBtn = document.createElement('button');
                 minusBtn.type = 'button';
-                minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+                minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
                 minusBtn.textContent = '\u2212';
                 minusBtn.style.position = 'absolute';
                 minusBtn.style.right = '100%';
@@ -1404,7 +1422,7 @@ function renderStepCards() {
 
                 const plusBtn = document.createElement('button');
                 plusBtn.type = 'button';
-                plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[48px] h-[48px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+                plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
                 plusBtn.textContent = '+';
                 plusBtn.style.position = 'absolute';
                 plusBtn.style.left = '100%';
@@ -1513,17 +1531,17 @@ function renderStepCards() {
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
-        deleteBtn.className = 'pe-step-action-btn w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
-        deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
+        deleteBtn.className = 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+        deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
         deleteBtn.setAttribute('aria-label', 'Delete step');
         deleteBtn.addEventListener('click', () => { editorState.profile.steps.splice(index, 1); renderStepCards(); });
 
         const insertBtn = document.createElement('button');
         insertBtn.type = 'button';
-        insertBtn.className = 'pe-step-action-btn w-[40px] h-[40px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
-        insertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
+        insertBtn.className = 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+        insertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
         insertBtn.setAttribute('aria-label', 'Insert step after');
-        insertBtn.addEventListener('click', () => { editorState.profile.steps.splice(index + 1, 0, deepCopy(DEFAULT_STEP)); renderStepCards(); });
+        insertBtn.addEventListener('click', () => { editorState.profile.steps.splice(index + 1, 0, makeNewStep()); renderStepCards(); });
 
         fCell.appendChild(deleteBtn);
         fCell.appendChild(insertBtn);
@@ -2489,7 +2507,7 @@ function renderReviewTab() {
             reviewInsertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
             reviewInsertBtn.setAttribute('aria-label', 'Insert step after');
             reviewInsertBtn.addEventListener('click', () => {
-                editorState.profile.steps.splice(i + 1, 0, deepCopy(DEFAULT_STEP));
+                editorState.profile.steps.splice(i + 1, 0, makeNewStep());
                 renderStepCards();
                 renderReviewTab();
             });
@@ -2631,6 +2649,81 @@ function initTitleEditing() {
 
 // ─── Save / Cancel ──────────────────────────────────────────────────────────
 
+// Prompt user whether to overwrite an existing KV profile or save as new.
+// Returns { action: 'overwrite' | 'new' | 'cancel', title? }. Anchored near
+// the top of the viewport so the soft keyboard (overlays-content, no resize)
+// does not cover the input.
+function promptOverwriteOrSaveAs(currentTitle, suggestedNewTitle) {
+    return new Promise((resolve) => {
+        const dlg = document.createElement('dialog');
+        dlg.className = 'pe-save-dialog rounded-[16px] bg-[var(--box-color)] p-0 border border-[var(--border-color)] max-w-[520px] w-[90vw] shadow-2xl';
+        dlg.style.marginTop = '8vh';
+        dlg.style.marginBottom = 'auto';
+
+        dlg.innerHTML = `
+            <div class="flex flex-col gap-[16px] p-[24px]">
+                <h3 class="text-[24px] font-bold text-[var(--text-primary)]">${getTranslation('Save profile')}</h3>
+                <p class="text-[20px] text-[var(--text-primary)]">${getTranslation('How would you like to save changes to')} <span class="font-semibold">"${currentTitle}"</span>?</p>
+                <label class="text-[18px] text-[var(--text-primary)] flex flex-col gap-[6px]">
+                    <span>${getTranslation('New profile name (for "Save As New")')}</span>
+                    <input type="text" inputmode="text" autocomplete="off" class="w-full px-[12px] py-[10px] text-[20px] rounded-[8px] border border-[var(--border-color)] bg-[var(--box-color)] text-[var(--text-primary)] outline-none focus:border-[var(--mimoja-blue)]" />
+                </label>
+                <div class="flex justify-end gap-[10px] mt-[8px] flex-wrap">
+                    <button type="button" data-act="cancel" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${getTranslation('Cancel')}</button>
+                    <button type="button" data-act="new" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${getTranslation('Save As New')}</button>
+                    <button type="button" data-act="overwrite" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold cursor-pointer">${getTranslation('Overwrite')}</button>
+                </div>
+            </div>
+        `;
+
+        const input = dlg.querySelector('input');
+        input.value = suggestedNewTitle;
+
+        function done(result) {
+            try { dlg.close(); } catch (_) {}
+            dlg.remove();
+            resolve(result);
+        }
+
+        dlg.querySelectorAll('button[data-act]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const act = btn.dataset.act;
+                if (act === 'cancel') return done({ action: 'cancel' });
+                if (act === 'overwrite') return done({ action: 'overwrite' });
+                const title = input.value.trim();
+                if (!title) {
+                    input.focus();
+                    return;
+                }
+                done({ action: 'new', title });
+            });
+        });
+
+        // ESC / backdrop cancel
+        dlg.addEventListener('cancel', (e) => {
+            e.preventDefault();
+            done({ action: 'cancel' });
+        });
+
+        document.body.appendChild(dlg);
+        dlg.showModal();
+        // Don't autofocus — would pop the keyboard immediately. User taps the
+        // input when they want to rename.
+    });
+}
+
+// Presentation fields don't feed the execution hash — REA treats a change to
+// only these as a metadata update (same id). Everything else is execution.
+const PRESENTATION_FIELDS = ['title', 'author', 'notes'];
+function executionChanged(orig, edited) {
+    const strip = p => {
+        const c = { ...p };
+        PRESENTATION_FIELDS.forEach(k => delete c[k]);
+        return JSON.stringify(c);
+    };
+    return strip(orig) !== strip(edited);
+}
+
 async function saveProfile() {
     if (!editorState.profile.title?.trim()) {
         showToast('Profile needs a name', 3000, 'error');
@@ -2642,8 +2735,8 @@ async function saveProfile() {
     }
 
     try {
-        const { setKVValue } = await import('./api.js');
-        const { availableProfiles } = await import('./profileManager.js');
+        const { updateProfile, uploadProfileWithParent } = await import('./api.js');
+        const { availableProfiles, remapFavorite } = await import('./profileManager.js');
 
         // No-op save guard — if the profile is byte-identical to its source,
         // skip writing a new KV record. Prevents duplicating a default the user
@@ -2660,37 +2753,56 @@ async function saveProfile() {
             return;
         }
 
-        // Title change at save = user intent to fork into a brand-new profile.
-        // Compare trimmed current title against source's original title.
-        const sourceTitle = (editorState.sourceProfileRecord?.profile?.title || '').trim();
+        // Overwrite-or-save-as prompt: only when editing an existing non-default
+        // profile with changes and the title hasn't been edited yet. Defaults
+        // fork on execution change (separate path), and a renamed title already
+        // signals "save as new".
+        const src = editorState.sourceProfileRecord;
+        const isExistingUserProfile = !!src && !src.isDefault;
+        const sourceTitleOrig = (src?.profile?.title || '').trim();
+        const currentTitleNow = editorState.profile.title.trim();
+        if (isExistingUserProfile && sourceTitleOrig && currentTitleNow === sourceTitleOrig) {
+            const existingTitlesForSuggest = new Set(
+                Object.values(availableProfiles).map(r => r.profile?.title).filter(Boolean)
+            );
+            let n = 2;
+            let suggested = `${sourceTitleOrig} (${n})`;
+            while (existingTitlesForSuggest.has(suggested)) {
+                n++;
+                suggested = `${sourceTitleOrig} (${n})`;
+            }
+            const choice = await promptOverwriteOrSaveAs(sourceTitleOrig, suggested);
+            if (choice.action === 'cancel') return;
+            if (choice.action === 'new') {
+                editorState.profile.title = choice.title;
+                const titleDisplay = document.getElementById('editor-title-display');
+                if (titleDisplay) titleDisplay.textContent = choice.title;
+                // titleChanged below will now be true → forces new KV entry.
+            }
+            // 'overwrite' → fall through unchanged → updates in place.
+        }
+
+        // Title change at save = user intent to save as a brand-new profile.
+        const sourceTitle = (src?.profile?.title || '').trim();
         const currentTitle = editorState.profile.title.trim();
         const titleChanged = sourceTitle && currentTitle !== sourceTitle;
 
-        // Resolve save target — clone-on-first-edit for built-in defaults:
-        // if source has no _kvKey but a kv clone already exists for this default,
-        // update that clone in place instead of minting another one.
-        // Skipped entirely when titleChanged → forces the create branch below.
-        const existingClone = !titleChanged && !editorState.sourceProfileRecord?._kvKey
-            ? Object.values(availableProfiles).find(
-                r => r._kvKey && r.parentId === editorState.sourceProfileId
-              )
-            : null;
-        const targetRecord = titleChanged
-            ? null
-            : editorState.sourceProfileRecord?._kvKey
-                ? editorState.sourceProfileRecord
-                : existingClone;
-        const isUpdate = !!targetRecord;
+        // Decide before stripping legacy fields (source still carries them too,
+        // so the comparison is apples-to-apples).
+        const execChanged = !src || executionChanged(src.profile, editorState.profile);
 
-        // Auto-suffix title if name already taken — exclude the resolved target when updating
+        // Auto-suffix title only when minting a NEW record (a save-as, a fresh
+        // profile, or a default forked on execution change). An in-place PUT can
+        // keep its own title, so exclude self from the collision set.
+        const willCreateNew = !src || titleChanged || (src.isDefault && execChanged);
         const existingTitles = new Set(
             Object.values(availableProfiles)
-                .filter(r => !isUpdate || r.id !== targetRecord.id)
+                .filter(r => r.id !== src?.id)
                 .map(r => r.profile?.title)
                 .filter(Boolean)
         );
         let finalTitle = editorState.profile.title.trim();
-        if (existingTitles.has(finalTitle)) {
+        if (willCreateNew && existingTitles.has(finalTitle)) {
             let n = 2;
             while (existingTitles.has(`${finalTitle} (${n})`)) n++;
             finalTitle = `${finalTitle} (${n})`;
@@ -2699,54 +2811,40 @@ async function saveProfile() {
             if (titleDisplay) titleDisplay.textContent = finalTitle;
         }
 
-        // Ensure required Kletsky v2 top-level fields are present
-        editorState.profile.version = editorState.profile.version || '2';
-        editorState.profile.type = editorState.profile.type || 'advanced';
-        editorState.profile.legacy_profile_type = editorState.profile.legacy_profile_type || 'settings_2c';
-        editorState.profile.lang = editorState.profile.lang || 'en';
-        if (editorState.profile.hidden === undefined) editorState.profile.hidden = '0';
-        if (editorState.profile.reference_file === undefined) editorState.profile.reference_file = '';
-        if (editorState.profile.changes_since_last_espresso === undefined) editorState.profile.changes_since_last_espresso = '';
+        // Legacy-field stripping + REA Profile-model adaptation happens at the
+        // api.js write boundary (sanitizeProfileForRea), covering every path.
 
-        const now = new Date().toISOString();
-        let kvKey, kvRecord;
-
-        if (isUpdate) {
-            // Update in place — reuse the resolved target's KV key and id
-            kvKey = targetRecord._kvKey;
-            kvRecord = {
-                ...targetRecord,
-                profile: editorState.profile,
-                updatedAt: now,
-                parentId: targetRecord.parentId ?? null,
-            };
+        // Save routing (REA versioning model):
+        //  - default + execution change → POST fork (PUT would be rejected); the
+        //    default stays as the parent/reset point.
+        //  - new profile or explicit save-as → POST (parentId links the source).
+        //  - otherwise → PUT in place; the server keeps the id on a
+        //    presentation-only change or rehashes it (deleting the old) on a
+        //    user execution change.
+        let saved;
+        if (src?.isDefault && execChanged) {
+            saved = await uploadProfileWithParent(editorState.profile, src.id);
+        } else if (!src || titleChanged) {
+            saved = await uploadProfileWithParent(editorState.profile, src?.id ?? null);
         } else {
-            // Create new KV entry (new profile or editing a built-in default)
-            kvKey = crypto.randomUUID();
-            kvRecord = {
-                id: `kv:${kvKey}`,
-                profile: editorState.profile,
-                isDefault: false,
-                isFavorite: false,
-                visibility: 'visible',
-                parentId: editorState.sourceProfileId,
-                createdAt: now,
-                updatedAt: now,
-                _kvKey: kvKey,
-            };
+            saved = await updateProfile(src.id, editorState.profile);
         }
 
-        await setKVValue('streamline', kvKey, kvRecord);
+        const oldId = editorState.sourceProfileId;
+        availableProfiles[saved.id] = saved;
 
-        // Inject into live cache so selector shows it immediately without reload.
-        availableProfiles[kvRecord.id] = kvRecord;
+        // Only an in-place user PUT replaces the old hash — follow the favorite then.
+        if (oldId && oldId !== saved.id && !src?.isDefault && !titleChanged) {
+            delete availableProfiles[oldId];
+            await remapFavorite(oldId, saved.id);
+        }
 
         // Rebind editor to the saved record so repeat saves update in place.
-        editorState.sourceProfileRecord = kvRecord;
-        editorState.sourceProfileId = kvRecord.id;
+        editorState.sourceProfileRecord = saved;
+        editorState.sourceProfileId = saved.id;
 
         // Hint to selector so it pre-selects the profile we just edited.
-        sessionStorage.setItem('lastEditedProfileKey', kvRecord.id);
+        sessionStorage.setItem('lastEditedProfileKey', saved.id);
 
         showToast('Profile saved!', 2000, 'success');
         setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 1000);
@@ -2763,19 +2861,10 @@ async function cancelEditor() {
     }
     if (_isNewProfileSession && _sessionImportedIds.length > 0) {
         try {
-            const { deleteKVValue, deleteProfile } = await import('./api.js');
+            const { deleteProfile } = await import('./api.js');
             const { availableProfiles } = await import('./profileManager.js');
             for (const id of _sessionImportedIds) {
-                const rec = availableProfiles[id];
-                const isKV = !!rec?._kvKey || (typeof id === 'string' && id.startsWith('kv:'));
-                try {
-                    if (isKV) {
-                        const kvKey = rec?._kvKey || id.replace(/^kv:/, '');
-                        await deleteKVValue('streamline', kvKey);
-                    } else {
-                        await deleteProfile(id);
-                    }
-                } catch (_) {}
+                try { await deleteProfile(id); } catch (_) {}
                 delete availableProfiles[id];
             }
         } catch (_) {}
@@ -2806,6 +2895,20 @@ export async function initializeProfileEditor() {
     editorState.sourceProfileRecord = profileRecord;
     editorState.sourceProfileId = profileRecord.id;
     editorState.profile = deepCopy(profileRecord.profile);
+    // Normalize legacy step shape: prior versions persisted exit.type of
+    // 'weight' / 'time' / 'off' (not in Rea spec) and stored both flow and
+    // pressure on every step. Coerce on load so the UI never reads undefined
+    // EXIT_UNIT_MAP entries and the saved record converges on the spec shape.
+    if (Array.isArray(editorState.profile.steps)) {
+        for (const step of editorState.profile.steps) {
+            if (step.pump === 'flow') delete step.pressure;
+            else if (step.pump === 'pressure') delete step.flow;
+            if (step.limiter && step.limiter.value === 0) step.limiter = null;
+            if (step.exit && step.exit.type !== 'pressure' && step.exit.type !== 'flow') {
+                step.exit = null;
+            }
+        }
+    }
     editorState.activeTab = 0;
     _isNewProfileSession = !profileRecord.id;
     _sessionImportedIds = [];
