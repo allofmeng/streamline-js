@@ -313,7 +313,14 @@ export function refreshLabelMargin() {
         const lastX = trace.x[trace.x.length - 1];
         if (lastX > dataMax) dataMax = lastX;
     }
-    if (dataMax === 0) dataMax = 60; // idle / cleared chart
+    if (dataMax === 0) {
+        // idle / cleared chart — let Plotly autoscale, don't pin a max.
+        Plotly.relayout(element, {
+            annotations: getAnnotations(),
+            'xaxis.autorange': true
+        });
+        return;
+    }
 
     const rangeMax = rangeMaxForLabels(dataMax);
     Plotly.relayout(element, {
@@ -505,8 +512,7 @@ export function updateChart(shotStartTime, data, weight, filterToPouring = true)
 
     // Manage x-range manually so labels (right of each line's last point) stay
     // INSIDE the plot area instead of being clipped at the right edge.
-    const dataMax = Math.max(time, 60);
-    const rangeMax = rangeMaxForLabels(dataMax);
+    const rangeMax = rangeMaxForLabels(time);
 
     // If a step marker was added, we need to use Plotly.react to update shapes
     if (stepMarkerAdded) {
@@ -565,8 +571,7 @@ export function clearChart() {
         return;
     }
     Plotly.react(element, Object.values(chartData), layout);
-    // Plotly defaults empty-trace x-axis to [-1, 6]. Force it to start at 0.
-    Plotly.relayout(element, { 'xaxis.range': [0, 60], 'xaxis.autorange': false });
+    Plotly.relayout(element, { 'xaxis.autorange': true });
 }
 
 export function plotHistoricalShot(measurements, workflow = null) {
@@ -781,12 +786,19 @@ export function plotHistoricalShot(measurements, workflow = null) {
     }
     Plotly.react(element, Object.values(chartData), layout, {displayModeBar: false});
 
-    const rangeMax = rangeMaxForLabels(maxTime || 60);
-    Plotly.relayout(element, {
-        'xaxis.range': [0, rangeMax],
-        'xaxis.autorange': false,
-        'xaxis.dtick': dtickValue
-    });
+    if (maxTime > 0) {
+        const rangeMax = rangeMaxForLabels(maxTime);
+        Plotly.relayout(element, {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        });
+    } else {
+        Plotly.relayout(element, {
+            'xaxis.autorange': true,
+            'xaxis.dtick': dtickValue
+        });
+    }
 }
 
 // Helper function to check if exit condition is met
@@ -964,8 +976,7 @@ export function initChart() {
     console.log('initChart: About to call Plotly.newPlot');
     try {
         Plotly.newPlot(element, Object.values(chartData), layout, {displayModeBar: false});
-        // Plotly defaults empty-trace x-axis to [-1, 6]. Force it to start at 0.
-        Plotly.relayout(element, { 'xaxis.range': [0, 60], 'xaxis.autorange': false });
+        Plotly.relayout(element, { 'xaxis.autorange': true });
         console.log('initChart: Plotly.newPlot completed successfully');
     } catch (error) {
         console.error('initChart: Error in Plotly.newPlot:', error);
