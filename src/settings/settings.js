@@ -1811,7 +1811,7 @@ export function renderScreenSaverSettings() {
 
             <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                 <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative ${screensaverImagesCache.length > 1 ? 'text-[#385a92]' : 'text-[var(--text-secondary)] opacity-50'} text-[30px]">
                         <p class="leading-[1.2]">Time Between Images (s)</p>
                     </div>
                     <input type="number"
@@ -1820,11 +1820,14 @@ export function renderScreenSaverSettings() {
                            max="600"
                            step="1"
                            value="${cycleSeconds}"
-                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center"
+                           ${screensaverImagesCache.length > 1 ? '' : 'disabled'}
+                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center disabled:opacity-40 disabled:cursor-not-allowed"
                            onchange="window.handleScreensaverCycleChange(this.value)">
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                    Seconds between image swaps when more than one image is selected (2 – 600).
+                    ${screensaverImagesCache.length > 1
+                        ? 'Seconds between image swaps (2 – 600).'
+                        : 'Add more than one image to enable cycling.'}
                 </p>
             </div>
 
