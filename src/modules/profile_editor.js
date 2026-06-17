@@ -445,6 +445,8 @@ function renderStepCards() {
     container.style.gridTemplateRows = `60px 1fr 1fr 1fr 1fr 60px`;
     container.style.height = '100%';
     container.style.width = '100%';
+    // Match the data rows to the header/label background (transparent cells pick this up).
+    container.style.backgroundColor = 'var(--box-color)';
 
     // Helper: create a grid cell, append to container
     function mkCell(row, col, className) {
