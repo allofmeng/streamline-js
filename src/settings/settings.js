@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
@@ -264,7 +264,7 @@ const settingsTree = {
         ]
     },
     'bluetooth': {
-        name: 'Bluetooth',
+        name: 'Connections',
         subcategories: [
             { id: 'ble_machine', name: '1. Machine', settingsCategory: 'ble_machine' },
             { id: 'ble_scale', name: '2. Scale', settingsCategory: 'ble_scale' }
@@ -5710,6 +5710,86 @@ window.scanAndConnectScale = async function() {
     }
 };
 
+// --- Manual WiFi scale endpoints ---------------------------------------------
+
+// Fetch the manual endpoints and render them with a remove control. Discovered
+// (and connected) WiFi scales already appear in the device list above; this
+// list is just the manually-entered hosts so they can be removed.
+// (uses the module's existing `escapeHtml` helper defined near the top of this
+// file — don't add a second definition)
+async function renderManualWifiEndpoints() {
+    const container = document.getElementById('wifi-manual-endpoints-container');
+    if (!container) return;
+    let hosts = [];
+    try {
+        hosts = await listWifiScales();
+    } catch (error) {
+        // Distinguish "couldn't load" from "no endpoints" — a blank list here
+        // would look like the user's saved endpoints were lost.
+        container.innerHTML = '<div class="text-[20px] text-amber-600 px-[16px] py-[12px]">Couldn\'t load saved endpoints — check the connection and reopen.</div>';
+        return;
+    }
+    if (!hosts.length) {
+        container.innerHTML = '';
+        return;
+    }
+    // Build with escaped text + a data-host attribute (no host interpolated into
+    // an inline JS handler — listeners are attached below from dataset).
+    container.innerHTML = hosts.map((host) => {
+        const safe = escapeHtml(host);
+        return `
+            <div class="flex items-center justify-between w-full bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[10px] px-[16px] py-[12px]">
+                <span class="text-[24px] text-[var(--text-primary)] break-all">${safe}</span>
+                <button type="button" data-host="${safe}"
+                    class="wifi-scale-remove-btn text-[var(--mimoja-blue)] text-[24px] px-[12px] hover:text-white hover:bg-[var(--mimoja-blue)] rounded-[8px] transition-colors duration-200">
+                    Remove
+                </button>
+            </div>`;
+    }).join('');
+    container.querySelectorAll('.wifi-scale-remove-btn').forEach((btn) => {
+        btn.addEventListener('click', () => window.removeWifiScaleEndpoint(btn.dataset.host));
+    });
+}
+window.renderManualWifiEndpoints = renderManualWifiEndpoints;
+
+// Open the rarely-used manual WiFi-scale dialog and (re)populate its list.
+window.openWifiScaleModal = function() {
+    const modal = document.getElementById('wifi-scale-modal');
+    if (!modal) return;
+    modal.showModal();
+    renderManualWifiEndpoints();
+};
+
+window.addWifiScaleFromInput = async function() {
+    const input = document.getElementById('wifi-scale-host-input');
+    if (!input) return;
+    const host = input.value.trim();
+    if (!host) {
+        ui.showToast('Enter an IP address or hostname', 4000, 'error');
+        return;
+    }
+    try {
+        await addWifiScale(host);
+        input.value = '';
+        ui.showToast(`Added WiFi scale ${host}`, 3000, 'success');
+        await renderManualWifiEndpoints();
+        // The new endpoint validates through the normal connect path — if the
+        // address is wrong/unreachable it simply never reaches "connected".
+    } catch (error) {
+        ui.showToast(`Could not add WiFi scale: ${error.message}`, 5000, 'error');
+    }
+};
+
+window.removeWifiScaleEndpoint = async function(host) {
+    try {
+        await removeWifiScale(host);
+        ui.showToast(`Removed ${host}`, 3000, 'success');
+        await renderManualWifiEndpoints();
+    } catch (error) {
+        ui.showToast(`Could not remove WiFi scale: ${error.message}`, 5000, 'error');
+    }
+};
+
 window.handleBrightnessChange = async function(value) {
     try {
         const brightnessValue = parseInt(value);
@@ -6013,6 +6093,40 @@ export function renderBluetoothScaleSettings(settings) {
                 </label>
             </div>
 
+            <!-- Manual WiFi scale: rarely needed, so a small link at the bottom that
+                 opens a dialog. Most WiFi scales are auto-discovered. -->
+            <div class="w-full flex justify-center pt-[8px]">
+                <button onclick="window.openWifiScaleModal()"
+                        class="text-[#959595] hover:text-[var(--mimoja-blue)] text-[20px] underline underline-offset-4 transition-colors duration-200">
+                    Add WiFi scale manually
+                </button>
+            </div>
+
+            <dialog id="wifi-scale-modal" class="modal">
+                <div class="modal-box bg-[var(--box-color)] max-w-2xl">
+                    <h3 class="font-bold text-[28px] text-[var(--text-primary)] mb-2">Add WiFi Scale</h3>
+                    <p class="text-[20px] text-[var(--text-primary)] opacity-80 mb-4 break-words">
+                        Most WiFi scales are found automatically. Enter an IP address or hostname only if yours isn't discovered (e.g. on networks that block mDNS).
+                    </p>
+                    <div class="flex items-center gap-[8px] w-full">
+                        <input id="wifi-scale-host-input" type="text" inputmode="url" autocomplete="off"
+                            placeholder="192.168.1.42 or hds.local"
+                            class="flex-1 h-[62px] rounded-[10px] px-[16px] text-[24px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[var(--text-primary)]"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();window.addWifiScaleFromInput();}" />
+                        <button class="border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border px-[32px] text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
+                            onclick="window.addWifiScaleFromInput()">
+                            Add
+                        </button>
+                    </div>
+                    <div id="wifi-manual-endpoints-container" class="w-full flex flex-col gap-[8px] mt-[16px]">
+                        <!-- Manually-added WiFi endpoints populated by renderManualWifiEndpoints() -->
+                    </div>
+                    <div class="modal-action">
+                        <button class="btn" onclick="document.getElementById('wifi-scale-modal').close()">Close</button>
+                    </div>
+                </div>
+            </dialog>
+
         </div>
     `;
 }
@@ -6116,19 +6230,50 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type
     devices.forEach(device => {
         if (!device || !device.name) return;
 
-        const isConnected = device.state === 'connected';
+        // `available: false` = a remembered device that isn't currently present
+        // (reaprime keeps it listed instead of dropping it). Older reaprime
+        // builds omit the field → treat as available.
+        const isUnavailable = device.available === false;
+        const isConnected = !isUnavailable && device.state === 'connected';
         const isPreferred = preferredId && device.id === preferredId;
-        const buttonText = isConnected ? 'Disconnect' : 'Connect';
-        const buttonAction = isConnected ? 'disconnect' : 'connect';
         const safeId = (device.id || '').replace(/'/g, "\\'");
+        const safeName = (device.name || '').replace(/'/g, "\\'");
         const safeSettingKey = settingKey.replace(/'/g, "\\'");
 
+        const dotClass = isConnected ? 'bg-green-500'
+            : isUnavailable ? 'bg-amber-500/40'
+            : 'bg-[var(--profile-button-outline-color)]';
+
+        const badge = isConnected
+            ? '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-green-500/15 text-green-600">Connected</span>'
+            : isUnavailable
+            ? '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-amber-500/15 text-amber-600">Unavailable</span>'
+            : '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-50">Available</span>';
+
+        let actions;
+        if (isUnavailable) {
+            // Reconnect = rescan (the device reconnects when it reappears in
+            // discovery — not a direct connect, which would fail with no
+            // transport). Forget removes it from the remembered registry.
+            actions = `
+                <button class="border-2 border-[#385a92] text-[#385a92] hover:bg-[#385a92] hover:text-white h-[62px] px-[28px] rounded-[67.5px] text-[22px] font-bold transition-colors duration-200"
+                        onclick="window.handleDeviceRescan()">Reconnect</button>
+                <button class="border-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white h-[62px] px-[28px] rounded-[67.5px] text-[22px] font-bold transition-colors duration-200"
+                        onclick="window.handleForgetDevice('${safeId}', '${safeName}')">Forget</button>`;
+        } else {
+            const buttonText = isConnected ? 'Disconnect' : 'Connect';
+            const buttonAction = isConnected ? 'disconnect' : 'connect';
+            actions = `
+                <button class="${isConnected ? 'border-2 border-[#385a92] text-[#385a92] hover:bg-[#385a92] hover:text-white' : 'bg-[#385a92] text-white hover:bg-[#2c4a7a]'} h-[62px] px-[32px] rounded-[67.5px] text-[22px] font-bold transition-colors duration-200"
+                        onclick="window.handleDeviceConnection('${safeId}', '${buttonAction}')">${buttonText}</button>`;
+        }
+
         deviceItems += `
-            <div class="flex items-center justify-between w-full bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[18px] px-[28px] py-[24px] mb-[16px]">
+            <div class="flex items-center justify-between w-full bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[18px] px-[28px] py-[24px] mb-[16px] ${isUnavailable ? 'opacity-60' : ''}">
                 <div class="flex items-center gap-[16px] flex-1 min-w-0">
                     <!-- Status dot -->
                     <div class="relative flex-shrink-0">
-                        <div class="w-[14px] h-[14px] rounded-full ${isConnected ? 'bg-green-500' : 'bg-[var(--profile-button-outline-color)]'}"></div>
+                        <div class="w-[14px] h-[14px] rounded-full ${dotClass}"></div>
                         ${isConnected ? '<div class="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-40"></div>' : ''}
                     </div>
                     <div class="flex flex-col gap-[4px] min-w-0">
@@ -6156,13 +6301,8 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type
                         </label>
                     </div>
                     ` : ''}
-                    <span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full ${isConnected ? 'bg-green-500/15 text-green-600' : 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-50'}">
-                        ${isConnected ? 'Connected' : 'Available'}
-                    </span>
-                    <button class="${isConnected ? 'border-2 border-[#385a92] text-[#385a92] hover:bg-[#385a92] hover:text-white' : 'bg-[#385a92] text-white hover:bg-[#2c4a7a]'} h-[62px] px-[32px] rounded-[67.5px] text-[22px] font-bold transition-colors duration-200"
-                            onclick="window.handleDeviceConnection('${device.id}', '${buttonAction}')">
-                        ${buttonText}
-                    </button>
+                    ${badge}
+                    ${actions}
                 </div>
             </div>
         `;
@@ -6197,6 +6337,45 @@ window.handleDeviceConnection = async function(deviceId, action) {
     }
 };
 
+
+// Forget a remembered device — drop it from the persistent registry so an
+// absent ("Unavailable") entry stops showing.
+window.handleForgetDevice = async function(deviceId, name) {
+    if (!window.confirm(`Forget "${name}"?\nIt will be removed from the list until it connects again.`)) return;
+    try {
+        await forgetDevice(deviceId);
+        ui.showToast(`Forgot ${name}`, 3000, 'info');
+        // Optimistic: drop it from the cache + re-render immediately; reaprime
+        // also re-emits the device list on the WebSocket, which confirms.
+        if (deviceStateCache && Array.isArray(deviceStateCache.devices)) {
+            deviceStateCache.devices = deviceStateCache.devices.filter(d => d.id !== deviceId);
+            renderDeviceListFromCache();
+        }
+    } catch (error) {
+        console.error('Error forgetting device:', error);
+        ui.showToast(`Failed to forget: ${error.message}`, 5000, 'error');
+    }
+};
+
+// Rescan to reconnect an unavailable (remembered-absent) device — it reconnects
+// when it reappears in discovery. A direct connect would fail (no transport).
+window.handleDeviceRescan = function() {
+    // sendDeviceCommand returns silently (doesn't throw) when the device socket
+    // is closed — exactly the state we're often in when reconnecting. Guard so
+    // we don't show a "scanning" toast for a command that never went out.
+    const ws = getDeviceWebSocket?.();
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        ui.showToast("Not connected — can't rescan right now", 5000, 'error');
+        return;
+    }
+    try {
+        sendDeviceCommand({ command: 'scan', connect: true });
+        ui.showToast('Scanning to reconnect…', 2500, 'info');
+    } catch (error) {
+        console.error('Error starting rescan:', error);
+        ui.showToast(`Failed to scan: ${error.message}`, 5000, 'error');
+    }
+};
 
 // Set or clear the preferred device for a given setting key
 window.setPreferredDevice = async function(settingKey, deviceId, isOn) {
