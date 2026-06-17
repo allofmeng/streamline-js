@@ -1739,6 +1739,7 @@ export function renderFeedbackSettings() {
 export function renderScreenSaverSettings() {
     const enabled = localStorage.getItem('screensaverEnabled') !== 'false';
     const hasCustom = screensaverImagesCache.length > 0;
+    const cycleSeconds = parseInt(localStorage.getItem('screensaverCycleSeconds'), 10) || 10;
 
     const thumbnails = screensaverImagesCache.map((src, i) => `
         <div class="relative w-[120px] h-[80px] rounded-[10px] overflow-hidden flex-shrink-0">
@@ -1759,7 +1760,7 @@ export function renderScreenSaverSettings() {
             </button>
         </div>
         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full">
-            ${screensaverImagesCache.length} image${screensaverImagesCache.length !== 1 ? 's' : ''} selected${screensaverImagesCache.length > 1 ? ' — cycles every 10s' : ''}
+            ${screensaverImagesCache.length} image${screensaverImagesCache.length !== 1 ? 's' : ''} selected
         </p>
     ` : `
         <div class="flex items-center gap-[16px]">
@@ -1804,6 +1805,27 @@ export function renderScreenSaverSettings() {
                     <p class="leading-[1.2]">Images</p>
                 </div>
                 ${imageSection}
+            </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]">Time Between Images (s)</p>
+                    </div>
+                    <input type="number"
+                           id="screensaver-cycle-seconds"
+                           min="2"
+                           max="600"
+                           step="1"
+                           value="${cycleSeconds}"
+                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center"
+                           onchange="window.handleScreensaverCycleChange(this.value)">
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    Seconds between image swaps when more than one image is selected (2 – 600).
+                </p>
             </div>
 
             <input type="file" id="screensaver-file-input" class="hidden" multiple accept="image/*"
@@ -4286,7 +4308,20 @@ export async function initializeSettings() {
     window.updateDe1AdvancedSetting = updateDe1AdvancedSetting;
     window.setScreensaverEnabled = function(enabled) {
         localStorage.setItem('screensaverEnabled', enabled ? 'true' : 'false');
+        // If turning OFF while currently shown, hide immediately — the gate in
+        // app.js only checks on state transition, so without this the overlay
+        // would persist until next wake.
+        if (!enabled && ui.isScreensaverActive()) {
+            ui.deactivateScreensaver();
+        }
         ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
+    };
+
+    window.handleScreensaverCycleChange = function(value) {
+        const applied = ui.setScreensaverCycleSeconds(value);
+        const input = document.getElementById('screensaver-cycle-seconds');
+        if (input) input.value = applied;
+        ui.showToast(`Cycle set to ${applied}s`, 2000, 'success');
     };
 
     window.setWaterTankUnit = function(unit) {
