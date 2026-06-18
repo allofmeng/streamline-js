@@ -726,9 +726,14 @@ function sanitizeProfileForRea(profileData) {
 
     if (Array.isArray(profile?.steps)) {
         for (const step of profile.steps) {
-            if (step?.exit && step.exit.type === 'weight') {
+            if (!step?.exit) continue;
+            // 'weight' folds into the step's weight field; everything that
+            // isn't pressure/flow (notably the UI-only 'off') has no REA exit.
+            if (step.exit.type === 'weight') {
                 if (!step.weight) step.weight = step.exit.value;
                 delete step.exit;
+            } else if (step.exit.type !== 'pressure' && step.exit.type !== 'flow') {
+                step.exit = null;
             }
         }
     }
