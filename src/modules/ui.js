@@ -1553,7 +1553,11 @@ export function updateSleepButton(state) {
 }
 
 export function updateMachineStatus(data) {
-    const { status, substate, stepName, timeValue, isClickable,  isHeating, isHeatingFromTimeToReady } = data;
+    const { status, substate, stepName, timeValue, isClickable,  isHeating, isHeatingFromTimeToReady, steamTemperature } = data;
+    // Steam boiler is considered ready at/above 130°C. Below that it still needs
+    // warming, which is the only time we surface a steam "Heating" message.
+    const STEAM_HEATER_READY_C = 130;
+    const steamHeaterCold = typeof steamTemperature === 'number' && steamTemperature < STEAM_HEATER_READY_C;
     // logger.debug(`Updating machine status to: ${status}, substate: ${substate}, stepName: ${stepName}, time: ${timeValue}, clickable: ${isClickable}`);
     const machineStatusEl = document.getElementById('machine-status');
     const hotWaterVolValueEl = document.getElementById('hot-water-vol-value');
@@ -1773,10 +1777,15 @@ export function updateMachineStatus(data) {
                 const steamonlytext = getTranslation('Steam');
                 const steamheatingtext = getTranslation('Heating');
                 
-                // Check specifically for preparingForShot substate in steam mode
-                if (substate?.toLowerCase().includes('preparingforshot') || substate?.toLowerCase().includes('preparing for shot')) {
-                    machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${steamonlytext}${steamheatingtext}:</span><span class="text-[var(--status-clickable-color)]">${steamwaitingText}</span>`;
-                } else if (isreadystate) {
+                // Steam boiler warm-up. Flush/hot water never surface a heating
+                // message, so steam shouldn't either unless the heater genuinely
+                // needs warming: only show "Steam Heating" below 130°C, otherwise
+                // drop straight into the steaming counter (Steaming: 0s).
+                const isSteamHeatingPhase =
+                    substate?.toLowerCase().includes('preparingforshot') ||
+                    substate?.toLowerCase().includes('preparing for shot') ||
+                    isreadystate;
+                if (isSteamHeatingPhase && steamHeaterCold) {
                     machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${steamonlytext}${steamheatingtext}:</span><span class="text-[var(--status-clickable-color)]">${steamwaitingText}</span>`;
                 } else {
                     // Original steam counter logic for active steaming

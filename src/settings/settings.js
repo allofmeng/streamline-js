@@ -5474,10 +5474,10 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
             const mainCategoryKey = this.id.replace(/-btn$/, '').replace(/-/g, '');
             const category = settingsTree[mainCategoryKey];
 
-            // Render all subcategories for the selected main category
+            // Render subcategories with the search term highlighted
             const subCategoriesPanel = document.getElementById('sub-categories-panel');
             if (subCategoriesPanel) {
-                subCategoriesPanel.innerHTML = renderSubcategories(mainCategoryKey);
+                subCategoriesPanel.innerHTML = renderFilteredSubcategories(mainCategoryKey, searchTerm);
 
                 subCategoriesPanel.querySelectorAll('.settings-subnav-btn').forEach(subBtn => {
                     subBtn.addEventListener('click', function(e) {
@@ -5523,7 +5523,20 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
 
     // Auto-click the first result so subcategories appear without a manual click
     const firstBtn = navUl?.querySelector('.settings-nav-btn');
-    if (firstBtn) firstBtn.click();
+    if (firstBtn) {
+        firstBtn.click();
+    } else {
+        // No matches — clear stale subcategory + content panels so nothing lingers.
+        const subCategoriesPanel = document.getElementById('sub-categories-panel');
+        if (subCategoriesPanel) subCategoriesPanel.innerHTML = '';
+        const contentArea = document.getElementById('settings-content-area');
+        if (contentArea) {
+            contentArea.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-center p-8">
+                <p class="text-[var(--text-primary)] text-[28px]">No settings match your search</p>
+            </div>`;
+        }
+        activeSettingsCategory = null;
+    }
 }
 
 // Render filtered subcategories based on search term
@@ -5533,18 +5546,17 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
         return `<div class="p-4 text-center text-gray-500">No sub-categories.</div>`;
     }
 
-    // Filter subcategories that match the search term
-    const matchingSubcategories = category.subcategories.filter(subcat => 
-        subcat.name.toLowerCase().includes(searchTerm) || 
+    // Filter subcategories that match the search term. If none match (the
+    // category surfaced via its main-name match), show all subcats — matching
+    // text still gets highlighted, the rest render plainly.
+    const matchingSubcategories = category.subcategories.filter(subcat =>
+        subcat.name.toLowerCase().includes(searchTerm) ||
         subcat.id.toLowerCase().includes(searchTerm)
     );
-
-    if (matchingSubcategories.length === 0) {
-        return `<div class="p-4 text-center text-gray-500">No matching subcategories.</div>`;
-    }
+    const subcategoriesToShow = matchingSubcategories.length > 0 ? matchingSubcategories : category.subcategories;
 
     let subcategoryItems = '';
-    matchingSubcategories.forEach((subcat) => {
+    subcategoriesToShow.forEach((subcat) => {
         // Highlight matching text in the subcategory name
         const highlightedName = highlightMatch(subcat.name, searchTerm);
         

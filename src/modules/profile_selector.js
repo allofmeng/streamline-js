@@ -1077,12 +1077,20 @@ function initSearchButton() {
                     }, 300); // 300ms delay before triggering search
                 });
 
-                // Add event listener to handle Enter key
+                // Enter / keyboard search key: filter, then dismiss the soft
+                // keyboard by blurring. 'search' fires for type=search; keep
+                // Enter as a fallback for keyboards that send it instead.
+                const runSearchAndDismiss = (e) => {
+                    const searchTerm = e.target.value.toLowerCase();
+                    console.log('initSearchButton: Searching for (search key):', searchTerm);
+                    filterProfiles(searchTerm);
+                    searchInput.blur();
+                };
+                searchInput.addEventListener('search', runSearchAndDismiss);
                 searchInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
-                        const searchTerm = e.target.value.toLowerCase();
-                        console.log('initSearchButton: Searching for (Enter pressed):', searchTerm);
-                        filterProfiles(searchTerm);
+                        e.preventDefault();
+                        runSearchAndDismiss(e);
                     }
                 });
 
@@ -1132,6 +1140,15 @@ function exitSearchMode(originalTitle = null) {
 
     // Reset the search state and show all profiles
     renderProfiles();
+}
+
+// Wrap occurrences of `term` in the title with the same yellow <mark> style as
+// settings search. Escapes HTML and the regex so odd titles/queries can't break.
+function highlightTitle(text, term) {
+    const safe = text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    if (!term) return safe;
+    const escTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return safe.replace(new RegExp(`(${escTerm})`, 'gi'), '<mark class="bg-yellow-300 text-black">$1</mark>');
 }
 
 function filterProfiles(searchTerm) {
@@ -1194,7 +1211,7 @@ function filterProfiles(searchTerm) {
         const leftSide = document.createElement('div');
         leftSide.className = 'flex items-baseline gap-2 min-w-0';
         const titleSpan = document.createElement('span');
-        titleSpan.textContent = profile.title || 'Untitled Profile';
+        titleSpan.innerHTML = highlightTitle(profile.title || 'Untitled Profile', searchTerm);
         leftSide.appendChild(titleSpan);
 
         const parentRecord = profileRecord.parentId ? availableProfiles[profileRecord.parentId] : null;

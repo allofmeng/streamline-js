@@ -512,7 +512,8 @@ function handleData(data) {
         timeValue: data.elapsedTime, // Use elapsed time from data if available
         isClickable: (substate === 'preinfusion' || substate === 'pouring'), // Make preinfusion/pouring steps clickable
         isHeating: isHeating, // Pass heating state to UI
-        isHeatingFromTimeToReady: isHeatingFromTimeToReady // Pass time-to-ready heating state to UI
+        isHeatingFromTimeToReady: isHeatingFromTimeToReady, // Pass time-to-ready heating state to UI
+        steamTemperature: data.steamTemperature // Steam boiler temp — gates the steam "Heating" message
     });
     ui.updateSleepButton(state);
     ui.updateTemperatures({ mix: data.mixTemperature, group: data.groupTemperature, steam: data.steamTemperature });
