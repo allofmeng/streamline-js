@@ -798,6 +798,10 @@ export function showScaleInfo() {
     }
 }
 
+// Latest real machine state (source of truth for the sleep/wake button —
+// never parse the displayed status text, it's translated/substate-laden).
+let currentMachineState = null;
+
 // Screensaver functionality
 let screensaverActive = false;
 let screensaverElement = null;
@@ -1322,11 +1326,10 @@ export function initUI(callbacks) {
 
     if (sleepButton) {
         sleepButton.addEventListener('click', async () => {
-            const currentState = machineStateEl.textContent.trim();
-            if (currentState.toLocaleLowerCase() == 'sleeping') {
+            if (currentMachineState === 'sleeping') {
                 // Wake machine up
                 await setMachineState('idle');
-                logger.info("current machine state in sleep button:", currentState);
+                logger.info("current machine state in sleep button:", currentMachineState);
                 logger.info('Machine state set to idle.');
 
                 // Deactivate screensaver if it's active
@@ -1336,7 +1339,7 @@ export function initUI(callbacks) {
             } else {
                 // Put machine to sleep
                 await setMachineState('sleeping');
-                logger.info("current machine state in sleep button:", currentState);
+                logger.info("current machine state in sleep button:", currentMachineState);
                 logger.info('Machine state set to sleeping.');
 
                 // Activate screensaver (unless disabled by user)
@@ -1540,6 +1543,7 @@ export function initUI(callbacks) {
 }
 
 export function updateSleepButton(state) {
+    currentMachineState = state;
     const sleepButton = document.getElementById('sleep-button');
     if (sleepButton) {
         if (state === 'sleeping') {

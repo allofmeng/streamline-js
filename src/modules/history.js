@@ -196,6 +196,27 @@ export async function initHistory() {
     }
 }
 
+export function getNewestShotId() {
+    return shots[0]?.id ?? null;
+}
+
+// After a shot finishes, REA can take several seconds to persist it to /shots.
+// A single fixed-delay reload races that write and silently shows the previous
+// shot. Poll the list until a shot newer than `knownNewestId` appears, then
+// render it. ponytail: fixed retry budget, not a server-side watcher.
+export async function refreshToNewestShot(knownNewestId, tries = 6, intervalMs = 2000) {
+    for (let i = 0; i < tries; i++) {
+        await loadShotHistory();
+        if (shots.length > 0 && shots[0].id !== knownNewestId) {
+            displayShot(0);
+            return;
+        }
+        await new Promise(r => setTimeout(r, intervalMs));
+    }
+    // Gave up waiting — show whatever is newest so the panel isn't left stale.
+    if (shots.length > 0) displayShot(0);
+}
+
 export async function clearShotHistory() {
     try {
         await openDB();

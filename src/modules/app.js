@@ -489,9 +489,10 @@ function handleData(data) {
                 }
             }, 2000); // Delay to ensure shot is saved on server
 
-            setTimeout(() => {
-                history.initHistory();
-            }, 5000);
+            // Capture the current newest id NOW (before the new shot lands) so
+            // the refresh knows which record is the just-finished one to wait for.
+            const previousNewestId = history.getNewestShotId();
+            history.refreshToNewestShot(previousNewestId);
         })();
     }
     previousState = data.state; // Update previous state
