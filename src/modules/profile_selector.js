@@ -528,7 +528,7 @@ function showProfileContextMenu(key, profileRecord, anchorEl) {
     const isHidden = profileRecord.visibility === 'hidden';
 
     async function doHide() {
-        await deleteOrHideProfile(key);
+        await deleteOrHideProfile(key, { forceHide: true });
         const container = document.getElementById('profile-list');
         if (container) {
             const item = container.querySelector(`[data-profile-key="${key}"]`);

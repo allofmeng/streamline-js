@@ -767,18 +767,19 @@ export function validateProfileStructure(profile) {
     };
 }
 
-export async function deleteOrHideProfile(profileId) {
+export async function deleteOrHideProfile(profileId, { forceHide = false } = {}) {
     const profileRecord = availableProfiles[profileId];
     if (!profileRecord) {
         logger.error(`Profile with ID ${profileId} not found in local cache.`);
         showToast(`Error: Profile not found.`, 5000, 'error');
         return;
     }
+    // forceHide: always hide (long-press menu) regardless of default vs user-created
     const isDefault = profileRecord.isDefault;
 
-    logger.info(`Requesting action for profile ID: ${profileId}. Is default: ${isDefault}`);
+    logger.info(`Requesting action for profile ID: ${profileId}. Is default: ${isDefault}, forceHide: ${forceHide}`);
 
-    if (isDefault) {
+    if (isDefault || forceHide) {
         // HIDE a default profile
         try {
             const updatedProfile = await updateProfileVisibility(profileId, 'hidden');
@@ -787,7 +788,7 @@ export async function deleteOrHideProfile(profileId) {
 
             logger.info(`Profile ${profileId} successfully hidden.`);
             document.dispatchEvent(new CustomEvent('profiles-updated'));
-            showToast('Default profile hidden.', 3000, 'success');
+            showToast('Profile hidden.', 3000, 'success');
         } catch (error) {
             logger.error(`Failed to hide profile ${profileId}:`, error);
             showToast(`Error hiding profile: ${error.message}`, 5000, 'error');
