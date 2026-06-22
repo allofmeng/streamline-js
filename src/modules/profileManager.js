@@ -168,6 +168,9 @@ export async function loadAvailableProfiles() {
         // Process and populate in-memory cache
         availableProfiles = {};
         for (const profileRecord of profilesFromApi) {
+            // DELETE is a soft delete (visibility='deleted'); includeHidden=true
+            // still returns those records, so drop them or they reappear on reload.
+            if (profileRecord.visibility === 'deleted') continue;
             availableProfiles[profileRecord.id] = profileRecord;
         }
 

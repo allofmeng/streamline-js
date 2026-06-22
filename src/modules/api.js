@@ -758,7 +758,7 @@ export async function uploadProfileWithParent(profileData, parentId = null) {
 }
 
 export async function deleteProfile(profileId) {
-    const response = await fetch(`${API_BASE_URL}/profiles/${profileId}`, {
+    const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(profileId)}`, {
         method: 'DELETE',
     });
     if (!response.ok) {
@@ -767,7 +767,7 @@ export async function deleteProfile(profileId) {
 }
 
 export async function updateProfileVisibility(profileId, visibility) {
-    const response = await fetch(`${API_BASE_URL}/profiles/${profileId}/visibility`, {
+    const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(profileId)}/visibility`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
@@ -782,7 +782,7 @@ export async function updateProfileVisibility(profileId, visibility) {
 
 export async function updateProfile(profileId, profileData) {
     profileData = sanitizeProfileForRea(profileData);
-    const response = await fetch(`${API_BASE_URL}/profiles/${profileId}`, {
+    const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(profileId)}`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
@@ -796,7 +796,7 @@ export async function updateProfile(profileId, profileData) {
 }
 
 export async function updateProfileMetadata(profileId, metadata) {
-    const response = await fetch(`${API_BASE_URL}/profiles/${profileId}`, {
+    const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(profileId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ metadata }),

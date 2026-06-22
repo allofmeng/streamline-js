@@ -1547,7 +1547,8 @@ export function updateSleepButton(state) {
     const sleepButton = document.getElementById('sleep-button');
     if (sleepButton) {
         if (state === 'sleeping') {
-            sleepButton.textContent = getTranslation('awake');
+            const awake = getTranslation('awake');
+            sleepButton.textContent = awake.charAt(0).toUpperCase() + awake.slice(1);
             sleepButton.setAttribute('data-i18n-key', 'awake');
         } else {
             sleepButton.textContent = getTranslation('Sleep');

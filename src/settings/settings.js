@@ -1269,7 +1269,7 @@ export function renderUsbChargerModeSettings(settings) {
                         <p class="leading-[1.2]">USB Charger Mode</p>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.3] not-italic relative text-[var(--text-primary)] text-[22px]">
-                        Controls whether the USB port provides power for charging devices
+                        Powers the USB port to charge connected devices
                     </p>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
