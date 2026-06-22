@@ -1339,8 +1339,8 @@ export function initUI(callbacks) {
                 logger.info("current machine state in sleep button:", currentState);
                 logger.info('Machine state set to sleeping.');
 
-                // Activate screensaver
-                if (!isScreensaverActive()) {
+                // Activate screensaver (unless disabled by user)
+                if (!isScreensaverActive() && localStorage.getItem('screensaverEnabled') !== 'false') {
                     activateScreensaver();
                 }
             }
@@ -1543,7 +1543,7 @@ export function updateSleepButton(state) {
     const sleepButton = document.getElementById('sleep-button');
     if (sleepButton) {
         if (state === 'sleeping') {
-            sleepButton.textContent = getTranslation('Awake');
+            sleepButton.textContent = getTranslation('awake');
             sleepButton.setAttribute('data-i18n-key', 'awake');
         } else {
             sleepButton.textContent = getTranslation('Sleep');

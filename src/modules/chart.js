@@ -364,6 +364,74 @@ let pendingUpdates = {
     annotations: null
 };
 
+// Live chart writes are coalesced to ONE Plotly draw per animation frame.
+// DE1 streams faster than the browser can repaint a growing SVG; calling
+// Plotly.relayout/react on every WebSocket frame backs the redraw queue up and
+// the chart lags behind the real shot. rAF caps work to the display refresh.
+let pendingX, pendingY;
+let pendingReact = false;
+let pendingNeedAnnotations = false;
+let pendingTime = 0;
+let rafHandle = 0;
+
+function resetPendingChartWrites() {
+    // 6 buffers map to trace indices [0..5] — same mapping the old extendTraces used.
+    pendingX = [[], [], [], [], [], []];
+    pendingY = [[], [], [], [], [], []];
+    pendingReact = false;
+    pendingNeedAnnotations = false;
+}
+resetPendingChartWrites();
+
+function dtickForTime(time) {
+    if (time < 15) return 1;
+    if (time < 60) return 5;
+    if (time < 100) return 20;
+    return 30;
+}
+
+function flushChart() {
+    rafHandle = 0;
+    const element = getChartElement();
+    if (!element) { resetPendingChartWrites(); return; }
+
+    const theme = localStorage.getItem('theme') || 'light';
+    const dtickValue = dtickForTime(pendingTime);
+    const rangeMax = rangeMaxForLabels(pendingTime);
+
+    // A step marker changed shapes → full react (also redraws all buffered
+    // points, since they're already in chartData). Then pin the x-range.
+    if (pendingReact) {
+        const layout = theme === 'dark' ? darkLayout : lightLayout;
+        applyLabelLayout(layout);
+        Plotly.react(element, Object.values(chartData), layout);
+        Plotly.relayout(element, {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        });
+        resetPendingChartWrites();
+        return;
+    }
+
+    if (pendingX[0].length > 0) {
+        Plotly.extendTraces(element, { x: pendingX, y: pendingY }, [0, 1, 2, 3, 4, 5]);
+    }
+    const relayoutPayload = {
+        'xaxis.range': [0, rangeMax],
+        'xaxis.autorange': false,
+        'xaxis.dtick': dtickValue
+    };
+    if (pendingNeedAnnotations) relayoutPayload.annotations = getAnnotations();
+    Plotly.relayout(element, relayoutPayload);
+    resetPendingChartWrites();
+}
+
+function scheduleChartFlush() {
+    if (rafHandle) return;
+    rafHandle = requestAnimationFrame(flushChart);
+}
+
 export function setCurrentProfile(profile) {
     currentProfile = profile;
     resetProfileTracking(); // Encapsulate the reset logic
@@ -489,54 +557,25 @@ export function updateChart(shotStartTime, data, weight, filterToPouring = true)
     chartData.weight.x.push(time);
     chartData.weight.y.push(weightY);
 
-    const element = getChartElement();
-    if (!element) {
-        console.error('updateChart: chartElement not found in DOM');
-        return;
-    }
-    let dtickValue;
-    if (time < 15) {
-        dtickValue = 1;
-    } else if (time < 60) {
-        dtickValue = 5;
-    } else if (time < 100) {
-        dtickValue = 20;
-    } else {
-        dtickValue = 30;
-    }
-
-    Plotly.extendTraces(element, {
-        x: [[time], [time], [time], [time], [time], [time]],
-        y: [[pressureY], [flowY], [targetPressureY], [targetFlowY], [groupTemperatureY], [weightY]]
-    }, [0, 1, 2, 3, 4, 5]);
-
-    // Manage x-range manually so labels (right of each line's last point) stay
-    // INSIDE the plot area instead of being clipped at the right edge.
-    const rangeMax = rangeMaxForLabels(time);
-
-    // If a step marker was added, we need to use Plotly.react to update shapes
+    // Buffer this frame; the actual Plotly draw happens once per animation
+    // frame in flushChart(). A step marker forces a full react on flush.
+    pendingTime = time;
     if (stepMarkerAdded) {
-        const layout = theme === 'dark' ? darkLayout : lightLayout;
-        applyLabelLayout(layout);
-        Plotly.react(element, Object.values(chartData), layout);
-        Plotly.relayout(element, {
-            'xaxis.range': [0, rangeMax],
-            'xaxis.autorange': false,
-            'xaxis.dtick': dtickValue
-        });
-    } else {
-        // Throttle annotation refresh so we don't relayout on every tick.
+        pendingReact = true;
+    } else if (!pendingReact) {
+        pendingX[0].push(time);            pendingY[0].push(pressureY);
+        pendingX[1].push(time);            pendingY[1].push(flowY);
+        pendingX[2].push(time);            pendingY[2].push(targetPressureY);
+        pendingX[3].push(time);            pendingY[3].push(targetFlowY);
+        pendingX[4].push(time);            pendingY[4].push(groupTemperatureY);
+        pendingX[5].push(time);            pendingY[5].push(weightY);
+        // Throttle annotation refresh so we don't recompute label layout every tick.
         annotationUpdateCounter++;
-        const relayoutPayload = {
-            'xaxis.range': [0, rangeMax],
-            'xaxis.autorange': false,
-            'xaxis.dtick': dtickValue
-        };
         if (isFirstDataPoint || annotationUpdateCounter % 10 === 0) {
-            relayoutPayload.annotations = getAnnotations();
+            pendingNeedAnnotations = true;
         }
-        Plotly.relayout(element, relayoutPayload);
     }
+    scheduleChartFlush();
 }
 
 export function clearChart() {
@@ -554,7 +593,12 @@ export function clearChart() {
     liveProfileFrame = -1;  // FIX: Reset profile frame tracking
     currentSubstate = 'idle';  // FIX: Reset substate
     annotationUpdateCounter = 0;  // FIX: Reset counter
-    
+
+    // Drop any buffered live points + cancel a queued flush so stale data from
+    // the previous shot can't land on the freshly cleared chart.
+    if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0; }
+    resetPendingChartWrites();
+
     // Clear shapes and annotations from BOTH layouts
     // This prevents issues when theme is switched between shots
     darkLayout.shapes = [];

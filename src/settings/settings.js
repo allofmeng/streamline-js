@@ -1822,10 +1822,11 @@ export function renderBrightnessSettings() {
             </div>
 
             <div class="content-stretch flex flex-col gap-[40px] items-start relative w-full">
-                <div class="h-[41.92px] relative w-full">
-                    <div class="flex items-center justify-between w-full">
-                        <input type="range" id="brightness-slider" min="0" max="100" value="75" class="brightness-slider flex-grow" onchange="handleBrightnessChange(this.value)">
-                    </div>
+                <div class="flex items-center gap-[30px] w-full">
+                    <input type="range" id="brightness-slider" min="0" max="100" value="75" class="brightness-slider flex-grow" oninput="handleBrightnessChange(this.value)">
+                    <input type="number" id="brightness-number" min="0" max="100" step="1" value="75"
+                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center"
+                           onchange="handleBrightnessChange(this.value)">
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[32px] w-full">
                     Adjust screen brightness level
@@ -5626,10 +5627,12 @@ export function initDisplayWebSocket() {
     connectDisplayWebSocket((data) => {
         logger.debug('Display state received:', data);
 
-        // Update brightness slider if it exists
-        const brightnessSlider = document.querySelector('input[type="range"][onchange*="handleBrightnessChange"]');
-        if (brightnessSlider && data.brightness !== undefined) {
-            brightnessSlider.value = data.brightness;
+        // Update brightness slider + number entry if they exist
+        if (data.brightness !== undefined) {
+            const brightnessSlider = document.getElementById('brightness-slider');
+            const brightnessNumber = document.getElementById('brightness-number');
+            if (brightnessSlider) brightnessSlider.value = data.brightness;
+            if (brightnessNumber) brightnessNumber.value = data.brightness;
         }
 
         // Update wake-lock toggle if it exists
@@ -5781,14 +5784,16 @@ window.removeWifiScaleEndpoint = async function(host) {
 
 window.handleBrightnessChange = async function(value) {
     try {
-        const brightnessValue = parseInt(value);
+        const brightnessValue = Math.min(100, Math.max(0, parseInt(value) || 0));
         const slider = document.getElementById('brightness-slider');
+        const number = document.getElementById('brightness-number');
 
-        // Update slider visual fill
+        // Keep slider + number entry in sync
         if (slider) {
-            const percentage = (brightnessValue / 100) * 100;
-            slider.style.background = `linear-gradient(to right, #385a92 0%, #385a92 ${percentage}%, #e8e8e8 ${percentage}%, #e8e8e8 100%)`;
+            slider.value = brightnessValue;
+            slider.style.background = `linear-gradient(to right, #385a92 0%, #385a92 ${brightnessValue}%, #e8e8e8 ${brightnessValue}%, #e8e8e8 100%)`;
         }
+        if (number) number.value = brightnessValue;
 
         sendDisplayCommand({
             command: 'setBrightness',
