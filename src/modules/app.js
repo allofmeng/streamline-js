@@ -453,9 +453,12 @@ function handleData(data) {
             // is the only mass proxy DE1 has, so it's the valid non-time stop reason.
             const finalWeight = finishedShot.finalWeight ?? finishedShot.weights?.at(-1) ?? latestScaleWeight;
             const finalVolume = finishedShot.volumes?.at(-1) ?? 0;
-            const targetWeight = parseFloat(currentActiveProfile?.target_weight ?? 0);
-            const targetVolume = parseFloat(currentActiveProfile?.target_volume ?? 0);
-            const profileSeconds = (currentActiveProfile?.steps ?? [])
+            // Prefer the live active profile: favorite-button switches update profileManager's
+            // active record but not the local currentActiveProfile (only set on page load).
+            const activeProfile = profileManager.getActiveProfileRecord()?.profile ?? currentActiveProfile;
+            const targetWeight = parseFloat(activeProfile?.target_weight ?? 0);
+            const targetVolume = parseFloat(activeProfile?.target_volume ?? 0);
+            const profileSeconds = (activeProfile?.steps ?? [])
                 .reduce((sum, s) => sum + (parseFloat(s.seconds) || 0), 0);
 
             const WEIGHT_HIT = targetWeight > 0 && finalWeight !== null && finalWeight >= targetWeight * 0.93;

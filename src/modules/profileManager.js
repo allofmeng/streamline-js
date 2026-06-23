@@ -533,8 +533,8 @@ async function handleProfileClick(index) {
             updateDoseInDisplay(effectiveDose);
             updateDrinkRatio();
         } else {
-            workflowResponse = await updateWorkflow({ profile, context: { ...grindContext } });
             const displayYield = isNaN(effectiveYield) ? 0 : effectiveYield;
+            workflowResponse = await updateWorkflow({ profile, context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext } });
             updateDrinkOut(displayYield);
             updateDoseInDisplay(effectiveDose);
             updateDrinkRatio();

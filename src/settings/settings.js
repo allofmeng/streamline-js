@@ -4,6 +4,7 @@ import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage } from '../modules/i18n.js';
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
+import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
@@ -123,7 +124,6 @@ let settingsCache = {
     allSkins: null,
     allSkinsLoading: false,
     allSkinsError: null,
-    githubLatestVersion: null,
     appUpdateState: null,
     appUpdateChecked: false
 };
@@ -247,6 +247,9 @@ function updateSettingsContentArea(category) {
         if (category === 'firmware' || category === 'firmwareupdate') {
             setTimeout(initAppUpdateSection, 0);
         }
+        if (category === 'quickstart') {
+            setTimeout(initQuickstartGuideSettings, 0);
+        }
         setTimeout(attachSettingsNumpad, 0);
     }
 }
@@ -335,6 +338,7 @@ const settingsTree = {
     'usermanual': {
         name: 'User Manual',
         subcategories: [
+            { id: 'quickstart', name: 'Quick Start Guide', settingsCategory: 'quickstart', i18nKey: 'Quickstart Guide' },
             { id: 'talkdecent', name: 'Talk to Decent', settingsCategory: 'talkdecent' },
             { id: 'feedback', name: 'Send Feedback', settingsCategory: 'feedback' }
         ]
@@ -718,6 +722,8 @@ export function renderSettingsContent(category) {
             return renderFeedbackSettings();
         case 'talkdecent':
             return renderTalkToDecentSettings();
+        case 'quickstart':
+            return renderQuickstartGuideSettings();
         case 'usermanual':
         case 'onlinehelp':
         case 'tutorials':
@@ -1434,6 +1440,59 @@ export function renderDe1AdvancedSettingsForm(settings) {
 
 
 // Render user manual settings
+export function renderQuickstartGuideSettings() {
+    return `
+        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Quickstart Guide">Quickstart Guide</p>
+            </div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Quickstart Guide">Quick Start Guide</p>
+                        </div>
+                        <a href="https://decentespresso.com/doc/quickstart/" target="_blank" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                            View
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="h-0 relative w-full">
+                <hr class="border-t border-[#c9c9c9] w-full" />
+            </div>
+
+            <div class="content-stretch flex flex-col gap-[12px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Show help button">Show help button</p>
+                    </div>
+                    <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                        <input type="checkbox" id="help-icon-toggle" class="sr-only peer">
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Wire the "Show help button" toggle. Reflects whether the overlay's ? button
+// is currently hidden, and restores/hides it via helpOverlay's global hooks.
+function initQuickstartGuideSettings() {
+    const toggle = document.getElementById('help-icon-toggle');
+    if (!toggle) return;
+    toggle.checked = !(window.isHelpButtonHidden?.() ?? false);
+    toggle.addEventListener('change', () => {
+        if (toggle.checked) window.showHelpButton?.();
+        else window.hideHelpButton?.();
+    });
+}
+
 export function renderUserManualSettings() {
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
@@ -3175,29 +3234,18 @@ export function renderSkinSettings() {
     const allSkins = settingsCache.allSkins || [];
     const activeSkinId = activeSkin?.id || '';
 
-    const skinsTable = allSkins.length > 0 ? `
-        <table class="w-full text-[20px] text-[var(--text-primary)] border-collapse">
-            <thead>
-                <tr class="border-b border-[#c9c9c9] text-[#385a92] font-['Inter:Bold',sans-serif] font-bold">
-                    <th class="text-left py-3 pr-4">Name</th>
-                    <th class="text-left py-3 pr-4">Version</th>
-                    <th class="text-left py-3 pr-4">Type</th>
-                    <th class="text-left py-3">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${allSkins.map(s => `
-                <tr class="border-b border-[#c9c9c9]">
-                    <td class="py-3 pr-4 font-['Inter:Regular',sans-serif]">${s.name}${s.id === activeSkinId ? ' <span class="text-[#385a92] font-bold">(active)</span>' : ''}</td>
-                    <td class="py-3 pr-4 font-['Inter:Regular',sans-serif] text-[var(--text-secondary)]">${s.version || 'N/A'}</td>
-                    <td class="py-3 pr-4 font-['Inter:Regular',sans-serif] text-[var(--text-secondary)]">${s.isBundled ? 'Bundled' : 'Installed'}</td>
-                    <td class="py-3">
-                        ${s.id !== activeSkinId ? `<button class="bg-[#385a92] h-[44px] rounded-[10px] px-4 text-white text-[18px] font-bold" onclick="window.setActiveSkin('${s.id}')">Set Active</button>` : '<span class="text-[var(--text-secondary)]">—</span>'}
-                    </td>
-                </tr>`).join('')}
-            </tbody>
-        </table>
-    ` : `<p class="text-[var(--text-secondary)] text-[22px]">No skins available</p>`;
+    // Per-skin update badge. Only the running skin can be detected as needing an update — its on-disk
+    // version differs from APP_VERSION baked into the running bundle. The API exposes no per-skin
+    // "newer available" signal (reaprime's own UI has none either), and the global Update button keeps
+    // every other on-disk skin current, so they show "Up to date".
+    const skinBadge = (s, isActive) => {
+        const needsUpdate = s.id === SKIN_ID && s.version && s.version !== APP_VERSION;
+        const base = 'text-[16px] font-semibold px-[8px] py-[2px] rounded-full';
+        if (isActive) return `<span class="${base} bg-white/20 text-white">${needsUpdate ? 'Update available' : 'Up to date'}</span>`;
+        return needsUpdate
+            ? `<span class="${base} bg-[#da515e]/15 text-[#da515e]">Update available</span>`
+            : `<span class="${base} bg-[#0ca581]/15 text-[#0ca581]">Up to date</span>`;
+    };
 
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
@@ -3230,14 +3278,11 @@ export function renderSkinSettings() {
                     <p class="leading-[1.2]">Active Skin</p>
                 </div>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[22px] w-full">
-                    Tap a skin to make it active. The page will reload to apply.
+                    Tap a skin to make it active. Tap reload to apply.
                 </p>
                 <div class="grid grid-cols-2 gap-[14px] w-full">
                     ${(allSkins.length > 0 ? allSkins : (activeSkin ? [activeSkin] : [])).map(s => {
                         const isActive = s.id === activeSkinId;
-                        const ghVersion = settingsCache.githubLatestVersion;
-                        const isLatest = ghVersion && s.version && s.version === ghVersion;
-                        const versionKnown = !!ghVersion;
                         return `
                         <button
                             onclick="${isActive ? '' : `window.setActiveSkin('${s.id}')`}"
@@ -3253,10 +3298,7 @@ export function renderSkinSettings() {
                             </div>
                             <div class="flex items-center gap-[10px]">
                                 ${s.version ? `<span class="text-[17px] font-['Inter:Regular',sans-serif] opacity-80">v${s.version}</span>` : ''}
-                                ${s.isBundled && /streamline/i.test(s.name) && versionKnown ? (isLatest
-                                    ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#0ca581]/15 text-[#0ca581]'}">Latest</span>`
-                                    : `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-[#da515e]/15 text-[#da515e]'}">Update available</span>`)
-                                : ''}
+                                ${skinBadge(s, isActive)}
                                 <span class="text-[14px] font-['Inter:Regular',sans-serif] opacity-60 uppercase tracking-wider">${s.isBundled ? 'Bundled' : 'Installed'}</span>
                             </div>
                         </button>`;
@@ -3268,16 +3310,13 @@ export function renderSkinSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Check for Updates</p>
+                            <p class="leading-[1.2]">Check for current skin updates</p>
                         </div>
                         <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
                                 onclick="window.updateSkin()">
                             Update
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
-                        Check for and install the latest skin update
-                    </p>
                 </div>
             </div>
 
@@ -3953,7 +3992,7 @@ export function renderSubcategories(mainCategoryKey) {
             <li>
                 <button class="settings-subnav-btn w-full text-left px-4 py-3 rounded-lg text-[24px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center"
                         data-category="${subcat.settingsCategory}">
-                    ${prefix}<span data-i18n-key="${label}">${label}</span>
+                    ${prefix}<span data-i18n-key="${subcat.i18nKey || label}">${label}</span>
                 </button>
             </li>
         `;
@@ -4069,7 +4108,7 @@ async function _preloadSettingsInternal() {
         settingsCache.appInfoError = null;
 
         // Fetch all settings in parallel using Promise.allSettled to handle individual failures
-        const [reaSettingsResult, de1SettingsResult, de1AdvancedSettingsResult, appInfoResult, machineInfoResult, skinInfoResult, allSkinsResult, workflowResult, githubReleaseResult] = await Promise.allSettled([
+        const [reaSettingsResult, de1SettingsResult, de1AdvancedSettingsResult, appInfoResult, machineInfoResult, skinInfoResult, allSkinsResult, workflowResult] = await Promise.allSettled([
             getReaSettings(),
             getDe1Settings(),
             getDe1AdvancedSettings(),
@@ -4077,8 +4116,7 @@ async function _preloadSettingsInternal() {
             getMachineInfo(),
             getDefaultSkin(),
             getAllSkins(),
-            getWorkflow(),
-            fetch('https://api.github.com/repos/allofmeng/streamline_project/releases/latest', { cache: 'no-store' }).then(r => r.ok ? r.json() : null)
+            getWorkflow()
         ]);
 
         // Process results and handle errors appropriately
@@ -4180,12 +4218,6 @@ async function _preloadSettingsInternal() {
             settingsCache.allSkinsError = allSkinsResult.reason?.message || 'Failed to load skins';
         }
 
-        // Handle GitHub latest release result
-        if (githubReleaseResult.status === 'fulfilled' && githubReleaseResult.value?.tag_name) {
-            settingsCache.githubLatestVersion = githubReleaseResult.value.tag_name.replace(/^v/, '');
-        } else {
-            console.warn('Could not fetch GitHub latest release:', githubReleaseResult.reason);
-        }
 
         // Handle Workflow result
         if (workflowResult.status === 'fulfilled') {
@@ -4977,15 +5009,16 @@ export async function initializeSettings() {
 
     window.updateSkin = async function() {
         try {
-            const beforeVersion = settingsCache.appInfo?.version;
             ui.showToast('Checking for skin updates...', 3000, 'info');
-            await updateSkins();
-            const updatedInfo = await getAppInfo();
-            if (beforeVersion && updatedInfo?.version === beforeVersion) {
-                ui.showToast(`You're already on the latest version (${beforeVersion}).`, 4000, 'info');
-            } else {
-                ui.showToast('Skin updated successfully. Reloading...', 2000, 'success');
+            await updateSkins(); // bridge checks sources & downloads newer skin files server-side
+            settingsCache.allSkins = await getAllSkins();
+            const diskVersion = settingsCache.allSkins.find(s => s.id === SKIN_ID)?.version;
+            if (diskVersion && diskVersion !== APP_VERSION) {
+                ui.showToast(`New version v${diskVersion} downloaded. Reloading...`, 2000, 'success');
                 setTimeout(() => window.location.reload(), 2000);
+            } else {
+                ui.showToast(`Already up to date (v${APP_VERSION}).`, 4000, 'info');
+                if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
             }
         } catch (error) {
             logger.error('Error updating skin:', error);

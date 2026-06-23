@@ -483,10 +483,10 @@ function renderStepCards() {
     }
 
     mkLabel(R.HEADER,  '');
-    mkLabel(R.TEMP,    getTranslation('Temp'));
-    mkLabel(R.PUMP,    getTranslation('Pump'));
-    mkLabel(R.MAX,     getTranslation('Max'));
-    mkLabel(R.EXIT,    getTranslation('Exit if'));
+    mkLabel(R.TEMP,    getTranslation('Temp')).id = 'editor-row-temp';
+    mkLabel(R.PUMP,    getTranslation('Pump')).id = 'editor-row-pump';
+    mkLabel(R.MAX,     getTranslation('Max')).id = 'editor-row-max';
+    mkLabel(R.EXIT,    getTranslation('Exit if')).id = 'editor-row-exit';
     mkLabel(R.FOOTER,  '');
 
     // ── Step columns ──────────────────────────────────────────────────────────

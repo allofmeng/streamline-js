@@ -1859,6 +1859,11 @@ function getStatusConfiguration(status, substate, stepName, timeValue, isClickab
             message: getTranslation('Disconnected') || 'Disconnected',
             messageClass: 'status-msg-red'
         },
+        // Shown only when the screensaver is off (otherwise its overlay hides this).
+        'sleeping': {
+            message: getTranslation('Sleeping') || 'Sleeping',
+            messageClass: 'status-msg-red'
+        },
         'error': {
             message: getTranslation('Error') || 'Error',
             messageClass: 'status-msg-red'
@@ -1901,7 +1906,7 @@ function getStatusConfiguration(status, substate, stepName, timeValue, isClickab
 
     // Prioritized list of states to check against `status` and `substate`
     const statePriority = [
-        'disconnected', 'error', 'heating', 'idle',
+        'disconnected', 'sleeping', 'error', 'heating', 'idle',
         'flushing', 'steaming', 'hotwater',
         'preinfusion', 'pouring'
     ];
