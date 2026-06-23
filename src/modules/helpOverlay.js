@@ -37,8 +37,8 @@ const PAGES = {
         { sel: '#profile-name', title: 'Current profile', tip: 'Tap to browse profiles. Long-press to browse or edit the current profile.' },
         { sel: '#dose-label', title: 'Adjust a value', tip: 'Tap +/- to step. Tap the number to type an exact value.' },
         { sel: '#temp-presets', title: 'Presets', tip: 'Tap to apply. Long-press to edit, save the current value, or reset.' },
-        { sel: '#steam-mode-toggle', title: 'Steam mode', tip: 'Tap to switch between Time and Flow.' },
-        { sel: '#hot-water-mode-toggle', title: 'Hot water mode', tip: 'Tap to switch between Temp and Volume.' },
+        { sel: '#steam-mode-toggle', title: 'Mode switch', tip: 'Tap to switch between Time and Flow, Hot water Temperature and Volume.' },
+        { sel: '#hot-water-mode-toggle', ringOnly: true },
         { sel: '#data-weight', title: 'Scale', tip: 'Tap the weight to tare the connected scale.' },
         { sel: '#ghc-controls', title: 'Machine controls', tip: 'Coffee, Water, Steam, Flush — and Stop.' },
         { sel: '#shot-history-panel', title: 'Shot history', tip: 'Use the arrows to browse past shots.' },
@@ -226,13 +226,6 @@ function open() {
         ring.style.height = `${ringRect.height}px`;
         overlay.appendChild(ring);
 
-        const label = document.createElement('div');
-        label.className = 'help-label';
-        label.innerHTML = `<strong></strong><span></span>`;
-        label.querySelector('strong').textContent = m.title;
-        label.querySelector('span').textContent = m.tip;
-        overlay.appendChild(label);
-
         // Full-panel regions (e.g. the editor's steps area) fill most of the
         // screen — there's no room to put a label outside them, so don't treat
         // them as obstacles. A label sitting inside such a region is unavoidable
@@ -241,6 +234,18 @@ function open() {
         if (!isLarge) {
             placed.push({ l: ringRect.left, t: ringRect.top, r: ringRect.right, b: ringRect.bottom, ring: true });
         }
+
+        // Ring-only marks (e.g. the hot-water toggle, covered by the steam tip)
+        // get a highlight box but no label of their own.
+        if (m.ringOnly) continue;
+
+        const label = document.createElement('div');
+        label.className = 'help-label';
+        label.innerHTML = `<strong></strong><span></span>`;
+        label.querySelector('strong').textContent = m.title;
+        label.querySelector('span').textContent = m.tip;
+        overlay.appendChild(label);
+
         pending.push({ label, ringRect, below: m.below });
     }
 
