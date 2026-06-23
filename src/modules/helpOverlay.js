@@ -34,7 +34,7 @@ const GAP = 12;            // gap between ring and its label
 const PAGES = {
     home: [
         { sel: '#fav-profile-btn-0', title: 'Favourite profiles', tip: 'Tap to switch profile. Long-press to assign a different one.' },
-        { sel: '#profile-name', title: 'Current profile', tip: 'Tap to browse profiles. Long-press to browse or edit the current profile.' },
+        { sel: '#profile-name', title: 'Current profile', tip: 'Tap to browse profiles. Long-press to browse, edit or revert the current profile.' },
         { sel: '#dose-label', title: 'Adjust a value', tip: 'Tap +/- to step. Tap the number to type an exact value.' },
         { sel: '#temp-presets', title: 'Presets', tip: 'Tap to apply. Long-press to edit, save the current value, or reset.' },
         { sel: '#steam-mode-toggle', title: 'Mode switch', tip: 'Tap to switch between Time and Flow, Hot water Temperature and Volume.' },
@@ -67,9 +67,9 @@ const PAGES = {
         { sel: '#confirm-profile-btn', title: 'Confirm', tip: 'Use this profile for your next shot.' },
     ],
     profile_editor: [
-        { sel: '#editor-title-display', title: 'Profile name', tip: 'Tap the title to rename the profile.' },
+        { sel: '#editor-title-display', title: 'Profile name', tip: 'Tap the title to rename the profile.', right: true },
         { sel: '.editor-tab-btn[data-tab="0"]', title: 'Grid view', tip: 'Edit the profile as step cards.' },
-        { sel: '.editor-tab-btn[data-tab="2"]', title: 'Text view', tip: 'Edit the profile as plain sentences — tap any blue value to change it. Includes a graph preview.' },
+        { sel: '.editor-tab-btn[data-tab="2"]', title: 'Text view', tip: 'Edit the profile as plain sentences, with a graph preview.' },
         { sel: '.editor-tab-btn[data-tab="1"]', title: 'Settings view', tip: 'Profile-wide settings (dose, yield, temperature…).' },
         { sel: '#editor-steps-container', title: 'Steps', tip: 'Each column is a step. Tap any value to edit it, or use +/-. The card buttons insert or delete steps.' },
         { sel: '#editor-row-temp', title: 'Temp', tip: 'Target temperature for the step, and which sensor it follows (Coffee or Water).' },
@@ -108,7 +108,7 @@ function visibleRect(el) {
 // (other labels + the close hint). Prefers directly below the element; falls
 // back to above/sides, then a downward nudge. Every position is clamped inside
 // the viewport, so a label never runs off-screen. Returns the chosen {left, top}.
-function placeLabel(label, ring, placed, forceBelow = false) {
+function placeLabel(label, ring, placed, prefer = null) {
     const vw = window.innerWidth, vh = window.innerHeight;
     const lw = label.offsetWidth, lh = label.offsetHeight;
     const clampX = x => Math.max(8, Math.min(x, vw - lw - 8));
@@ -116,13 +116,12 @@ function placeLabel(label, ring, placed, forceBelow = false) {
     const centerX = ring.left + ring.width / 2 - lw / 2;
     const midY = ring.top + ring.height / 2 - lh / 2;
 
-    // Pinned directly under the element — used for small toolbar icons where the
-    // label should always read as belonging to that icon. It may overlap the
-    // highlight boxes below, but must not overlap other labels: nudge down past
-    // them (ring entries are tagged and ignored here).
-    if (forceBelow) {
-        const left = clampX(centerX);
-        let top = clampY(ring.bottom + GAP);
+    // Pinned to a fixed side of the element (below a toolbar icon, or right of a
+    // title). May overlap the highlight boxes, but must not overlap other labels:
+    // nudge down past them (ring entries are tagged and ignored here).
+    if (prefer === 'below' || prefer === 'right') {
+        const left = prefer === 'right' ? clampX(ring.right + GAP) : clampX(centerX);
+        let top = clampY(prefer === 'right' ? midY : ring.bottom + GAP);
         const hitsLabel = t => placed.some(p => !p.ring && left < p.r && left + lw > p.l && t < p.b && t + lh > p.t);
         for (let i = 0; i < 200 && hitsLabel(top) && top < vh - lh - 8; i++) top += 8;
         top = clampY(top);
@@ -246,14 +245,14 @@ function open() {
         label.querySelector('span').textContent = m.tip;
         overlay.appendChild(label);
 
-        pending.push({ label, ringRect, below: m.below });
+        pending.push({ label, ringRect, prefer: m.below ? 'below' : m.right ? 'right' : null });
     }
 
     // Pass 2: position labels, now avoiding the hint, every ring, and each other.
-    // `below` marks are pinned under their element first so others avoid them.
-    pending.sort((a, b) => (b.below ? 1 : 0) - (a.below ? 1 : 0));
-    for (const { label, ringRect, below } of pending) {
-        const pos = placeLabel(label, ringRect, placed, below);
+    // Side-pinned marks are placed first so the free-floating ones avoid them.
+    pending.sort((a, b) => (b.prefer ? 1 : 0) - (a.prefer ? 1 : 0));
+    for (const { label, ringRect, prefer } of pending) {
+        const pos = placeLabel(label, ringRect, placed, prefer);
         label.style.left = `${pos.left}px`;
         label.style.top = `${pos.top}px`;
     }

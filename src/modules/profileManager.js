@@ -326,20 +326,91 @@ export function getActiveProfileRecord() {
     return availableProfiles[activeProfileId];
 }
 
+// Serialize metadata read-modify-write so concurrent edits and resets can't
+// clobber each other. Without this, two writers read the same base metadata and
+// the last PUT to resolve wins — silently dropping the other's user-entered
+// values. Each task re-reads metadata inside the chain, after the prior write.
+// ponytail: single global chain; fine because all writes target the one active
+// profile. Per-id queues only if multiple profiles ever mutate concurrently.
+let metadataWriteChain = Promise.resolve();
+function queueMetadataWrite(task) {
+    const run = metadataWriteChain.then(task, task);
+    metadataWriteChain = run.catch(() => {}); // keep the queue alive past failures
+    return run;
+}
+
+// Apply a metadata change for `profileId`, transforming the *current* metadata
+// (read fresh inside the queue) and PUTting the result. `transform` receives the
+// latest metadata object and returns the new one.
+function mutateProfileMetadata(profileId, transform) {
+    return queueMetadataWrite(async () => {
+        const record = availableProfiles[profileId];
+        if (!record) return null;
+        const newMetadata = transform(record.metadata || {});
+        const updatedRecord = await updateProfileMetadata(profileId, newMetadata);
+        availableProfiles[profileId] = updatedRecord;
+        await setSetting(PROFILES_CACHE_KEY, availableProfiles);
+        return updatedRecord;
+    });
+}
+
 export async function saveContextToActiveProfile(fields) {
     if (!activeProfileId || !availableProfiles[activeProfileId]) return;
-    const profileRecord = availableProfiles[activeProfileId];
-    const updatedMetadata = { ...(profileRecord.metadata || {}), ...fields };
+    const profileId = activeProfileId; // pin target across the async queue wait
     try {
         // Metadata-only PUT — the profile (execution) hash is untouched, so the
         // id stays stable; no favorite remap needed.
-        const updatedRecord = await updateProfileMetadata(activeProfileId, updatedMetadata);
-        availableProfiles[activeProfileId] = updatedRecord;
-        await setSetting(PROFILES_CACHE_KEY, availableProfiles);
-        logger.info(`Saved context to profile ${activeProfileId}:`, fields);
+        await mutateProfileMetadata(profileId, (meta) => ({ ...meta, ...fields }));
+        logger.info(`Saved context to profile ${profileId}:`, fields);
     } catch (error) {
         logger.error('Failed to save context to profile:', error);
     }
+}
+
+// Strip the user's saved overrides (dose/yield/grind) from the active profile's
+// metadata and re-apply the profile's own baked-in numbers to the machine + UI.
+export async function resetActiveProfileToDefaults() {
+    if (!activeProfileId || !availableProfiles[activeProfileId]) return false;
+    const profileId = activeProfileId; // pin target across the async queue wait
+    const profile = availableProfiles[profileId].profile;
+    if (!profile) return false;
+
+    // Drop override keys, going through the same write queue as edits so a
+    // reset and an in-flight edit can't clobber each other. Strip is computed
+    // against the freshest metadata (spread-merge can't delete, so rebuild).
+    try {
+        await mutateProfileMetadata(profileId, ({ targetDoseWeight, targetYield, grinderSetting, ...rest }) => rest);
+    } catch (error) {
+        logger.error('Failed to clear profile overrides:', error);
+        return false;
+    }
+
+    // If the user switched profiles while we were queued, the machine/UI now
+    // reflect a different profile — don't stomp it with these defaults.
+    if (activeProfileId !== profileId) return true;
+
+    // Re-send the profile using its own defaults (no metadata overrides).
+    // WorkflowContext requires numeric targetDoseWeight/targetYield (schema:
+    // number/double); profile.dose_weight is a legacy TCL field that may be a
+    // string, so coerce both rather than passing through raw.
+    const parsedDose = parseFloat(profile.dose_weight);
+    const defaultDose = isNaN(parsedDose) ? 18 : parsedDose;
+    const parsedYield = parseFloat(profile.target_weight);
+    const displayYield = isNaN(parsedYield) ? 0 : parsedYield;
+    try {
+        await updateWorkflow({ profile, context: { targetDoseWeight: defaultDose, targetYield: displayYield, grinderSetting: null } });
+    } catch (error) {
+        logger.error('Failed to re-apply profile defaults to workflow:', error);
+        return false;
+    }
+
+    updateDoseInDisplay(defaultDose);
+    updateDrinkOut(displayYield);
+    updateDrinkRatio();
+    const grindEl = document.getElementById('grind-value');
+    if (grindEl) grindEl.textContent = '0';
+    logger.info(`Reset profile ${activeProfileId} to its default numbers.`);
+    return true;
 }
 
 export async function saveGrindToActiveProfile(grindValue) {

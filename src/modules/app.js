@@ -1307,6 +1307,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 loadPage('src/profiles/profile_editor.html');
                             },
                         },
+                        {
+                            label: 'Use Profile Defaults',
+                            disabled: !activeRecord,
+                            onSelect: async () => {
+                                const ok = await profileManager.resetActiveProfileToDefaults();
+                                ui.showToast(
+                                    ok ? 'Reset to profile defaults' : 'Could not reset profile',
+                                    3000,
+                                    ok ? 'success' : 'error'
+                                );
+                            },
+                        },
                     ];
                     openContextMenu(el, items);
                 }
