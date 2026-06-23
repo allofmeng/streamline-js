@@ -54,10 +54,10 @@ const PAGES = {
         { sel: '#cancel-settings-btn', title: 'Cancel', tip: 'Discard changes and go back.' },
     ],
     profile_selector: [
-        { sel: '#add_profile', title: 'Add profile', tip: 'Upload a file or import a share code.' },
+        { sel: '#add_profile', title: 'Add profile', tip: 'Upload a file or import a share code.', below: true },
         { sel: '#view_profile', title: 'View all', tip: 'Show all hidden profiles.' },
         { sel: '#search_profile', title: 'Search', tip: 'Search your profiles.' },
-        { sel: '#ai_generate_profile', title: 'Decent Profile Generator', tip: 'Design your next espresso profile in a few simple steps.' },
+        { sel: '#ai_generate_profile', title: 'Decent Profile Generator', tip: 'Design your next espresso profile in a few simple steps.', below: true },
         { sel: '#delete_profile', title: 'Delete', tip: 'Delete the selected profile. Built-in profiles are hidden instead of removed.' },
         { sel: '#assign-fav-btn-0', title: 'Assign favourite', tip: 'Assign the selected profile to a favourite slot (1–5) shown on the home screen.' },
         { sel: '#profile-list', title: 'Profiles', tip: 'Tap a profile to preview its graph and notes. Long-press for more options: hide, assign to a favourite, or edit.' },
@@ -108,13 +108,27 @@ function visibleRect(el) {
 // (other labels + the close hint). Prefers directly below the element; falls
 // back to above/sides, then a downward nudge. Every position is clamped inside
 // the viewport, so a label never runs off-screen. Returns the chosen {left, top}.
-function placeLabel(label, ring, placed) {
+function placeLabel(label, ring, placed, forceBelow = false) {
     const vw = window.innerWidth, vh = window.innerHeight;
     const lw = label.offsetWidth, lh = label.offsetHeight;
     const clampX = x => Math.max(8, Math.min(x, vw - lw - 8));
     const clampY = y => Math.max(8, Math.min(y, vh - lh - 8));
     const centerX = ring.left + ring.width / 2 - lw / 2;
     const midY = ring.top + ring.height / 2 - lh / 2;
+
+    // Pinned directly under the element — used for small toolbar icons where the
+    // label should always read as belonging to that icon. It may overlap the
+    // highlight boxes below, but must not overlap other labels: nudge down past
+    // them (ring entries are tagged and ignored here).
+    if (forceBelow) {
+        const left = clampX(centerX);
+        let top = clampY(ring.bottom + GAP);
+        const hitsLabel = t => placed.some(p => !p.ring && left < p.r && left + lw > p.l && t < p.b && t + lh > p.t);
+        for (let i = 0; i < 200 && hitsLabel(top) && top < vh - lh - 8; i++) top += 8;
+        top = clampY(top);
+        placed.push({ l: left, t: top, r: left + lw, b: top + lh });
+        return { left, top };
+    }
 
     const candidates = [
         { left: centerX, top: ring.bottom + GAP },              // below (preferred)
@@ -225,14 +239,16 @@ function open() {
         // and fine; the no-overlap rule is for discrete element boxes.
         const isLarge = ringRect.width * ringRect.height > 0.35 * vw * vh;
         if (!isLarge) {
-            placed.push({ l: ringRect.left, t: ringRect.top, r: ringRect.right, b: ringRect.bottom });
+            placed.push({ l: ringRect.left, t: ringRect.top, r: ringRect.right, b: ringRect.bottom, ring: true });
         }
-        pending.push({ label, ringRect });
+        pending.push({ label, ringRect, below: m.below });
     }
 
     // Pass 2: position labels, now avoiding the hint, every ring, and each other.
-    for (const { label, ringRect } of pending) {
-        const pos = placeLabel(label, ringRect, placed);
+    // `below` marks are pinned under their element first so others avoid them.
+    pending.sort((a, b) => (b.below ? 1 : 0) - (a.below ? 1 : 0));
+    for (const { label, ringRect, below } of pending) {
+        const pos = placeLabel(label, ringRect, placed, below);
         label.style.left = `${pos.left}px`;
         label.style.top = `${pos.top}px`;
     }
@@ -292,29 +308,34 @@ function init() {
     setupPressAndHold(
         btn,
         () => (overlay ? close() : open()),
-        () => { close(); btn.style.display = 'none'; localStorage.setItem(HIDE_KEY, '1'); },
+        () => setHidden(true),
     );
     document.body.appendChild(btn);
 
-    // Control hooks for the settings toggle (and console). A hidden button has
-    // no on-screen affordance, so the Quick Start Guide toggle uses these to
-    // bring it back.
-    window.showHelpButton = () => {
-        localStorage.removeItem(HIDE_KEY);
-        btn.style.display = '';
-        syncWebviewButton();
+    // Show/hide, keeping the webview state consistent: the .help-webview class
+    // holds the home fullscreen slot open for the button — drop it when hidden so
+    // the header reflows (Settings/Sleep reclaim the space), re-add when shown.
+    const setHidden = (hidden) => {
+        if (hidden) {
+            close();
+            btn.style.display = 'none';
+            localStorage.setItem(HIDE_KEY, '1');
+            document.documentElement.classList.remove('help-webview');
+        } else {
+            localStorage.removeItem(HIDE_KEY);
+            btn.style.display = '';
+            if (isInWebView()) document.documentElement.classList.add('help-webview');
+            syncWebviewButton();
+        }
     };
-    window.hideHelpButton = () => {
-        close();
-        btn.style.display = 'none';
-        localStorage.setItem(HIDE_KEY, '1');
-    };
+    window.showHelpButton = () => setHidden(false);
+    window.hideHelpButton = () => setHidden(true);
     window.isHelpButtonHidden = () => localStorage.getItem(HIDE_KEY) === '1';
 
     // Webview only: keep the button parked over the fullscreen-toggle slot,
     // re-syncing on resize and whenever the router swaps the page.
     if (isInWebView()) {
-        document.documentElement.classList.add('help-webview');
+        if (localStorage.getItem(HIDE_KEY) !== '1') document.documentElement.classList.add('help-webview');
         const sync = () => requestAnimationFrame(syncWebviewButton);
         sync();
         window.addEventListener('resize', sync);
