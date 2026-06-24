@@ -5,7 +5,7 @@ import { getTranslation } from './i18n.js';
 const LABEL_KEYS = {
     pressure: 'Pressure',
     flow: 'Flow',
-    groupTemperature: 'Temperature',
+    // groupTemperature intentionally omitted → falls back to trace.name '°C'
     weight: 'Weight'
 };
 
