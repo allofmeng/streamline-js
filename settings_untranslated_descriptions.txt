@@ -1,0 +1,183 @@
+=== Settings: strings with NO translation in the CSV (need translating) ===
+Add Images
+Add WiFi Scale
+Add WiFi scale manually
+Adjust screen brightness level
+Adjust the display size for better readability
+Adjust the display size for better readability. Changes apply after saving.
+Adjust the flow multiplier for shot timing
+Alert when tank water level drops below this height (0, 5, 10, 15, 20, 25, 30 mm)
+App Update
+Appends app version and machine firmware to the report
+Appends machine model, firmware version, and serial number
+Attach Machine Info
+Auto lets the machine decide. Force On keeps the refill kit always active. Force Off disables it.
+Automatically manage machine sleep/wake based on user presence and schedules.
+Bug Report
+Charge conservatively overnight between a sleep and morning time
+Charge to 100%
+Charge to 95%
+Charge up to 55%
+Charge up to 80%
+Check for app updates every 12 hours automatically
+Check for current skin updates
+Checking…
+Choose Images
+Choose the language for the application interface.
+Close
+Connections
+Contact Email
+Control screen wake-lock to prevent the display from sleeping during operation.
+Controls automatic scale power management when the machine sleeps. Display Off turns off the scale display. Disconnect disconnects the scale completely.
+Controls how the gateway monitors and controls the espresso machine
+Controls scale behaviour when machine sleeps.
+Conversation History
+Current application version
+Decent Account
+Decent account linked
+Decent support will reply to your email.
+Decent.app Information
+Decent.app Settings
+Dim the screen when low battery
+Direct line to the Decent support team
+Display Unit
+Duration to keep machine awake after schedule fires. Max 12 hours.
+Enable Screen Saver
+Enable smart charging for connected devices
+FLUSH FLOW
+FLUSH TEMPERATURE
+Failed to load decent.app settings
+Feature Request
+Firmware Version
+Flow rate for flush cycles
+Flush Temperature
+Forget
+General Feedback
+Get support and submit tickets for assistance
+Group Head Controller
+HEATER PH1 FLOW
+HEATER PH2 FLOW
+HOT WATER DURATION
+HOT WATER FLOW
+HOT WATER TEMP
+HOT WATER VOLUME
+Heater Phase 1 Flow
+Heater Phase 2 Flow
+Idle / Stop
+Images
+Keep the screen on while the app is active
+Later
+Latest
+Learn how to get started with your espresso machine
+Learn how to use Decent.app to create custom skins and more.
+LengthThreshold: minDuration
+Link your Decent account in the Decent app to send messages to support.
+Link your Decent account in the Decent app to tag feedback with your account.
+Loading messages…
+Machine Information
+Mains Voltage
+Message sent!
+Minutes of inactivity before auto-sleep
+Most WiFi scales are found automatically. Enter an IP address or hostname only if yours isn't discovered (e.g. on networks that block mDNS).
+New Message
+No Decent account linked
+No custom images — using default. Select images from your device.
+No messages yet. Send one below to start!
+No proxy token available.
+No settings match your search
+No voltage set yet — select your mains voltage.
+Note:
+Please enter a message.
+Please enter a subject.
+Prevent shots from starting when no scale is connected.
+Purges remaining water from the group head. Run before packing the machine to prevent leaks during transport.
+Quick Start Guide
+Range: 0 – 10 ml/s
+Range: 0 – 2 s
+Range: 0 – 5
+Range: 0.1 – 2.5 ml/s
+Range: 0.1 – 8.0 ml/s
+Range: 10 – 120 s
+Range: 10 – 500 ml
+Range: 130 – 170 °C
+Range: 5 – 120 s
+Range: 50 – 95 °C
+Refill Kit Mode
+Refresh Now
+Reset to Defaults
+Restart the machine after changing voltage for the setting to take effect.
+Restores fan threshold, heater idle temp, heater phase flows, phase 2 timeout, refill kit mode, flow multiplier, and steam purge to factory defaults.
+Retry Now
+Retrying automatically every 3 seconds...
+Run a descaling cycle to remove mineral buildup
+STEAM DURATION
+STEAM FLOW
+Save Credentials
+Scale Required
+Select File
+Select a category from the navigation panel to view and edit settings.
+Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.
+Select measurement units for the application
+Select measurement units used throughout the application
+Send Message
+Set brewing time limit
+Set steam temperature
+Set steam temperature (135-170°C)
+Set the display resolution
+Set the steam purge mode for the machine
+Set the water tank temperature (10-40°C)
+Set to match your local mains voltage. Incorrect setting may affect heater performance.
+Set water temperature
+Sets the verbosity of application logging output
+Share thoughts or ideas
+Show help button
+Show screen saver when the machine sleeps
+Show tank level on the home screen in millimeters or millilitres
+Skin changed — refresh the page to apply.
+Sleep Timeout (minutes)
+Start writing your own skin.
+Steam Settings
+Suggest an improvement
+TANK TEMPERATURE
+Tap a skin to make it active. Tap reload to apply.
+Tap to compose a message…
+Tap to write description…
+Temperature for flush cycles
+Temperature threshold at which the fan turns on (0–100°C)
+The fan activates when the machine's internal temperature exceeds this threshold.
+Theme & Updates
+This may take several minutes. Do not power off the machine during the update.
+Time Between Images (s)
+Toggle between light and dark themes
+Track user presence to automatically sleep the machine
+USB Charger
+Unable to reach De1
+Unavailable
+Upload shots to visualizer.coffee
+VOLUME FLOW MULT
+View Release
+View issue
+Volume Flow Multiplier
+WATER ALERT LEVEL
+WEIGHT FLOW MULT
+Water Alert Level
+auto
+best battery life
+better battery life
+decent.app Application Settings
+no battery management
+slightly better battery life
+
+--- Long-press (context) menu ---
+(Note: "Hide" and "Edit" already exist in the translation CSV — not listed here.)
+Apply {value}
+Enter value
+Save current ({value}) here
+Revert to {value}
+Replace with
+Clear slot
+Assign to favourite {n}
+Browse Profiles
+Edit Profile
+Use Profile Defaults
+Copy

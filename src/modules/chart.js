@@ -496,7 +496,7 @@ function applyPendingUpdates() {
     }
 }
 
-export function updateChart(shotStartTime, data, weight, filterToPouring = true) {
+export function updateChart(shotStartTime, data, weight, weightFlow = null, filterToPouring = true) {
     if (data && data.state && data.state.substate) {
         currentSubstate = data.state.substate;
     }
@@ -532,8 +532,13 @@ export function updateChart(shotStartTime, data, weight, filterToPouring = true)
     const targetFlowY = data.targetFlow;
     const groupTemperatureY = (data.groupTemperature / 100) * 10;
 
+    // Prefer the server's smoothed weightFlow (g/s) from ScaleSnapshot. Fall back
+    // to a local delta+EMA only when it's absent (older middleware / no scale frame).
     let weightY = 0;
-    if (lastTime > 0 && time > lastTime) {
+    if (weightFlow !== null && weightFlow !== undefined) {
+        weightY = weightFlow;
+        smoothedWeightChange = weightFlow; // keep EMA seeded if we later fall back
+    } else if (lastTime > 0 && time > lastTime) {
         const timeDiff = time - lastTime;
         const rawWeightChange = (weight - lastWeight) / timeDiff;
         smoothedWeightChange = (SMOOTHING_FACTOR * rawWeightChange) + (1 - SMOOTHING_FACTOR) * smoothedWeightChange;
@@ -724,8 +729,13 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 }
                 const time = (scaleTimestamp - shotStartTime) / 1000;
                 if (time >= 0) {
+                    // Prefer the stored server weightFlow (g/s); fall back to a local
+                    // delta+EMA for older records that don't carry it.
                     let weightChange = 0;
-                    if (lastScaleTime > 0 && time > lastScaleTime) {
+                    if (scaleData.weightFlow !== null && scaleData.weightFlow !== undefined) {
+                        weightChange = scaleData.weightFlow;
+                        localSmoothedWeightChange = scaleData.weightFlow; // seed EMA in case we fall back later
+                    } else if (lastScaleTime > 0 && time > lastScaleTime) {
                         const timeDiff = time - lastScaleTime;
                         const rawWeightChange = (scaleData.weight - lastScaleWeight) / timeDiff;
                         localSmoothedWeightChange = (SMOOTHING_FACTOR * rawWeightChange) + (1 - SMOOTHING_FACTOR) * localSmoothedWeightChange;
@@ -776,8 +786,13 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 }
                 const time = (scaleTimestamp - shotStartTime) / 1000;
                 if (time >= 0) {
+                    // Prefer the stored server weightFlow (g/s); fall back to a local
+                    // delta+EMA for older records that don't carry it.
                     let weightChange = 0;
-                    if (lastScaleTime > 0 && time > lastScaleTime) {
+                    if (scaleData.weightFlow !== null && scaleData.weightFlow !== undefined) {
+                        weightChange = scaleData.weightFlow;
+                        localSmoothedWeightChange = scaleData.weightFlow; // seed EMA in case we fall back later
+                    } else if (lastScaleTime > 0 && time > lastScaleTime) {
                         const timeDiff = time - lastScaleTime;
                         const rawWeightChange = (scaleData.weight - lastScaleWeight) / timeDiff;
                         localSmoothedWeightChange = (SMOOTHING_FACTOR * rawWeightChange) + (1 - SMOOTHING_FACTOR) * localSmoothedWeightChange;

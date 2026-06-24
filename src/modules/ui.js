@@ -993,8 +993,8 @@ export function initUI(callbacks) {
             const longPressCallback = () => {
                 const tempValueEl = document.getElementById('temp-value');
                 openContextMenu(button, [
-                    { label: `Apply ${button.textContent}`, onSelect: clickCallback },
-                    { label: 'Enter value…', onSelect: () => {
+                    { label: getTranslation('Apply {value}').replace('{value}', button.textContent), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
                         const current = parseFloat(button.textContent);
                         openNumpadModal(makeNumpadMockInput(isNaN(current) ? '' : current), {
                             fieldType: 'temperature',
@@ -1005,12 +1005,12 @@ export function initUI(callbacks) {
                             },
                         });
                     } },
-                    { label: `Save current (${tempValueEl.textContent}) here`, onSelect: () => {
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', tempValueEl.textContent), onSelect: () => {
                         button.textContent = tempValueEl.textContent;
                         flashElement(button);
                         flashElement(tempValueEl);
                     } },
-                    { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
                         flashElement(button);
                         showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
@@ -1047,8 +1047,8 @@ export function initUI(callbacks) {
                 const currentLabel = `${doseInValue}:${drinkOutValue}`;
                 const [presetDoseStr, presetOutStr] = button.textContent.split(':');
                 openContextMenu(button, [
-                    { label: `Apply ${button.textContent}`, onSelect: clickCallback },
-                    { label: 'Enter values…', onSelect: () => {
+                    { label: getTranslation('Apply {value}').replace('{value}', button.textContent), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
                         openNumpadModal(makeNumpadMockInput(presetDoseStr), {
                             fieldType: 'dose-in',
                             onConfirm: (doseVal) => {
@@ -1070,13 +1070,13 @@ export function initUI(callbacks) {
                             },
                         });
                     } },
-                    { label: `Save current (${currentLabel}) here`, onSelect: () => {
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', currentLabel), onSelect: () => {
                         button.textContent = currentLabel;
                         flashElement(button);
                         flashElement(document.getElementById('dose-in-value'));
                         flashElement(document.getElementById('drink-out-value'));
                     } },
-                    { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
                         flashElement(button);
                         showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
@@ -1107,8 +1107,8 @@ export function initUI(callbacks) {
             const longPressCallback = () => {
                 const flushValueEl = document.getElementById('flush-value');
                 openContextMenu(button, [
-                    { label: `Apply ${button.textContent}`, onSelect: clickCallback },
-                    { label: 'Enter value…', onSelect: () => {
+                    { label: getTranslation('Apply {value}').replace('{value}', button.textContent), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
                         const current = parseFloat(button.textContent);
                         openNumpadModal(makeNumpadMockInput(isNaN(current) ? '' : current), {
                             fieldType: 'flush',
@@ -1119,12 +1119,12 @@ export function initUI(callbacks) {
                             },
                         });
                     } },
-                    { label: `Save current (${flushValueEl.textContent}) here`, onSelect: () => {
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', flushValueEl.textContent), onSelect: () => {
                         button.textContent = flushValueEl.textContent;
                         flashElement(button);
                         flashElement(flushValueEl);
                     } },
-                    { label: `Revert to ${button.dataset.defaultValue}`, danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
                         flashElement(button);
                         showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
@@ -1173,8 +1173,8 @@ export function initUI(callbacks) {
                 const unit = isTempMode ? '°c' : 'ml';
                 const fieldType = isTempMode ? 'hot-water-temp' : 'hot-water-vol';
                 openContextMenu(button, [
-                    { label: `Apply ${presetValue}${unit}`, onSelect: clickCallback },
-                    { label: 'Enter value…', onSelect: () => {
+                    { label: getTranslation('Apply {value}').replace('{value}', `${presetValue}${unit}`), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
                         openNumpadModal(makeNumpadMockInput(presetValue), {
                             fieldType,
                             onConfirm: (newVal) => {
@@ -1188,14 +1188,14 @@ export function initUI(callbacks) {
                             },
                         });
                     } },
-                    { label: `Save current (${valueEl.textContent}) here`, disabled: isNaN(currentValue), onSelect: () => {
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', valueEl.textContent), disabled: isNaN(currentValue), onSelect: () => {
                         if (isTempMode) hotWaterTempPresets[index] = currentValue;
                         else hotWaterVolPresets[index] = currentValue;
                         updateHotWaterPresetDisplay();
                         flashElement(button);
                         flashElement(valueEl);
                     } },
-                    { label: `Revert to ${defaultValue}${unit}`, danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue}${unit}`), danger: true, onSelect: () => {
                         if (isTempMode) hotWaterTempPresets[index] = defaultValue;
                         else hotWaterVolPresets[index] = defaultValue;
                         updateHotWaterPresetDisplay();
@@ -1231,8 +1231,8 @@ export function initUI(callbacks) {
                 const presetValue = steamTimePresets[index];
                 const defaultValue = DEFAULT_STEAM_TIME_PRESETS[index];
                 openContextMenu(button, [
-                    { label: `Apply ${presetValue}s`, onSelect: clickCallback },
-                    { label: 'Enter value…', onSelect: () => {
+                    { label: getTranslation('Apply {value}').replace('{value}', `${presetValue}s`), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
                         openNumpadModal(makeNumpadMockInput(presetValue), {
                             fieldType: 'steam-duration',
                             onConfirm: (newVal) => {
@@ -1245,13 +1245,13 @@ export function initUI(callbacks) {
                             },
                         });
                     } },
-                    { label: `Save current (${valueEl.textContent}) here`, disabled: isNaN(currentValue), onSelect: () => {
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', valueEl.textContent), disabled: isNaN(currentValue), onSelect: () => {
                         steamTimePresets[index] = currentValue;
                         updateSteamPresetDisplay();
                         flashElement(button);
                         flashElement(valueEl);
                     } },
-                    { label: `Revert to ${defaultValue}s`, danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue}s`), danger: true, onSelect: () => {
                         steamTimePresets[index] = defaultValue;
                         updateSteamPresetDisplay();
                         flashElement(button);
@@ -1288,8 +1288,8 @@ export function initUI(callbacks) {
                 const presetValue = steamFlowPresets[index];
                 const defaultValue = DEFAULT_STEAM_FLOW_PRESETS[index];
                 openContextMenu(button, [
-                    { label: `Apply ${presetValue.toFixed(1)}ml/s`, onSelect: clickCallback },
-                    { label: 'Enter value…', onSelect: () => {
+                    { label: getTranslation('Apply {value}').replace('{value}', `${presetValue.toFixed(1)}ml/s`), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
                         openNumpadModal(makeNumpadMockInput(presetValue.toFixed(1)), {
                             fieldType: 'steam-flow',
                             onConfirm: (newVal) => {
@@ -1303,14 +1303,14 @@ export function initUI(callbacks) {
                             },
                         });
                     } },
-                    { label: `Save current (${valueEl.textContent}ml/s) here`, disabled: isNaN(currentValue), onSelect: () => {
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', `${valueEl.textContent}ml/s`), disabled: isNaN(currentValue), onSelect: () => {
                         steamFlowPresets[index] = currentValue;
                         updateSteamPresetDisplay();
                         persistSteamFlowPresets();
                         flashElement(button);
                         flashElement(valueEl);
                     } },
-                    { label: `Revert to ${defaultValue.toFixed(1)}ml/s`, danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue.toFixed(1)}ml/s`), danger: true, onSelect: () => {
                         steamFlowPresets[index] = defaultValue;
                         updateSteamPresetDisplay();
                         persistSteamFlowPresets();
@@ -1607,6 +1607,7 @@ export function updateMachineStatus(data) {
     //needswater state
     const isNeedsWaterState = status?.toLowerCase().includes('needs water') ||
                                 status?.toLowerCase().includes('need')||
+                                status?.toLowerCase().includes('out of water')||
                              substate?.toLowerCase().includes('needs water');
     // pouringDone is the post-action tail (e.g. steam auto-purge). DE1 keeps
     // state='steam' during this window but the user-visible action is over —
@@ -1686,10 +1687,9 @@ export function updateMachineStatus(data) {
     
     // Handle Needs Water state - takes priority
     if (isNeedsWaterState) {
-        const needsText = getTranslation('Needs') || 'Needs';
-        const waterText = getTranslation('Water') || 'Water';
-        machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${needsText}</span> <span class="text-[var(--status-clickable-color)]">${waterText}</span>`;
-        logger.debug('DEBUG: Needs Water state - Set machine status with red/blue styling');
+        const outOfWaterText = getTranslation('Out of water') || 'Out of water';
+        machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${outOfWaterText}</span>`;
+        logger.debug('DEBUG: Out of water state - Set machine status with red styling');
     } else if (isEspressoPreparingForShot) {
         logger.debug('Entering isEspressoPreparingForShot condition');
         const espressoonlytext = getTranslation('Espresso');

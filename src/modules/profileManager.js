@@ -723,16 +723,16 @@ function openFavoriteContextMenu(button, index) {
 
     const items = assigned
         ? [
-            { label: `Edit "${title}"`, onSelect: () => {
+            { label: `${getTranslation('Edit')} "${title}"`, onSelect: () => {
                 window.__pendingEditProfile = profileRecord;
                 loadPage('src/profiles/profile_editor.html');
             } },
-            { label: 'Replace with…', onSelect: () => {
+            { label: getTranslation('Replace with'), onSelect: () => {
                 sessionStorage.setItem('pendingAssignmentIndex', index);
                 loadPage('src/profiles/profile_selector.html');
             } },
             { divider: true },
-            { label: 'Clear slot', danger: true, onSelect: async () => {
+            { label: getTranslation('Clear slot'), danger: true, onSelect: async () => {
                 favoriteAssignments[index] = null;
                 await saveAssignments();
                 updateButtonUI();
@@ -740,7 +740,7 @@ function openFavoriteContextMenu(button, index) {
             } },
         ]
         : [
-            { label: 'Browse profiles…', onSelect: () => {
+            { label: getTranslation('Browse Profiles'), onSelect: () => {
                 sessionStorage.setItem('pendingAssignmentIndex', index);
                 loadPage('src/profiles/profile_selector.html');
             } },

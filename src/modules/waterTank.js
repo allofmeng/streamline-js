@@ -92,6 +92,12 @@ export function initWaterTankSocket() {
                 lastLevelMm = Math.round(data.currentLevel);
                 renderLevel();
             }
+            // REA is the source of truth for the refill (alert) level. Mirror it into
+            // the localStorage key the settings page reads, so the displayed alert
+            // level reflects REA when available instead of drifting from a stale local copy.
+            if (data.refillLevel !== undefined) {
+                localStorage.setItem('waterRefillLevel', String(Math.round(data.refillLevel)));
+            }
         } catch (e) {
             logger.error('Error parsing water level data:', e);
         }

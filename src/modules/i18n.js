@@ -2,6 +2,9 @@ import { logger } from './logger.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 
 const translations = {};
+// lowercased key -> canonical CSV key, so lookups tolerate casing differences
+// between the UI text and the sheet (e.g. "Force On" finds "force on").
+const keyIndex = {};
 export let supportedLanguages = [];
 export let currentLanguage = 'en';
 
@@ -38,6 +41,7 @@ function parseCSV(csvText) {
 
         const key = values[0];
         if (key) {
+            keyIndex[key.toLowerCase()] = key;
             headers.forEach((lang, index) => {
                 if (values[index] !== undefined) {
                     const translation = values[index] || values[0] || key;
@@ -83,7 +87,17 @@ export function translatePage() {
  * @returns {string} The translated string, or the key if not found.
  */
 export function getTranslation(key) {
-    return translations[currentLanguage]?.[key] || key;
+    const table = translations[currentLanguage];
+    if (table && table[key] !== undefined && table[key] !== '') return table[key];
+    // Case-insensitive fallback: tolerate UI/CSV casing differences. For the
+    // English/source column the value equals the key, so return the caller's
+    // original casing; for other languages return the actual translation.
+    const canon = keyIndex[key?.toLowerCase?.()];
+    if (canon && table) {
+        const val = table[canon];
+        if (val) return val.toLowerCase() === key.toLowerCase() ? key : val;
+    }
+    return key;
 }
 
 /**

@@ -2,7 +2,7 @@ import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayMode
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
-import { initI18n } from './i18n.js';
+import { initI18n, getTranslation } from './i18n.js';
 import * as history from './history.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
@@ -133,9 +133,16 @@ function initMobileValueInputs() {
     logger.info('Mobile value inputs initialized');
 }
 
+// Display-label overrides for raw machine states whose camelCase split reads
+// poorly. 'Out of water' is also an existing i18n key.
+const STATE_LABEL_OVERRIDES = {
+    needsWater: 'Out of water'
+};
+
 // Helper function to format state strings
 function formatStateString(text) {
     if (!text) return '';
+    if (STATE_LABEL_OVERRIDES[text]) return STATE_LABEL_OVERRIDES[text];
     // "camelCase" -> "Camel Case"
     const result = text.replace(/([A-Z])/g, ' $1');
     return result.charAt(0).toUpperCase() + result.slice(1).trim();
@@ -153,6 +160,7 @@ let previousState = {}; // Track previous machine state object {state, substate}
 let currentActiveProfile = null; // Track active profile for shot-end reason detection
 
 let latestScaleWeight = 0;
+let latestScaleWeightFlow = null; // server-smoothed g/s from ScaleSnapshot; null until a frame arrives
 let latestScaleBattery = null;
 window.getLatestScaleBattery = () => latestScaleBattery;
 let heatingStartTime = null;
@@ -539,7 +547,7 @@ function handleData(data) {
                     historyLabelEl.textContent = 'CURRENT';
                 }
             }
-            chart.updateChart(shotStartTime, data, latestScaleWeight);
+            chart.updateChart(shotStartTime, data, latestScaleWeight, latestScaleWeightFlow);
             shotData.updateShotData(data, latestScaleWeight);
         }
     } else {
@@ -568,6 +576,7 @@ function handleScaleData(data) {
     const scaleInfoContainer = document.getElementById('scale-info-container');
     const currentWeight = data.weight;
     latestScaleWeight = currentWeight;
+    latestScaleWeightFlow = data.weightFlow ?? null; // server-smoothed flow for the chart's weight trace
     const batteryValue = data.batteryLevel ?? data.battery;
     if (batteryValue !== null && batteryValue !== undefined) {
         const wasNull = latestScaleBattery === null;
@@ -1156,7 +1165,7 @@ function showExternalUrlModal(url) {
     modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-6';
     modal.innerHTML = `
         <div class="bg-white text-[#385a92] rounded-2xl p-8 max-w-[700px] w-full flex flex-col gap-6">
-            <p class="text-[28px] font-bold">Open this page on your phone or computer</p>
+            <p class="text-[28px] font-bold">Open this page in your browser</p>
             <input id="external-url-input" type="text" readonly value="${url}"
                 class="w-full text-[24px] px-4 py-3 rounded-lg border-2 border-[#385a92] bg-[#f5f7fa] select-all" />
             <div class="flex gap-4 justify-end">
@@ -1354,11 +1363,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         : null;
                     const items = [
                         {
-                            label: 'Browse Profiles',
+                            label: getTranslation('Browse Profiles'),
                             onSelect: () => loadPage('src/profiles/profile_selector.html'),
                         },
                         {
-                            label: profileTitle ? `Edit "${profileTitle}"` : 'Edit Profile',
+                            label: profileTitle ? `${getTranslation('Edit')} "${profileTitle}"` : getTranslation('Edit Profile'),
                             disabled: !activeRecord,
                             onSelect: () => {
                                 window.__pendingEditProfile = activeRecord;
@@ -1366,7 +1375,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             },
                         },
                         {
-                            label: 'Use Profile Defaults',
+                            label: getTranslation('Use Profile Defaults'),
                             disabled: !activeRecord,
                             onSelect: async () => {
                                 const ok = await profileManager.resetActiveProfileToDefaults();

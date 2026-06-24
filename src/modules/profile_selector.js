@@ -4,7 +4,7 @@ import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
 import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, uploadProfileWithParent, deleteProfile, updateProfileVisibility, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
 import { initChart, plotProfile } from './chart.js';
-import { translatePage } from './i18n.js';
+import { translatePage, getTranslation } from './i18n.js';
 import { loadPage } from './router.js';
 import { openContextMenu, closeContextMenu } from './context-menu.js';
 
@@ -559,15 +559,15 @@ function showProfileContextMenu(key, profileRecord, anchorEl) {
     }
 
     const items = [
-        ...(!isHidden ? [{ label: 'Hide', onSelect: doHide }] : []),
+        ...(!isHidden ? [{ label: getTranslation('Hide'), onSelect: doHide }] : []),
         { divider: true },
         ...Array.from({ length: FAV_COUNT }, (_, i) => ({
-            label: `Assign to favourite ${i + 1}`,
+            label: getTranslation('Assign to favourite {n}').replace('{n}', i + 1),
             onSelect: () => doAssign(i),
         })),
         { divider: true },
         {
-            label: 'Edit',
+            label: getTranslation('Edit'),
             onSelect: () => {
                 window.__pendingEditProfile = profileRecord;
                 loadPage('src/profiles/profile_editor.html');
