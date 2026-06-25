@@ -441,7 +441,9 @@ function renderStepCards() {
     const TOTAL_ROWS = 6;
 
     container.style.display = 'grid';
-    container.style.gridTemplateColumns = `110px repeat(${numSteps}, minmax(300px, 1fr))`;
+    // Label column grows to fit the longest (translated) row label — min 110px so
+    // English stays compact, max-content so longer languages don't clip/overflow.
+    container.style.gridTemplateColumns = `minmax(110px, max-content) repeat(${numSteps}, minmax(300px, 1fr))`;
     container.style.gridTemplateRows = `60px 1fr 1fr 1fr 1fr 60px`;
     container.style.height = '100%';
     container.style.width = '100%';
@@ -468,7 +470,7 @@ function renderStepCards() {
         el.style.zIndex = '2';
         if (text) {
             const span = document.createElement('span');
-            span.className = 'text-[17px] font-semibold text-[var(--low-contrast-white)] leading-tight';
+            span.className = 'text-[17px] font-semibold text-[var(--low-contrast-white)] leading-tight break-words';
             span.textContent = text;
             el.appendChild(span);
         }
@@ -1068,12 +1070,12 @@ function renderStepCards() {
             const typeBtn = document.createElement('button');
             typeBtn.type = 'button';
             typeBtn.className = btnGrayFlash;
-            typeBtn.textContent = exitType.charAt(0).toUpperCase() + exitType.slice(1);
+            typeBtn.textContent = getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1));
 
             const condBtn = document.createElement('button');
             condBtn.type = 'button';
             condBtn.className = btnGrayFlash;
-            condBtn.textContent = exitCond.charAt(0).toUpperCase() + exitCond.slice(1);
+            condBtn.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
 
             const isExitExpanded = expandedExitSteps.has(index);
 
@@ -1150,7 +1152,7 @@ function renderStepCards() {
 
             typeBtn.addEventListener('click', () => {
                 exitType = EXIT_TYPES[(EXIT_TYPES.indexOf(exitType) + 1) % EXIT_TYPES.length];
-                typeBtn.textContent = exitType.charAt(0).toUpperCase() + exitType.slice(1);
+                typeBtn.textContent = getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1));
                 if (exitType !== 'off') valueDisplay.textContent = `${exitValue} ${EXIT_UNIT_MAP[exitType]}`;
                 applyExitOffState();
                 if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
@@ -1159,7 +1161,7 @@ function renderStepCards() {
 
             condBtn.addEventListener('click', () => {
                 exitCond = exitCond === 'over' ? 'under' : 'over';
-                condBtn.textContent = exitCond.charAt(0).toUpperCase() + exitCond.slice(1);
+                condBtn.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
                 if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
                 else editorState.profile.steps[index].exit.condition = exitCond;
             });
@@ -1581,7 +1583,7 @@ function renderSettingsTab() {
         const wrapper = document.createElement('div');
         wrapper.className = 'flex flex-col gap-[12px]';
         const label = document.createElement('div');
-        label.className = 'text-[24px] font-semibold text-[var(--text-primary)]';
+        label.className = 'text-[24px] font-semibold text-[var(--text-primary)] break-words';
         label.textContent = labelText;
         wrapper.appendChild(label);
         wrapper.appendChild(element);
@@ -2014,7 +2016,9 @@ function describeStep(step, index) {
 
     function makeLine(children) {
         const span = document.createElement('span');
-        span.className = 'inline-flex items-center gap-[6px]';
+        // flex-wrap so longer-language sentence rows wrap to a second line instead
+        // of overflowing the step cell.
+        span.className = 'inline-flex flex-wrap items-center justify-center gap-[6px]';
         for (const child of children) {
             if (typeof child === 'string') {
                 span.appendChild(makeProseSpan(child));
@@ -2340,12 +2344,12 @@ function describeStep(step, index) {
 
         if (exitType !== 'off' && exitValue !== 0) {
             const exitTypeToggle = makeToggle(
-                exitType.charAt(0).toUpperCase() + exitType.slice(1),
+                getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1)),
                 (span) => {
                     const nonOff = EXIT_TYPES.filter(t => t !== 'off');
                     const idx = nonOff.indexOf(exitType);
                     exitType = nonOff[(idx + 1) % nonOff.length];
-                    span.textContent = exitType.charAt(0).toUpperCase() + exitType.slice(1);
+                    span.textContent = getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1));
                     if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
                     else editorState.profile.steps[index].exit.type = exitType;
                     // Update the spinner's unit display — rebuild is simplest via re-render
@@ -2354,10 +2358,10 @@ function describeStep(step, index) {
             );
 
             const exitCondToggle = makeToggle(
-                exitCond.charAt(0).toUpperCase() + exitCond.slice(1),
+                getTranslation(exitCond === 'over' ? 'is over' : 'is under'),
                 (span) => {
                     exitCond = exitCond === 'over' ? 'under' : 'over';
-                    span.textContent = exitCond.charAt(0).toUpperCase() + exitCond.slice(1);
+                    span.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
                     if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
                     else editorState.profile.steps[index].exit.condition = exitCond;
                     renderReviewGraph();
@@ -2374,7 +2378,7 @@ function describeStep(step, index) {
                 }
             );
 
-            lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle, getTranslation('is'), exitCondToggle, exitSpinner]));
+            lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle, exitCondToggle, exitSpinner]));
         }
     }
 

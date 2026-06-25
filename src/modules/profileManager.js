@@ -441,12 +441,24 @@ function fitButtonText(button) {
     let fontSize = 0;
 
     if (wordCount <= 3) {
-        // Short names: use FAV_MAX_FONT in wrap mode — two lines at 22px fit easily.
-        span.style.whiteSpace = 'normal';
-        span.style.width = maxWidth + 'px';
-        span.style.textWrap = 'balance';
-        span.style.fontSize = FAV_MAX_FONT + 'px';
-        fontSize = span.offsetHeight <= maxHeight ? FAV_MAX_FONT : FAV_MIN_FONT;
+        // Short names: prefer ONE line at the largest size that fits (22→18).
+        // Only fall back to wrapping if it can't fit on a single line even at 18px.
+        span.style.whiteSpace = 'nowrap';
+        for (let f = FAV_MAX_FONT; f >= FAV_SINGLE_LINE_MIN; f -= 2) {
+            span.style.fontSize = f + 'px';
+            if (span.offsetWidth <= maxWidth) {
+                fontSize = f;
+                break;
+            }
+        }
+        if (!fontSize) {
+            // Too wide for a single line — wrap at full size, drop to min if too tall.
+            span.style.whiteSpace = 'normal';
+            span.style.width = maxWidth + 'px';
+            span.style.textWrap = 'balance';
+            span.style.fontSize = FAV_MAX_FONT + 'px';
+            fontSize = span.offsetHeight <= maxHeight ? FAV_MAX_FONT : FAV_MIN_FONT;
+        }
     } else {
         // Longer names: try single-line shrink down to FAV_SINGLE_LINE_MIN.
         for (let f = FAV_MAX_FONT; f >= FAV_SINGLE_LINE_MIN; f -= 2) {

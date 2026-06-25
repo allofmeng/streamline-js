@@ -3230,7 +3230,7 @@ export function renderMainAirPurgeSettings() {
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
-                        Purges remaining water from the group head. Run before packing the machine to prevent leaks during transport.
+                        Purges remaining water from inside the machine. Run before packing the machine to prevent leaks during transport.
                     </p>
                 </div>
             </div>
