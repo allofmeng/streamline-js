@@ -449,7 +449,7 @@ function handleData(data) {
                 try {
                     const reaSettings = await getReaSettings();
                     if (reaSettings?.blockOnNoScale) {
-                        ui.showToast('Shot blocked: no scale connected', 4000, 'error');
+                        ui.showToast(getTranslation('Shot blocked: no scale connected'), 4000, 'error');
                         return;
                     }
                 } catch { /* fall through to normal stop reason */ }
@@ -475,13 +475,13 @@ function handleData(data) {
 
             let stopReason;
             if (isScaleConnected && WEIGHT_HIT) {
-                stopReason = `Stopped by weight: ${finalWeight.toFixed(1)}g`;
+                stopReason = getTranslation('Stopped by weight: {value}').replace('{value}', `${finalWeight.toFixed(1)}g`);
             } else if (!isScaleConnected && VOLUME_HIT) {
-                stopReason = `Stopped by volume: ${Math.round(finalVolume)}ml`;
+                stopReason = getTranslation('Stopped by volume: {value}').replace('{value}', `${Math.round(finalVolume)}ml`);
             } else if (TIME_HIT) {
-                stopReason = `Stopped by time: ${totalS.toFixed(1)}s`;
+                stopReason = getTranslation('Stopped by time: {value}').replace('{value}', `${totalS.toFixed(1)}s`);
             } else {
-                stopReason = `Shot stopped: ${totalS.toFixed(1)}s`;
+                stopReason = getTranslation('Shot stopped: {value}').replace('{value}', `${totalS.toFixed(1)}s`);
             }
             ui.showToast(stopReason, 6000, 'info');
 

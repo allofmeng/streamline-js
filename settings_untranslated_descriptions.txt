@@ -175,9 +175,15 @@ Enter value
 Save current ({value}) here
 Revert to {value}
 Replace with
-Clear slot
+Clear button
 Assign to favourite {n}
 Browse Profiles
 Edit Profile
 Use Profile Defaults
 Copy
+please
+Shot blocked: no scale connected
+Stopped by weight: {value}
+Stopped by volume: {value}
+Stopped by time: {value}
+Shot stopped: {value}

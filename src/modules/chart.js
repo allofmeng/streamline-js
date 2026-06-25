@@ -38,6 +38,11 @@ let lastWeight = 0;
 let lastTime = 0;
 const SMOOTHING_FACTOR = 0.1;
 let smoothedWeightChange = 0;
+// Previous target values, so at a step boundary we can anchor the old value at
+// the new time and render a vertical jump (e.g. pressure→flow swap) instead of a
+// diagonal — without stair-stepping smooth in-step ramps. null = no prior frame.
+let lastTargetPressureY = null;
+let lastTargetFlowY = null;
 
 // Base chart data with light mode defaults
 const baseChartData = {
@@ -549,6 +554,18 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
 
     const isFirstDataPoint = chartData.pressure.x.length === 0;
 
+    // At a step boundary, anchor each target's PREVIOUS value at this x before the
+    // new value is pushed below. That makes a pump-mode swap (pressure 8→0 / flow
+    // 0→8) draw as a vertical step. Only fires on step changes, so smooth in-step
+    // target ramps keep their diagonal. Step frames take the full-react flush path,
+    // so writing to chartData here is enough (the buffered extendTraces path is skipped).
+    if (stepMarkerAdded && lastTargetPressureY !== null) {
+        chartData.targetPressure.x.push(time);
+        chartData.targetPressure.y.push(lastTargetPressureY);
+        chartData.targetFlow.x.push(time);
+        chartData.targetFlow.y.push(lastTargetFlowY);
+    }
+
     chartData.pressure.x.push(time);
     chartData.pressure.y.push(pressureY);
     chartData.flow.x.push(time);
@@ -561,6 +578,9 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     chartData.groupTemperature.y.push(groupTemperatureY);
     chartData.weight.x.push(time);
     chartData.weight.y.push(weightY);
+
+    lastTargetPressureY = targetPressureY;
+    lastTargetFlowY = targetFlowY;
 
     // Buffer this frame; the actual Plotly draw happens once per animation
     // frame in flushChart(). A step marker forces a full react on flush.
@@ -594,6 +614,8 @@ export function clearChart() {
     lastWeight = 0;
     lastTime = 0;
     smoothedWeightChange = 0;
+    lastTargetPressureY = null;
+    lastTargetFlowY = null;
     previousSubstateForShape = 'idle';
     liveProfileFrame = -1;  // FIX: Reset profile frame tracking
     currentSubstate = 'idle';  // FIX: Reset substate
@@ -678,6 +700,8 @@ export function plotHistoricalShot(measurements, workflow = null) {
     let localSmoothedWeightChange = 0;
 
     let historicalCurrentProfileFrame = -1; // Track current profileFrame for historical data
+    let histLastTargetPressure = null;      // for the vertical-jump anchor at step boundaries
+    let histLastTargetFlow = null;
 
     // If workflow is provided, use step exit conditions for vertical lines
     if (workflow && workflow.profile && workflow.profile.steps) {
@@ -700,10 +724,21 @@ export function plotHistoricalShot(measurements, workflow = null) {
                         tempChartData.pressure.y.push(machineData.pressure);
                         tempChartData.flow.x.push(time);
                         tempChartData.flow.y.push(machineData.flow);
+                        // Step boundary: anchor previous target values at this x so a
+                        // pump-mode swap renders as a vertical step (mirrors live chart).
+                        if (machineData.profileFrame !== undefined && machineData.profileFrame !== null &&
+                            machineData.profileFrame !== historicalCurrentProfileFrame && histLastTargetPressure !== null) {
+                            tempChartData.targetPressure.x.push(time);
+                            tempChartData.targetPressure.y.push(histLastTargetPressure);
+                            tempChartData.targetFlow.x.push(time);
+                            tempChartData.targetFlow.y.push(histLastTargetFlow);
+                        }
                         tempChartData.targetPressure.x.push(time);
                         tempChartData.targetPressure.y.push(machineData.targetPressure);
                         tempChartData.targetFlow.x.push(time);
                         tempChartData.targetFlow.y.push(machineData.targetFlow);
+                        histLastTargetPressure = machineData.targetPressure;
+                        histLastTargetFlow = machineData.targetFlow;
                         tempChartData.groupTemperature.x.push(time);
                         tempChartData.groupTemperature.y.push((machineData.groupTemperature / 100) * 10);
                         tempChartData.targetTemperature.x.push(time);

@@ -1696,7 +1696,7 @@ export function updateMachineStatus(data) {
         const espressoheatingtext = getTranslation('Heating'); 
         const pleasetext = getTranslation('please');
         const waittext = getTranslation('wait');
-        machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${espressoonlytext} ${espressoheatingtext}:</span><span class="text-[var(--status-clickable-color)]">${pleasetext} ${waittext}</span>`;
+        machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${espressoonlytext} ${espressoheatingtext} : </span><span class="text-[var(--status-clickable-color)]">${pleasetext} ${waittext}</span>`;
     } else if (isHeatingWithTimeRemaining) {
         // Split the status string to apply different colors to "Heating" and "Xs remaining"
         const parts = status.split(': ');

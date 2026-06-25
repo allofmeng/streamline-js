@@ -426,7 +426,7 @@ function fitButtonText(button) {
     const text = button.textContent;
     if (!text || !text.trim()) return;
 
-    const padX = 16; // px-2 = 8px each side
+    const padX = 24; // px-3 = 12px each side
     const padY = 8;
     const maxWidth = button.offsetWidth - padX;
     const maxHeight = button.offsetHeight - padY;
@@ -434,7 +434,7 @@ function fitButtonText(button) {
     const wordCount = text.trim().split(/\s+/).length;
 
     const span = document.createElement('span');
-    span.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-weight:600;line-height:1.25;';
+    span.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-weight:600;line-height:1.25;overflow-wrap:anywhere;';
     span.textContent = text;
     document.body.appendChild(span);
 
@@ -732,7 +732,7 @@ function openFavoriteContextMenu(button, index) {
                 loadPage('src/profiles/profile_selector.html');
             } },
             { divider: true },
-            { label: getTranslation('Clear slot'), danger: true, onSelect: async () => {
+            { label: getTranslation('Clear button'), danger: true, onSelect: async () => {
                 favoriteAssignments[index] = null;
                 await saveAssignments();
                 updateButtonUI();
