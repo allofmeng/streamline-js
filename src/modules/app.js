@@ -463,8 +463,12 @@ function handleData(data) {
             const finalVolume = finishedShot.volumes?.at(-1) ?? 0;
             // Prefer the live active profile: favorite-button switches update profileManager's
             // active record but not the local currentActiveProfile (only set on page load).
-            const activeProfile = profileManager.getActiveProfileRecord()?.profile ?? currentActiveProfile;
-            const targetWeight = parseFloat(activeProfile?.target_weight ?? 0);
+            const activeRecord = profileManager.getActiveProfileRecord();
+            const activeProfile = activeRecord?.profile ?? currentActiveProfile;
+            // targetYield (metadata, set via UI) overrides profile.target_weight everywhere
+            // else (profileManager.js:599) — mirror that precedence or the weight stop reason
+            // is missed when only the metadata yield was changed.
+            const targetWeight = parseFloat(activeRecord?.metadata?.targetYield ?? activeProfile?.target_weight ?? 0);
             const targetVolume = parseFloat(activeProfile?.target_volume ?? 0);
             const profileSeconds = (activeProfile?.steps ?? [])
                 .reduce((sum, s) => sum + (parseFloat(s.seconds) || 0), 0);
@@ -1152,8 +1156,12 @@ document.addEventListener('click', (e) => {
         showExternalUrlModal(link.href); // webview: can't open externally yet
         return;
     }
-    const win = window.open(link.href, '_blank', 'noopener');
-    if (!win) location.href = link.href; // popup blocked
+    // Note: passing 'noopener' as a feature makes window.open return null even on
+    // success, which would wrongly trigger the popup-blocked fallback below and
+    // navigate the current page too. Open without it and null opener manually.
+    const win = window.open(link.href, '_blank');
+    if (win) win.opener = null;
+    else location.href = link.href; // genuinely popup-blocked
 });
 
 // TEMP webview fallback: surface the URL in a DaisyUI modal with a Copy button.

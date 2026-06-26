@@ -273,6 +273,7 @@ const settingsTree = {
     },
     'bluetooth': {
         name: 'Connections',
+        i18nKey: 'Connection',
         subcategories: [
             { id: 'ble_machine', name: '1. Machine', settingsCategory: 'ble_machine' },
             { id: 'ble_scale', name: '2. Scale', settingsCategory: 'ble_scale' }
@@ -813,8 +814,8 @@ export function renderFlowMultiplierSettings(settings) {
 
                 <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px] mt-[30px]">
                     <div class="content-stretch flex items-center relative shrink-0">
-                        <p id="volume-flow-multiplier-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
-                            Volume Flow Multiplier
+                        <p id="volume-flow-multiplier-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Volume Flow Multiplier (s)">
+                            Volume Flow Multiplier (s)
                         </p>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
@@ -900,7 +901,7 @@ export function renderReaSettingsForm(settings) {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words" data-i18n-key="Controls how the gateway monitors and controls the espresso machine">
                         Controls how the gateway monitors and controls the espresso machine
                     </p>
                 </div>
@@ -931,7 +932,7 @@ export function renderReaSettingsForm(settings) {
                             <option value="OFF" ${settings.logLevel === 'OFF' ? 'selected' : ''} data-i18n-key="OFF">OFF</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words" data-i18n-key="Sets the verbosity of application logging output">
                         Sets the verbosity of application logging output
                     </p>
                 </div>
@@ -951,7 +952,7 @@ export function renderReaSettingsForm(settings) {
                             <option value="false" ${settings.automaticUpdateCheck === false ? 'selected' : ''} data-i18n-key="Disabled">Disabled</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[270px]">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[270px]" data-i18n-key="Check for app updates every 12 hours automatically">
                         Check for app updates every 12 hours automatically
                     </p>
                 </div>
@@ -972,7 +973,7 @@ export function renderReaSettingsForm(settings) {
                             <option value="disconnect" ${settings.scalePowerMode === 'disconnect' ? 'selected' : ''} data-i18n-key="Disconnect">Disconnect</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[270px]">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[270px]" data-i18n-key="Controls automatic scale power management when the machine sleeps. Display Off turns off the scale display. Disconnect disconnects the scale completely.">
                         Controls automatic scale power management when the machine sleeps. Display Off turns off the scale display. Disconnect disconnects the scale completely.
                     </p>
                 </div>
@@ -1021,10 +1022,11 @@ export function renderFlushSettingsForm(settings) {
 
             <div class="content-stretch flex flex-col items-center relative w-full">
                 <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
-                    <div class="content-stretch flex items-center relative shrink-0">
-                        <p id="flush-temp-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
-                            Flush Temperature
+                    <div class="content-stretch flex items-baseline gap-[14px] relative shrink-0">
+                        <p id="flush-temp-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Temperature for flush cycles">
+                            Temperature for flush cycles
                         </p>
+                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">5 – 95 °C</span>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
                         <button id="flush-temp-minus" aria-label="Decrease flush temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -1048,16 +1050,14 @@ export function renderFlushSettingsForm(settings) {
                             </svg>
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
-                        Temperature for flush cycles
-                    </p>
                 </div>
 
                 <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px] mt-[30px]">
-                    <div class="content-stretch flex items-center relative shrink-0">
+                    <div class="content-stretch flex items-baseline gap-[14px] relative shrink-0">
                         <p id="flush-flow-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Flush flow rate">
                             Flush flow rate
                         </p>
+                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">1 – 8 ml/s</span>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
                         <button id="flush-flow-minus" aria-label="Decrease flush flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -1081,9 +1081,6 @@ export function renderFlushSettingsForm(settings) {
                             </svg>
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
-                        Flow rate for flush cycles
-                    </p>
                 </div>
             </div>
         </div>
@@ -1167,7 +1164,7 @@ export function renderFanThresholdSettings(settings) {
             </div>
 
             <!-- Description -->
-            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.5] text-[var(--text-primary)] text-[24px] w-full">
+            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.5] text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="The fan activates when the machine's internal temperature exceeds this threshold.">
                 The fan activates when the machine's internal temperature exceeds this threshold.
                 Lower values run the fan more often; higher values keep it quieter during operation.
             </p>
@@ -1226,7 +1223,7 @@ export function renderUsbChargerModeSettings(settings) {
             <div class="flex items-center justify-between gap-[24px] w-full">
                 <div class="flex flex-col gap-[4px]">
                     <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]" data-i18n-key="Night Mode">Night Mode</p>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]">Charge conservatively overnight between a sleep and morning time</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Charge conservatively overnight between a sleep and morning time">Charge conservatively overnight between a sleep and morning time</p>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="night-mode-toggle"
@@ -1326,7 +1323,7 @@ export function renderUsbChargerModeSettings(settings) {
 
             <div class="content-stretch flex items-center justify-between gap-[24px] relative w-full">
                 <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                    <p class="leading-[1.2]">Dim the screen when low battery</p>
+                    <p class="leading-[1.2]" data-i18n-key="Dim the screen when low battery">Dim the screen when low battery</p>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="low-battery-brightness-limit-toggle"
@@ -1370,8 +1367,9 @@ export function renderDe1AdvancedSettingsForm(settings) {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Heater Phase 1 Flow</p>
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Heater Phase 1 Flow (ml/s)">Heater Phase 1 Flow (ml/s)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">0 – 10 ml/s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease heater phase 1 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -1395,9 +1393,6 @@ export function renderDe1AdvancedSettingsForm(settings) {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Flow rate during heater phase 1 &nbsp;<span class="text-[20px] opacity-60">Range: 0 – 10 ml/s</span>
-                    </p>
                 </div>
             </div>
 
@@ -1409,8 +1404,9 @@ export function renderDe1AdvancedSettingsForm(settings) {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Heater Phase 2 Flow</p>
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Heater Phase 2 Flow (ml/s)">Heater Phase 2 Flow (ml/s)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">0 – 10 ml/s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease heater phase 2 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -1434,9 +1430,6 @@ export function renderDe1AdvancedSettingsForm(settings) {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Flow rate during heater phase 2 &nbsp;<span class="text-[20px] opacity-60">Range: 0 – 10 ml/s</span>
-                    </p>
                 </div>
             </div>
         </div>
@@ -1515,7 +1508,7 @@ export function renderUserManualSettings() {
                             Visit
                         </a>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Get support and submit tickets for assistance">
                         Get support and submit tickets for assistance
                     </p>
                 </div>
@@ -1536,7 +1529,7 @@ export function renderUserManualSettings() {
                             View
                         </a>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Learn how to get started with your espresso machine">
                         Learn how to get started with your espresso machine
                     </p>
                 </div>
@@ -1551,7 +1544,7 @@ export function renderUserManualSettings() {
                             View
                         </a>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Learn how to use Decent.app to create custom skins and more.">
                         Learn how to use Decent.app to create custom skins and more.
                     </p>
                 </div>
@@ -1590,7 +1583,7 @@ export function renderTalkToDecentSettings() {
                     </div>
                     <div class="flex flex-col gap-[8px]">
                         <p class="text-[26px] font-bold text-[var(--text-primary)]">No Decent account linked</p>
-                        <p class="text-[22px] text-[var(--low-contrast-white)] max-w-[500px] leading-[1.4]">
+                        <p class="text-[22px] text-[var(--low-contrast-white)] max-w-[500px] leading-[1.4]" data-i18n-key="Link your Decent account in the Decent app to send messages to support.">
                             Link your Decent account in the Decent app to send messages to support.
                         </p>
                     </div>
@@ -1738,7 +1731,7 @@ export function renderFeedbackSettings() {
                 <textarea id="feedback-description" class="hidden"></textarea>
                 <div id="feedback-description-preview"
                      onclick="window.openFeedbackDescriptionEditor()"
-                     class="cursor-pointer bg-[var(--box-color)] border-2 border-[#385a92] rounded-[14px] w-full min-h-[110px] text-[21px] p-[18px] whitespace-pre-wrap select-none text-[var(--low-contrast-white)]">
+                     class="cursor-pointer bg-[var(--box-color)] border-2 border-[#385a92] rounded-[14px] w-full min-h-[110px] text-[21px] p-[18px] whitespace-pre-wrap select-none text-[var(--low-contrast-white)]" data-i18n-key="Tap to write description…">
                     Tap to write description…
                 </div>
             </div>
@@ -1781,29 +1774,29 @@ export function renderScreenSaverSettings() {
         </div>
     `).join('');
 
-    const imageSection = hasCustom ? `
+    const imageButtons = hasCustom ? `
+        <button class="bg-[#385a92] h-[62px] px-[36px] rounded-[72px] text-white text-[22px] font-bold"
+                onclick="document.getElementById('screensaver-file-input').click()">
+            Add Images
+        </button>
+        <button class="bg-[var(--box-color)] border-2 border-[#385a92] h-[62px] px-[36px] rounded-[72px] text-[#385a92] text-[22px] font-bold"
+                onclick="window.clearScreensaverImages()">
+            Clear All
+        </button>
+    ` : `
+        <button class="bg-[#385a92] h-[62px] px-[36px] rounded-[72px] text-white text-[22px] font-bold"
+                onclick="document.getElementById('screensaver-file-input').click()">
+            Choose Images
+        </button>
+    `;
+
+    const imageInfo = hasCustom ? `
         <div class="flex flex-wrap gap-[12px]">${thumbnails}</div>
-        <div class="flex items-center gap-[16px]">
-            <button class="bg-[#385a92] h-[62px] px-[36px] rounded-[72px] text-white text-[22px] font-bold"
-                    onclick="document.getElementById('screensaver-file-input').click()">
-                Add Images
-            </button>
-            <button class="bg-[var(--box-color)] border-2 border-[#385a92] h-[62px] px-[36px] rounded-[72px] text-[#385a92] text-[22px] font-bold"
-                    onclick="window.clearScreensaverImages()">
-                Clear All
-            </button>
-        </div>
         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full">
             ${screensaverImagesCache.length} image${screensaverImagesCache.length !== 1 ? 's' : ''} selected
         </p>
     ` : `
-        <div class="flex items-center gap-[16px]">
-            <button class="bg-[#385a92] h-[62px] px-[36px] rounded-[72px] text-white text-[22px] font-bold"
-                    onclick="document.getElementById('screensaver-file-input').click()">
-                Choose Images
-            </button>
-        </div>
-        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full">
+        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full" data-i18n-key="No custom images — using default. Select images from your device.">
             No custom images — using default. Select images from your device.
         </p>
     `;
@@ -1816,8 +1809,8 @@ export function renderScreenSaverSettings() {
 
             <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                 <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Enable Screen Saver</p>
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Show screen saver when the machine sleeps">Show screen saver when the machine sleeps</p>
                     </div>
                     <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                         <input type="checkbox" class="sr-only peer"
@@ -1827,18 +1820,20 @@ export function renderScreenSaverSettings() {
                         <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                     </label>
                 </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                    Show screen saver when the machine sleeps
-                </p>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
             <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                    <p class="leading-[1.2]">Images</p>
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]">Images</p>
+                    </div>
+                    <div class="flex items-center gap-[16px]">
+                        ${imageButtons}
+                    </div>
                 </div>
-                ${imageSection}
+                ${imageInfo}
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -1890,7 +1885,7 @@ export function renderBrightnessSettings() {
                            class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center"
                            onchange="handleBrightnessChange(this.value)">
                 </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[32px] w-full">
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[32px] w-full" data-i18n-key="Adjust screen brightness level">
                     Adjust screen brightness level
                 </p>
             </div>
@@ -1909,7 +1904,7 @@ export function renderWakeLockSettings() {
         <div class="space-y-6 px-[60px] py-[80px]">
             <div>
                 <h2 class="text-[28px] font-bold text-[var(--text-primary)] mb-4" data-i18n-key="Wake Lock Settings">Wake Lock Settings</h2>
-                <p class="text-[var(--text-primary)] text-[20px] mb-6 opacity-75">
+                <p class="text-[var(--text-primary)] text-[20px] mb-6 opacity-75" data-i18n-key="Control screen wake-lock to prevent the display from sleeping during operation.">
                     Control screen wake-lock to prevent the display from sleeping during operation.
                 </p>
             </div>
@@ -1918,7 +1913,7 @@ export function renderWakeLockSettings() {
                 <div class="flex items-center justify-between">
                     <div>
                         <label class="text-[24px] font-semibold text-[var(--wakelock-card-text)]" data-i18n-key="Enable Wake Lock">Enable Wake Lock</label>
-                        <p class="text-[18px] text-[var(--wakelock-card-text)] opacity-75 mt-1">
+                        <p class="text-[18px] text-[var(--wakelock-card-text)] opacity-75 mt-1" data-i18n-key="Keep the screen on while the app is active">
                             Keep the screen on while the app is active
                         </p>
                     </div>
@@ -2010,7 +2005,7 @@ async function loadPresenceSettingsAsync() {
             <div class="space-y-6 px-[60px] py-[80px]">
                 <div>
                     <h2 class="text-[28px] font-bold text-[var(--text-primary)] mb-4" data-i18n-key="Presence Detection">Presence Detection</h2>
-                    <p class="text-[var(--text-primary)] text-[20px] mb-6 opacity-75">
+                    <p class="text-[var(--text-primary)] text-[20px] mb-6 opacity-75" data-i18n-key="Automatically manage machine sleep/wake based on user presence and schedules.">
                         Automatically manage machine sleep/wake based on user presence and schedules.
                     </p>
                 </div>
@@ -2019,7 +2014,7 @@ async function loadPresenceSettingsAsync() {
                     <div class="flex items-center justify-between mb-6">
                         <div>
                             <label class="text-[24px] font-semibold text-[var(--presence-card-text)]" data-i18n-key="Enable Presence Detection">Enable Presence Detection</label>
-                            <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-1">
+                            <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-1" data-i18n-key="Track user presence to automatically sleep the machine">
                                 Track user presence to automatically sleep the machine
                             </p>
                         </div>
@@ -2044,7 +2039,7 @@ async function loadPresenceSettingsAsync() {
                                max="120"
                                oninput="this.value = Math.max(1, Math.min(120, this.value))"
                                onchange="handleSleepTimeoutChange(this.value)">
-                        <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-2">
+                        <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-2" data-i18n-key="Minutes of inactivity before auto-sleep">
                             Minutes of inactivity before auto-sleep
                         </p>
                     </div>
@@ -2102,7 +2097,7 @@ async function loadPresenceSettingsAsync() {
                                         <span class="text-[var(--presence-card-text)]">min</span>
                                     </div>
                                 </div>
-                                <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-1">
+                                <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-1" data-i18n-key="Duration to keep machine awake after schedule fires. Max 12 hours.">
                                     Duration to keep machine awake after schedule fires. Max 12 hours.
                                 </p>
                             </div>
@@ -2140,7 +2135,7 @@ export function renderAppVersionSettings() {
                             1.0.0
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Current application version">
                         Current application version
                     </p>
                 </div>
@@ -2168,7 +2163,7 @@ export function renderUnitsSettings() {
                             <option data-i18n-key="Imperial">Imperial</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Select measurement units used throughout the application">
                         Select measurement units used throughout the application
                     </p>
                 </div>
@@ -2205,7 +2200,7 @@ export function renderFontSizeSettings() {
                             ${options}
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Adjust the display size for better readability. Changes apply after saving.">
                         Adjust the display size for better readability. Changes apply after saving.
                     </p>
                 </div>
@@ -2245,7 +2240,7 @@ export function renderResolutionSettings() {
                             <option>1024x768</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Set the display resolution">
                         Set the display resolution
                     </p>
                 </div>
@@ -2292,7 +2287,7 @@ export function renderMiscellaneousSettings() {
                         </div>
                         <input type="range" id="brightness-slider" min="0" max="100" value="${brightnessVal}" class="brightness-slider w-[200px]" onchange="handleBrightnessChange(this.value)">
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Adjust screen brightness level">
                         Adjust screen brightness level
                     </p>
                 </div>
@@ -2313,7 +2308,7 @@ export function renderMiscellaneousSettings() {
                             1.0.0
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Current application version">
                         Current application version
                     </p>
                 </div>
@@ -2335,7 +2330,7 @@ export function renderMiscellaneousSettings() {
                             <option data-i18n-key="Imperial">Imperial</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Select measurement units for the application">
                         Select measurement units for the application
                     </p>
                 </div>
@@ -2358,7 +2353,7 @@ export function renderMiscellaneousSettings() {
                             <option data-i18n-key="Large">Large</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Adjust the display size for better readability">
                         Adjust the display size for better readability
                     </p>
                 </div>
@@ -2381,7 +2376,7 @@ export function renderMiscellaneousSettings() {
                             <option>1024x768</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Set the display resolution">
                         Set the display resolution
                     </p>
                 </div>
@@ -2403,7 +2398,7 @@ export function renderMiscellaneousSettings() {
                             <option data-i18n-key="Disabled">Disabled</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Enable smart charging for connected devices">
                         Enable smart charging for connected devices
                     </p>
                 </div>
@@ -2454,8 +2449,9 @@ export function renderSteamSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">130 – 170 °C</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease steam temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2478,9 +2474,6 @@ export function renderSteamSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Steam temperature setting &nbsp;<span class="text-[20px] opacity-60">Range: 130 – 170 °C</span>
-                    </p>
                 </div>
             </div>
 
@@ -2488,8 +2481,9 @@ export function renderSteamSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Duration (seconds)">Duration (seconds)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">10 – 120 s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2512,9 +2506,6 @@ export function renderSteamSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Steam duration &nbsp;<span class="text-[20px] opacity-60">Range: 10 – 120 s</span>
-                    </p>
                 </div>
             </div>
 
@@ -2522,8 +2513,9 @@ export function renderSteamSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Flow">Flow</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0.1 – 2.5 ml/s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease steam flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2546,9 +2538,6 @@ export function renderSteamSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Steam flow rate &nbsp;<span class="text-[20px] opacity-60">Range: 0.1 – 2.5 ml/s</span>
-                    </p>
                 </div>
             </div>
 
@@ -2566,7 +2555,7 @@ export function renderSteamSettings() {
                             <option value="1" ${settingsCache.de1.steamPurgeMode === 1 ? 'selected' : ''} data-i18n-key="Two Tap Stop">Two Tap Stop</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Set the steam purge mode for the machine">
                         Set the steam purge mode for the machine
                     </p>
                 </div>
@@ -2605,8 +2594,9 @@ export function renderHotWaterSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">50 – 95 °C</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease hot water temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2629,9 +2619,6 @@ export function renderHotWaterSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water temperature &nbsp;<span class="text-[20px] opacity-60">Range: 50 – 95 °C</span>
-                    </p>
                 </div>
             </div>
 
@@ -2639,8 +2626,9 @@ export function renderHotWaterSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Volume">Volume</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">10 – 500 ml</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease hot water volume" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2663,9 +2651,6 @@ export function renderHotWaterSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water volume &nbsp;<span class="text-[20px] opacity-60">Range: 10 – 500 ml</span>
-                    </p>
                 </div>
             </div>
 
@@ -2673,8 +2658,9 @@ export function renderHotWaterSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Duration (seconds)">Duration (seconds)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">5 – 120 s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease hot water duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2697,9 +2683,6 @@ export function renderHotWaterSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water duration &nbsp;<span class="text-[20px] opacity-60">Range: 5 – 120 s</span>
-                    </p>
                 </div>
             </div>
 
@@ -2707,8 +2690,9 @@ export function renderHotWaterSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Flow">Flow</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0.1 – 8.0 ml/s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease hot water flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2731,9 +2715,6 @@ export function renderHotWaterSettings() {
                             </button>
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                        Hot water flow rate &nbsp;<span class="text-[20px] opacity-60">Range: 0.1 – 8.0 ml/s</span>
-                    </p>
                 </div>
             </div>
         </div>
@@ -2793,7 +2774,7 @@ export function renderWaterTankSettings() {
                             </svg>
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center" data-i18n-key="Set the water tank temperature (10-40°C)">
                         Set the water tank temperature (10-40°C)
                     </p>
                 </div>
@@ -2826,7 +2807,7 @@ export function renderWaterTankSettings() {
                             </svg>
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center" data-i18n-key="Alert when tank water level drops below this height (0, 5, 10, 15, 20, 25, 30 mm)">
                         Alert when tank water level drops below this height (0, 5, 10, 15, 20, 25, 30 mm)
                     </p>
                 </div>
@@ -2841,17 +2822,17 @@ export function renderWaterTankSettings() {
                         <button class="h-[80px] w-[200px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200
                             ${getWaterTankUnit() === 'mm' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
                             aria-pressed="${getWaterTankUnit() === 'mm'}"
-                            onclick="window.setWaterTankUnit('mm')">
+                            onclick="window.setWaterTankUnit('mm')" data-i18n-key="mm">
                             mm
                         </button>
                         <button class="h-[80px] w-[200px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200
                             ${getWaterTankUnit() === 'ml' ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
                             aria-pressed="${getWaterTankUnit() === 'ml'}"
-                            onclick="window.setWaterTankUnit('ml')">
+                            onclick="window.setWaterTankUnit('ml')" data-i18n-key="mL">
                             mL
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center" data-i18n-key="Show tank level on the home screen in millimeters or millilitres">
                         Show tank level on the home screen in millimeters or millilitres
                     </p>
                 </div>
@@ -2900,7 +2881,7 @@ export function renderQuickAdjustmentsSettings() {
                             <input type="number" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center" value="1.0" step="0.1">
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Adjust the flow multiplier for shot timing">
                         Adjust the flow multiplier for shot timing
                     </p>
                 </div>
@@ -2963,7 +2944,7 @@ export function renderQuickAdjustmentsSettings() {
                             <input type="number" class="bg-[var(--box-color)] border-2 border-[#385a92] h-[72px] rounded-[72px] w-[160px] text-[var(--text-primary)] text-[26px] font-bold text-center" value="30" step="1">
                         </div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Set brewing time limit">
                         Set brewing time limit
                     </p>
                 </div>
@@ -3014,7 +2995,7 @@ export function renderCalibFanSettings(settings) {
                             </svg>
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center" data-i18n-key="Temperature threshold at which the fan turns on (0–100°C)">
                         Temperature threshold at which the fan turns on (0–100°C)
                     </p>
                 </div>
@@ -3043,7 +3024,7 @@ export function renderCalibDefaultLoadSettings() {
                             Reset
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Restores fan threshold, heater idle temp, heater phase flows, phase 2 timeout, refill kit mode, flow multiplier, and steam purge to factory defaults.">
                         Restores fan threshold, heater idle temp, heater phase flows, phase 2 timeout, refill kit mode, flow multiplier, and steam purge to factory defaults.
                     </p>
                 </div>
@@ -3055,14 +3036,14 @@ export function renderCalibDefaultLoadSettings() {
 export function renderCalibRefillKitSettings() {
     const current = settingsCache.de1Advanced?.refillKitSetting ?? -1;
     const options = [
-        { label: 'Auto',      value: 2 },
-        { label: 'Force On',  value: 1 },
-        { label: 'Force Off', value: 0 },
+        { label: 'Auto-Detect', value: 2 },
+        { label: 'Force On',    value: 1 },
+        { label: 'Force Off',   value: 0 },
     ];
     const buttons = options.map(o => {
         const active = current === o.value;
-        return `<button class="h-[72px] px-[36px] rounded-[72px] text-[24px] font-bold ${active ? 'bg-[#385a92] text-white' : 'bg-[var(--box-color)] border-2 border-[#385a92] text-[#385a92]'}"
-                        onclick="window.updateDe1AdvancedSetting('refillKitSetting', ${o.value})">${o.label}</button>`;
+        return `<button class="h-[72px] px-[36px] rounded-[72px] text-[24px] font-bold ${active ? 'bg-[#385a92] text-white' : 'bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)]'}"
+                        onclick="window.updateDe1AdvancedSetting('refillKitSetting', ${o.value})" data-i18n-key="${o.label}">${o.label}</button>`;
     }).join('');
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
@@ -3075,12 +3056,12 @@ export function renderCalibRefillKitSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Refill Kit Mode</p>
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Refill Kit">Refill Kit</p>
                         </div>
                         <div class="flex items-center gap-[12px]">${buttons}</div>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Auto lets the machine decide. Force On keeps the refill kit always active. Force Off disables it.">
                         Auto lets the machine decide. Force On keeps the refill kit always active. Force Off disables it.
                     </p>
                 </div>
@@ -3114,15 +3095,15 @@ export function renderCalibVoltageSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Mains Voltage</p>
+                            <p class="leading-[1.2]" data-i18n-key="Voltage">Voltage</p>
                         </div>
                         <div class="flex items-center gap-[12px]">${buttons}</div>
                     </div>
                     ${unsetNote}
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Set to match your local mains voltage. Incorrect setting may affect heater performance.">
                         Set to match your local mains voltage. Incorrect setting may affect heater performance.
                     </p>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-secondary)] text-[22px] w-full" data-i18n-key="Restart the machine after changing voltage for the setting to take effect.">
                         Restart the machine after changing voltage for the setting to take effect.
                     </p>
                 </div>
@@ -3171,7 +3152,7 @@ export function renderCalibSteamSettings() {
                             </svg>
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center" data-i18n-key="Set steam temperature (135-170°C)">
                         Set steam temperature (135-170°C)
                     </p>
                 </div>
@@ -3200,9 +3181,15 @@ export function renderMainDescalingSettings() {
                             Start
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Run a descaling cycle to remove mineral buildup">
                         Run a descaling cycle to remove mineral buildup
                     </p>
+                    <a href="https://app.basecamp.com/3671212/buckets/7351439/documents/7743429669"
+                       target="_blank" rel="noopener"
+                       class="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.4] not-italic text-[#385a92] underline text-[24px]"
+                       data-i18n-key="Descaling Instruction">
+                        Descaling Instruction
+                    </a>
                 </div>
             </div>
         </div>
@@ -3275,7 +3262,7 @@ export function renderSkinSettings() {
                             <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="Toggle between light and dark themes">
                         Toggle between light and dark themes
                     </p>
                 </div>
@@ -3287,7 +3274,7 @@ export function renderSkinSettings() {
                 <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                     <p class="leading-[1.2]" data-i18n-key="Active Skin">Active Skin</p>
                 </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[22px] w-full">
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[22px] w-full" data-i18n-key="Tap a skin to make it active. Tap reload to apply.">
                     Tap a skin to make it active. Tap reload to apply.
                 </p>
                 <div class="grid grid-cols-2 gap-[14px] w-full">
@@ -3379,7 +3366,7 @@ export function renderLanguageSettings() {
                             <option data-i18n-key="Loading...">Loading...</option>
                         </select>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words" data-i18n-key="Choose the language for the application interface.">
                         Choose the language for the application interface.
                     </p>
                 </div>
@@ -3420,7 +3407,7 @@ export function renderExtensionsSettings() {
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Visualizer">Visualizer</p>
-                             <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
+                             <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Upload shots to visualizer.coffee">
                         Upload shots to visualizer.coffee
                     </p>
                         </div>
@@ -3762,16 +3749,16 @@ export function renderFirmwareUpdateSettings() {
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="DE1 Firmware File">DE1 Firmware File</p>
-                            <p id="firmware-filename" class="font-['Inter:Regular',sans-serif] font-normal text-[20px] text-[var(--text-secondary)] mt-1" data-i18n-key="No file selected">No file selected</p>
+                            <p id="firmware-filename" class="font-['Inter:Regular',sans-serif] font-normal text-[20px] text-[var(--text-secondary)]" data-i18n-key="No file selected">No file selected</p>
                         </div>
                         <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
                                 onclick="document.getElementById('firmware-file-input').click()">
                             Select File
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.">
                         Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.
                     </p>
                 </div>
@@ -3788,7 +3775,7 @@ export function renderFirmwareUpdateSettings() {
                             Upload
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="This may take several minutes. Do not power off the machine during the update.">
                         This may take several minutes. Do not power off the machine during the update.
                     </p>
                 </div>
@@ -3979,7 +3966,7 @@ export function renderGeneralSettings() {
                 <p class="leading-[1.2]" data-i18n-key="General Settings">General Settings</p>
             </div>
 
-            <div class="text-[24px] text-[var(--text-primary)] p-4">
+            <div class="text-[24px] text-[var(--text-primary)] p-4" data-i18n-key="Select a category from the navigation panel to view and edit settings.">
                 Select a category from the navigation panel to view and edit settings.
             </div>
         </div>
@@ -5489,7 +5476,10 @@ function updateNavigationWithResults(filteredCategories, searchTerm) {
             btn.className = 'settings-nav-btn w-full text-left px-4 py-3 rounded-lg text-[24px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center';
 
             const number = allKeys.indexOf(key) + 1;
-            const highlightedName = highlightMatch(category.name, searchTerm);
+            // Translate before highlighting — search filters on the English name but the
+            // nav must stay in the active language (otherwise it reverts to English).
+            const translatedName = getTranslation(settingsTree[key]?.i18nKey || category.name);
+            const highlightedName = highlightMatch(translatedName, searchTerm);
             btn.innerHTML = `${number}. <span>${highlightedName}</span>`;
 
             navUl.appendChild(li);
@@ -5598,14 +5588,19 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
 
     let subcategoryItems = '';
     subcategoriesToShow.forEach((subcat) => {
-        // Highlight matching text in the subcategory name
-        const highlightedName = highlightMatch(subcat.name, searchTerm);
-        
+        // Translate before highlighting (matches renderSubcategories' key logic) so the
+        // filtered nav stays in the active language instead of reverting to English.
+        const prefixMatch = subcat.name.match(/^(\d+\.\s*)/);
+        const prefix = prefixMatch ? prefixMatch[1] : '';
+        const label = prefix ? subcat.name.slice(prefix.length) : subcat.name;
+        const translatedLabel = getTranslation(subcat.i18nKey || label);
+        const highlightedName = highlightMatch(translatedLabel, searchTerm);
+
         subcategoryItems += `
             <li>
                 <button class="settings-subnav-btn w-full text-left px-4 py-3 rounded-lg text-[24px] text-[#959595] hover:text-white hover:bg-[#2c4a7a] flex items-center"
                         data-category="${subcat.settingsCategory}">
-                    <span>${highlightedName}</span>
+                    <span>${prefix}${highlightedName}</span>
                 </button>
             </li>
         `;
@@ -6005,15 +6000,14 @@ export function renderBluetoothMachineSettings() {
     setTimeout(() => { renderDeviceListFromCache(); }, 0);
 
     return `
-        <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden">
+        <div class="flex flex-col gap-[32px] items-start relative w-full max-w-full overflow-x-hidden">
 
             <!-- Header -->
-            <div class="flex justify-between items-center w-full">
-                <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px]">
-                    <p class="leading-[1.2]" data-i18n-key="Espresso Machine">Espresso Machine</p>
-                </div>
+            <div class="flex items-center w-full">
+                <div class="w-[139px] shrink-0"></div>
+                <p class="flex-1 text-center font-['Inter:Semi_Bold',sans-serif] font-semibold not-italic text-[var(--text-primary)] text-[36px] leading-[1.2]" data-i18n-key="Espresso Machine">Espresso Machine</p>
                 <button id="scan-machine-btn"
-                        class="border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border w-[139px] text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
+                        class="w-[139px] shrink-0 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
                         onclick="window.scanForMachines()">
                     Scan
                 </button>
@@ -6052,12 +6046,11 @@ export function renderBluetoothScaleSettings(settings) {
         <div class="flex flex-col gap-[32px] items-start relative w-full max-w-full overflow-x-hidden">
 
             <!-- Header -->
-            <div class="flex justify-between items-center w-full">
-                <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px]">
-                    <p class="leading-[1.2]" data-i18n-key="Scale">Scale</p>
-                </div>
+            <div class="flex items-center w-full">
+                <div class="w-[139px] shrink-0"></div>
+                <p class="flex-1 text-center font-['Inter:Semi_Bold',sans-serif] font-semibold not-italic text-[var(--text-primary)] text-[36px] leading-[1.2]" data-i18n-key="Scale">Scale</p>
                 <button id="scan-scale-btn"
-                        class="border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border w-[139px] text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
+                        class="w-[139px] shrink-0 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
                         onclick="window.scanForScales()">
                     Scan
                 </button>
@@ -6079,11 +6072,9 @@ export function renderBluetoothScaleSettings(settings) {
 
             <!-- Scale Power Mode -->
             <div class="flex flex-col gap-[16px] items-start relative w-full">
-                <div class="flex flex-col gap-[8px] items-start relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p id="scale-power-management-label" class="leading-[1.2]" data-i18n-key="Scale Power Mode">Scale Power Mode</p>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words">
+                <div class="flex items-baseline gap-[14px] w-full">
+                    <p id="scale-power-management-label" class="font-['Inter:Bold',sans-serif] font-bold not-italic text-[#385a92] text-[30px] leading-[1.2] shrink-0" data-i18n-key="Scale Power Mode">Scale Power Mode</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-[var(--text-primary)] text-[24px] break-words" data-i18n-key="Controls scale behaviour when machine sleeps.">
                         Controls scale behaviour when machine sleeps.
                     </p>
                 </div>
@@ -6113,11 +6104,9 @@ export function renderBluetoothScaleSettings(settings) {
 
             <!-- Block Shot on No Scale -->
             <div class="flex items-center justify-between w-full">
-                <div class="flex flex-col gap-[8px]">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]">Scale Required</p>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px]">
+                <div class="flex items-baseline gap-[14px]">
+                    <p class="font-['Inter:Bold',sans-serif] font-bold not-italic text-[#385a92] text-[30px] leading-[1.2] shrink-0">Scale Required</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-[var(--text-primary)] text-[24px]" data-i18n-key="Prevent shots from starting when no scale is connected.">
                         Prevent shots from starting when no scale is connected.
                     </p>
                 </div>
@@ -6237,6 +6226,9 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
                 <p class="text-[24px] text-[var(--text-primary)]">No ${type.toLowerCase()} found — tap Scan to search for nearby devices.</p>
             </div>`;
     }
+    // The device list is injected via WebSocket updates, after the page's initial
+    // translatePage() pass — so re-translate or its data-i18n-key text stays English.
+    translatePage();
 }
 
 // Helper function to render a single list of devices with connection controls
@@ -6283,7 +6275,7 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type
             ? '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-green-500/15 text-green-600" data-i18n-key="Connected">Connected</span>'
             : isUnavailable
             ? '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-amber-500/15 text-amber-600">Unavailable</span>'
-            : '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-50">Available</span>';
+            : '<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-50" data-i18n-key="Available">Available</span>';
 
         let actions;
         if (isUnavailable) {
@@ -6300,7 +6292,7 @@ function renderSingleDeviceList(devices, preferredId = '', settingKey = '', type
             const buttonAction = isConnected ? 'disconnect' : 'connect';
             actions = `
                 <button class="${isConnected ? 'border-2 border-[#385a92] text-[#385a92] hover:bg-[#385a92] hover:text-white' : 'bg-[#385a92] text-white hover:bg-[#2c4a7a]'} h-[62px] px-[32px] rounded-[67.5px] text-[22px] font-bold transition-colors duration-200"
-                        onclick="window.handleDeviceConnection('${safeId}', '${buttonAction}')">${buttonText}</button>`;
+                        onclick="window.handleDeviceConnection('${safeId}', '${buttonAction}')" data-i18n-key="${buttonText}">${buttonText}</button>`;
         }
 
         deviceItems += `

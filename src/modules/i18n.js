@@ -59,7 +59,10 @@ function parseCSV(csvText) {
  */
 async function loadTranslations() {
     try {
-        const response = await fetch('src/ui/de1 gui translation - Sheet1.csv');
+        // no-cache: revalidate with the server every load so sheet edits apply on
+        // refresh instead of sticking to a cached copy (the cause of "translation
+        // exists in CSV but not applied"). 304 when unchanged, so it's cheap.
+        const response = await fetch('src/ui/de1 gui translation - Sheet1.csv', { cache: 'no-cache' });
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
