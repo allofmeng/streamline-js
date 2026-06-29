@@ -1,5 +1,3 @@
-import { isWebview } from './externalLink.js';
-
 const MENU_ID = 'app-context-menu';
 const BACKDROP_ID = 'app-context-menu-backdrop';
 const MARGIN = 8;
@@ -63,17 +61,16 @@ function buildItems(menu, items, close) {
             menu.appendChild(div);
             return;
         }
-        // Link item: render as an anchor so the user's tap navigates. Webview ->
-        // same-frame so the host opens the OS browser with this URL (gh#384);
-        // browser -> new tab. onSelect runs as a side effect (e.g. copy) without
-        // cancelling the navigation.
+        // Link item: render as an anchor so the user's tap navigates same-frame.
+        // The host opens the OS browser with this URL and cancels the in-webview
+        // load (gh#384). No target=_blank — that hits the unhandled onCreateWindow.
+        // onSelect runs as a side effect (e.g. copy) without cancelling the nav.
         if (item.href) {
             const a = document.createElement('a');
             a.className = 'context-menu__item';
             a.setAttribute('role', 'menuitem');
             a.href = item.href;
             a.rel = 'noopener';
-            a.target = isWebview() ? '_self' : '_blank';
             if (item.icon) {
                 const icon = document.createElement('span');
                 icon.className = 'context-menu__icon';

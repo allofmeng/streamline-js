@@ -7,7 +7,6 @@ import { initChart, plotProfile } from './chart.js';
 import { translatePage, getTranslation } from './i18n.js';
 import { loadPage } from './router.js';
 import { openContextMenu, closeContextMenu } from './context-menu.js';
-import { isWebview } from './externalLink.js';
 
 // Visualizer credentials storage
 let cachedVisualizerCredentials = null;
@@ -1581,24 +1580,14 @@ async function initAiGenerateButton() {
 
     connectProfileGeneratedWebSocket(handleGeneratedProfile);
 
-    // Set the output format once now (not on click) so the click can stay a
-    // native same-frame tap in the webview — an await would break the user
-    // gesture the host needs to open the OS browser.
+    // Set the output format once now (not on click) so the tap can navigate
+    // natively — the plain <a href> (no target) is a same-frame navigation, which
+    // the host intercepts to open the OS browser with the plugin URL (gh#384).
     setPluginSettings('decent-profile.reaplugin', { profileFormat: 'json-v2' })
         .catch((err) => logger.warn('Could not set profileFormat=json-v2:', err));
 
-    const newLink = link.cloneNode(true);
-    link.parentNode.replaceChild(newLink, link);
-
-    newLink.addEventListener('click', (e) => {
-        // Webview: let this tap navigate same-frame -> host opens the OS browser
-        // with the plugin URL (gh#384). Browser: new tab.
-        if (isWebview()) { newLink.target = '_self'; return; }
-        e.preventDefault();
-        const win = window.open(newLink.href, '_blank');
-        if (win) win.opener = null;
-        else window.location.href = newLink.href;
-    });
+    // ponytail: no click handler — the anchor's own same-frame navigation does it.
+    link.parentNode.replaceChild(link.cloneNode(true), link); // drop any stale listeners
 }
 
 async function handleGeneratedProfile(data) {
