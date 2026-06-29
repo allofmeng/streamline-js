@@ -236,7 +236,17 @@ function setupHistoryLongPress() {
     const panel = document.getElementById('shot-history-panel');
     if (!panel || panel.dataset.lpInit) return;
     panel.dataset.lpInit = '1';
+
+    // Suppress OS/browser text selection, the iOS long-press callout, the
+    // desktop right-click menu, and drag — otherwise they fire during the hold
+    // and pre-empt our long-press menu.
+    panel.style.userSelect = 'none';
+    panel.style.webkitUserSelect = 'none';
     panel.style.webkitTouchCallout = 'none';
+    panel.style.webkitTapHighlightColor = 'transparent';
+    panel.style.touchAction = 'manipulation';
+    ['contextmenu', 'selectstart', 'dragstart'].forEach((ev) =>
+        panel.addEventListener(ev, (e) => e.preventDefault()));
 
     let timer = null;
     const clear = () => { clearTimeout(timer); timer = null; };
