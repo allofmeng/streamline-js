@@ -1141,22 +1141,66 @@ async function prefetchSettingsToIDB() {
     }
 }
 
-// Open external links in the OS browser. The webview host opens the system
-// browser ONLY when a top-level navigation reaches its shouldOverrideUrlLoading
-// hook (reaprime gh#384): it sees an external http(s) URL, launches Chrome, and
-// cancels the in-webview load so the skin stays put. target="_blank" never gets
-// there — it routes to the unhandled onCreateWindow and dies. So intercept any
-// external (cross-origin) link tap and drive a real same-frame navigation
-// ourselves; the user gesture is preserved, so the host's launchUrl works.
-// Internal/same-origin and hash/JS links are left alone.
+// --- External-link debugging ---------------------------------------------
+// The webview host opens the system browser ONLY when a top-level navigation
+// reaches its shouldOverrideUrlLoading hook (reaprime gh#384): it sees an
+// external http(s) URL, launches Chrome, and cancels the in-webview load so the
+// skin stays put. target="_blank" never gets there — it routes to the unhandled
+// onCreateWindow and dies. So intercept any external (cross-origin) link tap and
+// drive a real same-frame navigation; the user gesture is preserved so the
+// host's launchUrl works. Internal/same-origin and hash/JS links are left alone.
+//
+// Heavily logged with the [ext-link] tag so the on-device webview_console.log
+// documents the whole flow: env at boot, every anchor tap, the classify
+// decision, and the navigation attempt (incl. any thrown error).
+const EXT = '[ext-link]';
+
+// Boot banner — confirms this build is live on the device and whether we're in
+// the host webview (host injects window.__DECENT_HOST__).
+try {
+    console.log(EXT, 'init', JSON.stringify({
+        origin: location.origin,
+        href: location.href,
+        isWebview: !!window.__DECENT_HOST__,
+        host: window.__DECENT_HOST__ || null,
+        ua: navigator.userAgent,
+    }));
+} catch (err) {
+    console.log(EXT, 'init log failed:', err && err.message);
+}
+
+// Log raw taps too, so we can see whether the gesture reaches document at all
+// (rules out touch/SPA handlers swallowing the click before it bubbles here).
+document.addEventListener('pointerup', (e) => {
+    const a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (a) console.log(EXT, 'pointerup over a[href]:', a.getAttribute('href'));
+}, true); // capture phase — fires even if a later handler stops propagation
+
 document.addEventListener('click', (e) => {
     const link = e.target.closest('a[href]');
     if (!link) return;
-    const href = link.href; // resolved absolute URL
-    if (!/^https?:\/\//i.test(href)) return;       // ignore hash / javascript: / mailto:
-    if (href.startsWith(location.origin + '/') || href === location.origin) return; // internal SPA
+    const rawHref = link.getAttribute('href'); // as authored in the DOM
+    const href = link.href;                    // resolved absolute URL
+    console.log(EXT, 'click on a[href]', JSON.stringify({
+        rawHref, href, target: link.target || '(none)',
+        defaultPrevented: e.defaultPrevented,
+    }));
+
+    if (e.defaultPrevented) { console.log(EXT, 'skip: default already prevented upstream'); return; }
+    if (!/^https?:\/\//i.test(href)) { console.log(EXT, 'skip: not http(s):', href); return; }
+    if (href.startsWith(location.origin + '/') || href === location.origin) {
+        console.log(EXT, 'skip: internal (same-origin):', href);
+        return;
+    }
+
+    console.log(EXT, 'external -> driving top-level navigation:', href);
     e.preventDefault();
-    window.location.assign(href);                  // top-level nav -> host -> OS browser
+    try {
+        window.location.assign(href); // host's shouldOverrideUrlLoading -> launchUrl -> OS browser
+        console.log(EXT, 'location.assign called (no throw). If no browser opened, the host/device handled it — likely no browser app or launchUrl failed.');
+    } catch (err) {
+        console.log(EXT, 'location.assign threw:', err && err.message);
+    }
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
