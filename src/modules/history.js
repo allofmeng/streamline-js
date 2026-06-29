@@ -4,6 +4,11 @@ import { openDB, getAllShots, addShot, deleteShot as idbDeleteShot, clearShots }
 import { API_BASE_URL } from './api.js';
 import { renderPastShot, clearShotData } from './shotData.js';
 import { getTranslation } from './i18n.js';
+import { generateShotSummary } from './shotSummary.js';
+import { openContextMenu } from './context-menu.js';
+import { showToast } from './ui.js';
+
+const DEREK_URL = 'https://derek.decentespresso.com/';
 
 const PAGE_SIZE = 20;
 let shots = [];
@@ -159,6 +164,96 @@ export function refreshCurrentShot() {
     }
 }
 
+// Ensure the current shot has its measurements loaded (the list endpoint
+// strips them; the summary needs the full record).
+async function ensureCurrentShotMeasurements() {
+    const shot = shots[currentShotIndex];
+    if (!shot) return null;
+    if (shot.measurements) return shot;
+    try {
+        const response = await fetch(`${API_BASE_URL}/shots/${shot.id}`);
+        if (response.ok) {
+            shots[currentShotIndex] = { ...shot, ...(await response.json()) };
+            await addShot(shots[currentShotIndex]);
+        }
+    } catch (error) {
+        logger.warn('Could not fetch full shot data for summary:', error);
+    }
+    return shots[currentShotIndex];
+}
+
+async function copyText(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        // Clipboard API blocked (insecure context / webview) — fall back.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+    }
+}
+
+// Build the markdown summary of the displayed shot (loading measurements as
+// needed). Returns null and toasts if there's nothing to summarize.
+async function buildCurrentShotSummary() {
+    if (currentShotIndex < 0) { showToast(getTranslation('No shot selected'), 2400, 'warning'); return null; }
+    const shot = await ensureCurrentShotMeasurements();
+    if (!shot?.measurements?.length) { showToast(getTranslation('No shot data to summarize'), 3000, 'warning'); return null; }
+    return generateShotSummary(shot);
+}
+
+async function copyCurrentShotSummary() {
+    const md = await buildCurrentShotSummary();
+    if (md == null) return;
+    const ok = await copyText(md);
+    showToast(getTranslation(ok ? 'Summary copied to clipboard' : 'Could not copy summary'), 2400, ok ? 'success' : 'error');
+}
+
+// Copy the summary, then open Derek in the external browser so the user can
+// paste and discuss. (Derek has no CORS/prefill, so we can't inject it directly.)
+async function discussCurrentShotWithDerek() {
+    const md = await buildCurrentShotSummary();
+    if (md == null) return;
+    const ok = await copyText(md);
+    showToast(getTranslation(ok ? 'Summary copied — paste it into Derek' : 'Could not copy summary'), 4000, ok ? 'success' : 'error');
+    // Browser: new tab. Webview: window.open returns null, so location.href hands
+    // off to the system browser while the skin stays put (reaprime gh#384).
+    const win = window.open(DEREK_URL, '_blank');
+    if (win) win.opener = null;
+    else window.location.href = DEREK_URL;
+}
+
+// Guarded long-press on the shot history panel -> options menu. Ignores the
+// prev/next buttons so navigation taps still work; no preventDefault on down.
+function setupHistoryLongPress() {
+    const panel = document.getElementById('shot-history-panel');
+    if (!panel || panel.dataset.lpInit) return;
+    panel.dataset.lpInit = '1';
+    panel.style.webkitTouchCallout = 'none';
+
+    let timer = null;
+    const clear = () => { clearTimeout(timer); timer = null; };
+    panel.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button, a, input')) return; // let controls work
+        clear();
+        timer = setTimeout(() => {
+            openContextMenu(panel, [
+                { label: getTranslation('Discuss with Derek'), onSelect: discussCurrentShotWithDerek },
+                { label: getTranslation('Copy Shot Summary'), onSelect: copyCurrentShotSummary },
+            ]);
+        }, 450);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
+        panel.addEventListener(ev, clear));
+}
+
 export async function initHistory() {
     try {
         await openDB();
@@ -167,6 +262,8 @@ export async function initHistory() {
         return;
     }
     await loadShotHistory();
+
+    setupHistoryLongPress();
 
     const prevBtn = document.getElementById('history-prev-btn');
     const nextBtn = document.getElementById('history-next-btn');

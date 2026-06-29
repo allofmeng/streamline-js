@@ -1141,31 +1141,48 @@ async function prefetchSettingsToIDB() {
     }
 }
 
-// External links (target="_blank") behave differently per host:
-//  - Browser: open a new tab as normal.
-//  - In-app webview: window.open is disabled and the host CANCELs all external
-//    navigation, so there's no way to open the page. TEMP until decent.app routes
-//    external URLs to the system browser — show the URL so the user can read /
-//    copy it onto another device. Detected via window.__DECENT_HOST__ (host beacon).
+// External links (target="_blank"):
+//  - Browser: window.open succeeds -> new tab.
+//  - In-app webview: window.open is disabled and returns null; the location.href
+//    fallback reaches the host's shouldOverrideUrlLoading, which launches the URL
+//    in the system browser and keeps the skin loaded (reaprime gh#384).
 // ponytail: one delegated listener covers every target="_blank" link, present and future.
 document.addEventListener('click', (e) => {
     const link = e.target.closest('a[target="_blank"]');
     if (!link || !link.href) return;
     e.preventDefault();
-    if (window.__DECENT_HOST__) {
-        showExternalUrlModal(link.href); // webview: can't open externally yet
-        return;
-    }
     // Note: passing 'noopener' as a feature makes window.open return null even on
-    // success, which would wrongly trigger the popup-blocked fallback below and
-    // navigate the current page too. Open without it and null opener manually.
+    // success, which would wrongly trigger the fallback below and navigate the
+    // current page too. Open without it and null opener manually.
     const win = window.open(link.href, '_blank');
-    if (win) win.opener = null;
-    else location.href = link.href; // genuinely popup-blocked
+    if (win) { win.opener = null; return; } // browser: opened in a new tab
+    openExternalWithFallback(link.href);    // webview (window.open disabled)
 });
 
-// TEMP webview fallback: surface the URL in a DaisyUI modal with a Copy button.
-// Remove once decent.app launches external URLs in the system browser.
+// In the in-app webview window.open is disabled, so we navigate to the URL: the
+// host CANCELs the nav and launches it in the system browser (reaprime gh#384).
+// We can't get a direct success/fail signal, but if the system browser opens,
+// our webview is backgrounded -> the page goes hidden / loses focus. So if we're
+// still visible a moment later, the launch didn't happen -> show the copy modal.
+function openExternalWithFallback(url) {
+    let backgrounded = false;
+    const onHide = () => { if (document.visibilityState === 'hidden') backgrounded = true; };
+    const onBlur = () => { backgrounded = true; };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('blur', onBlur, { once: true });
+
+    location.href = url; // host intercepts and opens externally; page stays put
+
+    setTimeout(() => {
+        document.removeEventListener('visibilitychange', onHide);
+        window.removeEventListener('blur', onBlur);
+        if (!backgrounded && document.visibilityState === 'visible') {
+            showExternalUrlModal(url); // external open didn't happen -> let user copy it
+        }
+    }, 1200);
+}
+
+// Surface a URL in a DaisyUI modal with a Copy button (webview launch-failure fallback).
 function showExternalUrlModal(url) {
     document.getElementById('external-url-modal')?.remove();
     const modal = document.createElement('div');

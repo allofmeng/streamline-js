@@ -1591,7 +1591,11 @@ async function initAiGenerateButton() {
             logger.warn('Could not set profileFormat=json-v2:', err);
             showToast('Could not configure plugin format; generated profile may not import.', 4000, 'warning');
         }
-        window.open(newLink.href, '_blank');
+        // Browser: new tab. Webview: window.open returns null, so fall back to
+        // location.href, which the host opens in the system browser (reaprime gh#384).
+        const win = window.open(newLink.href, '_blank');
+        if (win) win.opener = null;
+        else location.href = newLink.href;
     });
 }
 

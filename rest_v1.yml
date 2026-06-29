@@ -878,6 +878,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkflowRequest"
+        "400":
+          description: >
+            Invalid request body — the merged JSON failed to parse (e.g. an
+            invalid enum value, a missing required profile field, or an
+            unparseable number). The response body contains an `error` and
+            `message` field describing the validation failure.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error during DE1 side-effect writes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   # REA Shot history API
   /api/v1/shots:
@@ -2053,7 +2069,14 @@ paths:
   # REA Key-Value Store for clients
   /api/v1/store/{namespace}:
     get:
-      summary: Get a list of all the keys in the specified key value namespace
+      summary: List keys in a namespace, or read the whole namespace with `?full=1`
+      description: >
+        By default returns an array of the keys stored under the namespace.
+        With `?full=1` returns the entire namespace as a `{key: value}` map in a
+        single request (instead of one GET per key). The full response supports
+        conditional requests: it sends an `ETag`, and an `If-None-Match` request
+        whose value matches returns `304 Not Modified`, which makes polling the
+        whole namespace cheap.
       tags: [Key value store]
       parameters:
         - name: namespace
@@ -2062,15 +2085,34 @@ paths:
           required: true
           schema:
             type: string
+        - name: full
+          in: query
+          required: false
+          description: "Set to `1` to return the whole namespace as a `{key: value}` map instead of a list of keys."
+          schema:
+            type: string
+            enum: ["1"]
       responses:
         "200":
-          description: Array of keys
+          description: >
+            Array of keys, or — when `?full=1` is set — an object mapping each
+            key to its stored JSON value.
+          headers:
+            ETag:
+              description: Present for `?full=1` responses; pass back via `If-None-Match` to poll cheaply.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: string
+                oneOf:
+                  - type: array
+                    items:
+                      type: string
+                  - type: object
+                    additionalProperties: true
+        "304":
+          description: Returned for a `?full=1` request whose `If-None-Match` matches the current namespace ETag.
 
   /api/v1/store/{namespace}/{key}:
     get:
@@ -3762,7 +3804,7 @@ paths:
     get:
       summary: Get recent log entries
       description: |
-      Returns the last N kilobytes of the app log file. Query parameter `kb` controls the size (default: 16).
+      Returns the last N kilobytes of the app log file, newest entries first. Query parameter `kb` controls the size (default: 16).
       tags: [System]
       parameters:
         - name: kb
@@ -3771,6 +3813,13 @@ paths:
             type: integer
           description: |
           Number of kilobytes to return (default: 16)
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [desc, asc]
+            default: desc
+          description: Line order — desc (newest first, default) or asc (original chronological order).
       responses:
         "200":
           description: Recent log entries as plain text
@@ -3781,8 +3830,16 @@ paths:
   /api/v1/webview/logs:
     get:
       summary: Get WebView console logs
-      description: Returns console log messages forwarded from in-app WebViews.
+      description: Returns console log messages forwarded from in-app WebViews, newest entries first.
       tags: [System]
+      parameters:
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [desc, asc]
+            default: desc
+          description: Line order — desc (newest first, default) or asc (original chronological order).
       responses:
         "200":
           description: WebView console log entries
@@ -3905,15 +3962,17 @@ paths:
                     type: boolean
                     description: True if a Decent account is linked
 
-  /api/v1/account/proxy/{path}:
+  /api/v1/account/proxy/support/api/{endpoint}:
     get:
       summary: Auth-enriching proxy to the Decent backend
       description: >
-        Forwards a GET to `https://decentespresso.com/{path}` with the linked
-        account's credentials attached server-side as Basic auth, and relays the
-        upstream status code and body verbatim. Clients never see the
-        credentials. Phase 1 is read-only and restricted to the `support/api/`
-        path prefix.
+        Forwards a GET to `https://decentespresso.com/support/api/{endpoint}`
+        with the linked account's credentials attached server-side as Basic
+        auth, and relays the upstream status code and body verbatim. Clients
+        never see the credentials. The runtime route is a catch-all under
+        `/api/v1/account/proxy/`, but OpenAPI documents this single-segment
+        `support/api` form so generated clients do not encode slash-containing
+        path parameters incorrectly.
 
 
         Requires `Authorization: Bearer <token>` scoped `account:proxy` — a skin
@@ -3923,15 +3982,22 @@ paths:
         401.
       tags: [Account]
       parameters:
-        - name: path
+        - name: endpoint
           in: path
           required: true
-          description: Decent backend path (e.g. `support/api/sn`)
+          description: Decent `support/api` endpoint segment (e.g. `sn`)
           schema:
             type: string
       responses:
         "200":
-          description: Upstream response relayed verbatim (status and body as-is)
+          description: Common upstream success response relayed verbatim
+        default:
+          description: Any upstream status/body relayed verbatim
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
         "401":
           description: Missing/invalid token, or no Decent account linked
           content:
@@ -3940,6 +4006,100 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Token not scoped for account:proxy, or path not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Auth-enriching write proxy to the Decent backend
+      description: >
+        Forwards a POST to `https://decentespresso.com/support/api/{endpoint}`
+        with the linked account's credentials attached server-side as Basic
+        auth, relaying the request body, upstream status code, and body
+        verbatim. Clients never see the credentials.
+
+
+        Requires `Authorization: Bearer <token>` scoped
+        `account:proxy:write`. The read-only skin token cannot write — it gets
+        403. Other rejection rules match the GET form (401 unknown token / no
+        linked account; 403 unscoped or disallowed path).
+      tags: [Account]
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: Decent `support/api` endpoint segment (e.g. `sn`)
+          schema:
+            type: string
+      requestBody:
+        description: Request body relayed verbatim to the upstream endpoint.
+        required: false
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Common upstream success response relayed verbatim
+        default:
+          description: Any upstream status/body relayed verbatim
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Missing/invalid token, or no Decent account linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token not scoped for account:proxy:write, or path not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Auth-enriching write proxy to the Decent backend
+      description: >
+        Same as the POST form but forwards a PUT. Requires a token scoped
+        `account:proxy:write`.
+      tags: [Account]
+      parameters:
+        - name: endpoint
+          in: path
+          required: true
+          description: Decent `support/api` endpoint segment (e.g. `sn`)
+          schema:
+            type: string
+      requestBody:
+        description: Request body relayed verbatim to the upstream endpoint.
+        required: false
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Common upstream success response relayed verbatim
+        default:
+          description: Any upstream status/body relayed verbatim
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Missing/invalid token, or no Decent account linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Token not scoped for account:proxy:write, or path not allowed
           content:
             application/json:
               schema:
@@ -4262,20 +4422,32 @@ components:
       example: preparingForShot
     Profile:
       type: object
+      required:
+        - title
+        - steps
+        - target_volume_count_start
+        - tank_temperature
       properties:
         version:
           type: string
+          description: Optional; coerced to a string when present.
         title:
           type: string
+          description: Required, non-empty. A missing or empty title is rejected with 400.
         notes:
           type: string
+          description: Optional; defaults to an empty string when omitted.
         author:
           type: string
+          description: Optional; defaults to an empty string when omitted.
         beverage_type:
           type: string
           enum: [espresso, calibrate, cleaning, manual, pourover]
+          description: Optional; defaults to `espresso` when omitted or unrecognized.
         steps:
           type: array
+          minItems: 1
+          description: Required and must contain at least one step.
           items:
             $ref: '#/components/schemas/ProfileStep'
         target_volume:
@@ -4286,8 +4458,10 @@ components:
           nullable: true
         target_volume_count_start:
           type: integer
+          description: Required.
         tank_temperature:
           type: number
+          description: Required.
 
     ProfileStep:
       type: object
@@ -4620,6 +4794,12 @@ components:
           format: double
           nullable: true
           example: 0.3
+        hotWaterFlowMultiplier:
+          description: Lookahead (in seconds) applied to scale weight flow when stopping hot water at weight (see stopHotWaterAtWeight). Separate from weightFlowMultiplier because hot water dispenses with a different pump/flow profile than espresso. Default is 0.3. Higher values stop earlier.
+          type: number
+          format: double
+          nullable: true
+          example: 0.3
         scalePowerMode:
           description: Automatic scale power management tied to machine state. Disabled means no automatic action. displayOff turns off scale display when machine sleeps (scales without display control will disconnect). disconnect disconnects scale completely when machine sleeps.
           type: string
@@ -4628,6 +4808,9 @@ components:
           example: "disabled"
         blockOnNoScale:
           description: When true, shots will be blocked from starting if no scale is connected.
+          type: boolean
+        stopHotWaterAtWeight:
+          description: When true (default) and a scale is connected, hot water dispensing tares the scale and stops at the configured hot-water volume target treated as grams. The machine's own volume/time stop remains a backstop. Ignored in full gateway mode (a skin owns the machine). Set false to use only the machine's native volume/time stop.
           type: boolean
         preferredMachineId:
           description: Device ID of the preferred machine for auto-connect on startup. When set, REA will automatically connect to this machine when it's discovered during device scan. Set to null to clear the preference.
@@ -4705,6 +4888,11 @@ components:
           type: number
           format: double
           example: 0.3
+        hotWaterFlowMultiplier:
+          description: Lookahead (in seconds) applied to scale weight flow when stopping hot water at weight (see stopHotWaterAtWeight). Separate from weightFlowMultiplier because hot water dispenses with a different pump/flow profile than espresso. Default is 0.3. Higher values stop earlier.
+          type: number
+          format: double
+          example: 0.3
         scalePowerMode:
           description: Automatic scale power management tied to machine state. Disabled means no automatic action. displayOff turns off scale display when machine sleeps (scales without display control will disconnect). disconnect disconnects scale completely when machine sleeps.
           type: string
@@ -4712,6 +4900,9 @@ components:
           example: "disabled"
         blockOnNoScale:
           description: When true, shots will be blocked from starting if no scale is connected.
+          type: boolean
+        stopHotWaterAtWeight:
+          description: When true (default) and a scale is connected, hot water dispensing tares the scale and stops at the configured hot-water volume target treated as grams. The machine's own volume/time stop remains a backstop. Ignored in full gateway mode (a skin owns the machine).
           type: boolean
         preferredMachineId:
           description: Device ID of the preferred machine for auto-connect on startup. Returns null if no preferred device is set.
@@ -5166,8 +5357,10 @@ components:
         apiVersion:
           type: string
         permissions:
-          type: string
-          enum: [log, emit, pluginStorage]
+          type: array
+          items:
+            type: string
+            enum: [log, api, emit, pluginStorage, pluginNotify, proxy.decent_api]
         settings:
           description: Plugin settings schema
           type: object
