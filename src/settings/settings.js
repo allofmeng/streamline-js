@@ -8,6 +8,14 @@ import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
+import { isWebview } from '../modules/externalLink.js';
+
+// In the in-app webview, target=_blank is dead: the host has no onCreateWindow
+// handler and disables popups, so a _blank nav never reaches its
+// shouldOverrideUrlLoading hook (the only path that launches the OS browser).
+// A same-frame (_self) anchor tap IS a main-frame nav, so the host intercepts
+// it, opens Chrome, and cancels the load (skin stays). Real browser keeps _blank.
+const extLinkTarget = isWebview() ? '_self' : '_blank';
 
 // Config for each numeric input that should get two-click numpad support
 const SETTINGS_NUMPAD_CONFIGS = {
@@ -1451,7 +1459,7 @@ export function renderQuickstartGuideSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Quickstart Guide">Quick Start Guide</p>
                         </div>
-                        <a href="https://decentespresso.com/doc/quickstart/" target="_blank" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                        <a href="https://decentespresso.com/doc/quickstart/" target="${extLinkTarget}" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
                             View
                         </a>
                     </div>
@@ -1504,7 +1512,7 @@ export function renderUserManualSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Online Help">Online Help</p>
                         </div>
-                        <a href="https://decentespresso.com/support/submit" target="_blank" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                        <a href="https://decentespresso.com/support/submit" target="${extLinkTarget}" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
                             Visit
                         </a>
                     </div>
@@ -1525,7 +1533,7 @@ export function renderUserManualSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Tutorials">Tutorials</p>
                         </div>
-                        <a href="https://decentespresso.com/doc/quickstart/" target="_blank" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                        <a href="https://decentespresso.com/doc/quickstart/" target="${extLinkTarget}" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
                             View
                         </a>
                     </div>
@@ -1540,7 +1548,7 @@ export function renderUserManualSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]">Start writing your own skin.</p>
                         </div>
-                        <a href="https://github.com/tadelv/reaprime/blob/main/doc/Skins.md#skinsmd" target="_blank" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                        <a href="https://github.com/tadelv/reaprime/blob/main/doc/Skins.md#skinsmd" target="${extLinkTarget}" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
                             View
                         </a>
                     </div>
@@ -3185,7 +3193,7 @@ export function renderMainDescalingSettings() {
                         Run a descaling cycle to remove mineral buildup
                     </p>
                     <a href="https://app.basecamp.com/3671212/buckets/7351439/documents/7743429669"
-                       target="_blank" rel="noopener"
+                       target="${extLinkTarget}" rel="noopener"
                        class="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.4] not-italic text-[#385a92] underline text-[24px]"
                        data-i18n-key="Descaling Instruction">
                         Descaling Instruction
@@ -3827,7 +3835,7 @@ function renderAppUpdateBlock(state) {
     } else if (phase === 'available') {
         action = state?.installable
             ? `<button onclick="window.installAppUpdate()" class="bg-[#2e7d32] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Install ${latest ? 'v' + latest : 'Update'}</button>`
-            : `<a href="${state?.releaseUrl || '#'}" target="_blank" rel="noopener" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold flex items-center">View Release</a>`;
+            : `<a href="${state?.releaseUrl || '#'}" target="${extLinkTarget}" rel="noopener" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold flex items-center">View Release</a>`;
     } else if (phase === 'downloading' || phase === 'installing') {
         action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${phase === 'downloading' ? 'Downloading…' : 'Installing…'}</button>`;
     }
@@ -4900,7 +4908,7 @@ export async function initializeSettings() {
             });
             statusEl.innerHTML = `
                 <span class="text-green-600 font-bold text-[24px]" data-i18n-key="Submitted!">Submitted!</span>
-                ${data.issueUrl ? `<a href="${data.issueUrl}" target="_blank"
+                ${data.issueUrl ? `<a href="${data.issueUrl}" target="${extLinkTarget}"
                    class="ml-3 text-[#385a92] underline text-[22px]">View issue</a>` : ''}`;
             document.getElementById('feedback-title').value = '';
             document.getElementById('feedback-description').value = '';
