@@ -1141,16 +1141,22 @@ async function prefetchSettingsToIDB() {
     }
 }
 
-// Retarget every target="_blank" link to a same-frame navigation, then let the
-// user's tap proceed. The host classifies the URL in shouldOverrideUrlLoading:
-// external http(s) -> opens the OS browser and cancels the in-webview load, so
-// the skin stays put (reaprime gh#384). _blank would hit the unhandled
-// onCreateWindow, and window.open returns a dead window in the webview — so a
-// plain same-frame nav is the only thing that works. (In a desktop browser this
-// navigates the current tab instead of a new one.)
+// Open external links in the OS browser. The webview host opens the system
+// browser ONLY when a top-level navigation reaches its shouldOverrideUrlLoading
+// hook (reaprime gh#384): it sees an external http(s) URL, launches Chrome, and
+// cancels the in-webview load so the skin stays put. target="_blank" never gets
+// there — it routes to the unhandled onCreateWindow and dies. So intercept any
+// external (cross-origin) link tap and drive a real same-frame navigation
+// ourselves; the user gesture is preserved, so the host's launchUrl works.
+// Internal/same-origin and hash/JS links are left alone.
 document.addEventListener('click', (e) => {
-    const link = e.target.closest('a[target="_blank"]');
-    if (link) link.target = '_self';
+    const link = e.target.closest('a[href]');
+    if (!link) return;
+    const href = link.href; // resolved absolute URL
+    if (!/^https?:\/\//i.test(href)) return;       // ignore hash / javascript: / mailto:
+    if (href.startsWith(location.origin + '/') || href === location.origin) return; // internal SPA
+    e.preventDefault();
+    window.location.assign(href);                  // top-level nav -> host -> OS browser
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
