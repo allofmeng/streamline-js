@@ -1,3 +1,5 @@
+import { isWebview } from './externalLink.js';
+
 const MENU_ID = 'app-context-menu';
 const BACKDROP_ID = 'app-context-menu-backdrop';
 const MARGIN = 8;
@@ -59,6 +61,35 @@ function buildItems(menu, items, close) {
             const div = document.createElement('div');
             div.className = 'context-menu__divider';
             menu.appendChild(div);
+            return;
+        }
+        // Link item: render as an anchor so the user's tap navigates. Webview ->
+        // same-frame so the host opens the OS browser with this URL (gh#384);
+        // browser -> new tab. onSelect runs as a side effect (e.g. copy) without
+        // cancelling the navigation.
+        if (item.href) {
+            const a = document.createElement('a');
+            a.className = 'context-menu__item';
+            a.setAttribute('role', 'menuitem');
+            a.href = item.href;
+            a.rel = 'noopener';
+            a.target = isWebview() ? '_self' : '_blank';
+            if (item.icon) {
+                const icon = document.createElement('span');
+                icon.className = 'context-menu__icon';
+                icon.innerHTML = item.icon;
+                a.appendChild(icon);
+            }
+            const label = document.createElement('span');
+            label.className = 'context-menu__label';
+            label.textContent = item.label;
+            a.appendChild(label);
+            a.addEventListener('click', () => {
+                try { item.onSelect && item.onSelect(); }
+                catch (err) { console.error('[context-menu] onSelect error', err); }
+                setTimeout(close, 50); // let the nav initiate before removing the anchor
+            });
+            menu.appendChild(a);
             return;
         }
         const btn = document.createElement('button');

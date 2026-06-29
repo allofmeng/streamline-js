@@ -1,56 +1,30 @@
-// Single entry point for opening an external URL, correct in both targets.
+// Open an external URL, correct in both targets.
 //
 //  - Real browser: window.open -> new tab (keeps the SPA).
-//  - In-app webview (window.__DECENT_HOST__ injected by the host): window.open
-//    is unreliable here — some webviews return a truthy-but-dead window, so we
-//    must NOT trust its return value. Navigating instead hands the URL to the
-//    host's shouldOverrideUrlLoading, which launches the system browser and
-//    keeps the skin loaded (reaprime gh#384).
-//
-// If the host launch silently fails the page stays foreground (no
-// visibilitychange/blur), so after a short wait we surface a copy-the-URL modal.
+//  - In-app webview (window.__DECENT_HOST__ injected by the host): the host opens
+//    external links via shouldOverrideUrlLoading (reaprime gh#384). BUT Android
+//    System WebView only delivers a navigation to that handler for a REAL user
+//    tap on an anchor — not for JS-initiated navigation (location.href, synthetic
+//    a.click(), or window.open, which routes to the unhandled onCreateWindow). So
+//    we can't open it programmatically; we show a small sheet with a tappable
+//    same-frame link and let the user's own tap drive the navigation.
 
-const isWebview = () => typeof window !== 'undefined' && !!window.__DECENT_HOST__;
+export const isWebview = () => typeof window !== 'undefined' && !!window.__DECENT_HOST__;
 
 export function openExternalUrl(url) {
     if (!url) return;
-    if (isWebview()) { handoffToHost(url); return; }
+    if (isWebview()) { showExternalUrlModal(url); return; }
     // Note: passing 'noopener' as a feature makes window.open return null even on
     // success, which would wrongly trigger the fallback. Open without it.
     const win = window.open(url, '_blank');
     if (win) { win.opener = null; return; }
-    handoffToHost(url); // popup blocked in a real browser
+    location.href = url; // popup blocked in a real browser
 }
 
-function handoffToHost(url) {
-    let backgrounded = false;
-    const onHide = () => { if (document.visibilityState === 'hidden') backgrounded = true; };
-    const onBlur = () => { backgrounded = true; };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('blur', onBlur, { once: true });
-
-    // Android System WebView does NOT call shouldOverrideUrlLoading for JS
-    // `location.href` changes — only for link-click navigations. So trigger a
-    // real same-frame anchor click: the host (gh#384) intercepts it, CANCELs the
-    // nav (skin stays put) and launches the system browser. No target=_blank —
-    // that routes to onCreateWindow, which the host doesn't handle.
-    const a = document.createElement('a');
-    a.href = url;
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setTimeout(() => {
-        document.removeEventListener('visibilitychange', onHide);
-        window.removeEventListener('blur', onBlur);
-        if (!backgrounded && document.visibilityState === 'visible') {
-            showExternalUrlModal(url); // external open didn't happen -> let user copy it
-        }
-    }, 1200);
-}
-
-// Surface a URL in a DaisyUI modal with a Copy button (webview launch-failure fallback).
+// Sheet with a real, tappable same-frame <a> (no target — _blank would hit the
+// webview's unhandled onCreateWindow). The user's tap is the only thing the host
+// intercepts, so this is what actually opens the system browser. Copy is kept as
+// a belt-and-suspenders fallback.
 export function showExternalUrlModal(url) {
     document.getElementById('external-url-modal')?.remove();
     const modal = document.createElement('div');
@@ -59,8 +33,10 @@ export function showExternalUrlModal(url) {
     modal.innerHTML = `
         <div class="bg-white text-[#385a92] rounded-2xl p-8 max-w-[700px] w-full flex flex-col gap-6">
             <p class="text-[28px] font-bold">Open this page in your browser</p>
+            <a id="external-url-open" href="${url}" rel="noopener"
+               class="bg-[#385a92] text-white text-[26px] font-bold px-8 py-4 rounded-full text-center no-underline">Open in browser</a>
             <input id="external-url-input" type="text" readonly value="${url}"
-                class="w-full text-[24px] px-4 py-3 rounded-lg border-2 border-[#385a92] bg-[#f5f7fa] select-all" />
+                class="w-full text-[22px] px-4 py-3 rounded-lg border-2 border-[#385a92] bg-[#f5f7fa] select-all" />
             <div class="flex gap-4 justify-end">
                 <button id="external-url-copy" class="bg-[#385a92] text-white text-[24px] font-bold px-8 py-3 rounded-full">Copy</button>
                 <button id="external-url-close" class="border-2 border-[#385a92] text-[24px] font-bold px-8 py-3 rounded-full">Close</button>
@@ -69,10 +45,10 @@ export function showExternalUrlModal(url) {
     document.body.appendChild(modal);
 
     const input = modal.querySelector('#external-url-input');
-    input.focus();
-    input.select();
-
     const close = () => modal.remove();
+    // Tapping the link navigates same-frame; the host cancels the nav and opens
+    // the system browser, so close our sheet right after.
+    modal.querySelector('#external-url-open').addEventListener('click', () => setTimeout(close, 100));
     modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     modal.querySelector('#external-url-close').addEventListener('click', close);
     modal.querySelector('#external-url-copy').addEventListener('click', async (e) => {

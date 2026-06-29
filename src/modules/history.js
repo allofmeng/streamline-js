@@ -6,7 +6,6 @@ import { renderPastShot, clearShotData } from './shotData.js';
 import { getTranslation } from './i18n.js';
 import { generateShotSummary } from './shotSummary.js';
 import { openContextMenu } from './context-menu.js';
-import { openExternalUrl } from './externalLink.js';
 import { showToast, setupPressAndHold } from './ui.js';
 
 const DEREK_URL = 'https://derek.decentespresso.com/';
@@ -210,27 +209,18 @@ async function buildCurrentShotSummary() {
     return generateShotSummary(shot);
 }
 
-async function copyCurrentShotSummary() {
-    const md = await buildCurrentShotSummary();
-    if (md == null) return;
+async function copyMd(md) {
     const ok = await copyText(md);
     showToast(getTranslation(ok ? 'Summary copied to clipboard' : 'Could not copy summary'), 2400, ok ? 'success' : 'error');
 }
 
-// Copy the summary, then open Derek in the external browser so the user can
-// paste and discuss. (Derek has no CORS/prefill, so we can't inject it directly.)
-async function discussCurrentShotWithDerek() {
-    const md = await buildCurrentShotSummary();
-    if (md == null) return;
-    const ok = await copyText(md);
-    showToast(getTranslation(ok ? 'Summary copied — paste it into Derek' : 'Could not copy summary'), 4000, ok ? 'success' : 'error');
-    openExternalUrl(DEREK_URL); // shared webview-aware opener
-}
-
 // Long-press the shot history panel -> options menu. Reuses the shared
-// setupPressAndHold helper (same one profile cards use) so behaviour matches
-// the rest of the app. The nav arrows stop their own press from bubbling so
-// navigation taps still work.
+// setupPressAndHold helper (same one profile cards use). The nav arrows stop
+// their own press from bubbling so navigation taps still work.
+//
+// We build the summary up front so both actions act on a ready string: "Discuss
+// with Derek" is a link item (anchor) — the user's tap opens the OS browser with
+// the Derek URL (gh#384) and copies the summary on the same tap to paste.
 function setupHistoryLongPress() {
     const panel = document.getElementById('shot-history-panel');
     if (!panel) return;
@@ -241,10 +231,12 @@ function setupHistoryLongPress() {
             btn?.addEventListener(ev, (e) => e.stopPropagation()));
     });
 
-    setupPressAndHold(panel, () => {}, () => {
+    setupPressAndHold(panel, () => {}, async () => {
+        const md = await buildCurrentShotSummary();
+        if (md == null) return;
         openContextMenu(panel, [
-            { label: getTranslation('Discuss with Derek'), onSelect: discussCurrentShotWithDerek },
-            { label: getTranslation('Copy Shot Summary'), onSelect: copyCurrentShotSummary },
+            { label: getTranslation('Discuss with Derek'), href: DEREK_URL, onSelect: () => copyMd(md) },
+            { label: getTranslation('Copy Shot Summary'), onSelect: () => copyMd(md) },
         ]);
     });
 }

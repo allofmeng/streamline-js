@@ -4,7 +4,7 @@ import * as chart from './chart.js';
 import * as ui from './ui.js';
 import { initI18n, getTranslation } from './i18n.js';
 import * as history from './history.js';
-import { openExternalUrl } from './externalLink.js';
+import { openExternalUrl, isWebview } from './externalLink.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
 import * as api from './api.js';
@@ -1142,11 +1142,17 @@ async function prefetchSettingsToIDB() {
     }
 }
 
-// One delegated listener routes every target="_blank" link (present and future)
-// through the shared, webview-aware opener.
+// One delegated listener handles every target="_blank" link (present and future).
+//  - Browser: open a new tab.
+//  - In-app webview: Android WebView only delivers a REAL user tap on a
+//    same-frame anchor to the host's shouldOverrideUrlLoading (JS-initiated nav /
+//    _blank -> onCreateWindow are not). So just retarget to _self and let this
+//    very tap navigate — the host cancels it and opens the system browser with
+//    the clicked URL (reaprime gh#384). No preventDefault.
 document.addEventListener('click', (e) => {
     const link = e.target.closest('a[target="_blank"]');
     if (!link || !link.href) return;
+    if (isWebview()) { link.target = '_self'; return; }
     e.preventDefault();
     openExternalUrl(link.href);
 });
