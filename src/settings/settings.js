@@ -1459,7 +1459,7 @@ export function renderQuickstartGuideSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Quickstart Guide">Quick Start Guide</p>
                         </div>
-                        <a href="https://decentespresso.com/doc/quickstart/" target="${extLinkTarget}" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                        <a href="https://decentespresso.com/doc/quickstart/" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
                             View
                         </a>
                     </div>
