@@ -29,7 +29,17 @@ function handoffToHost(url) {
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('blur', onBlur, { once: true });
 
-    location.href = url; // host intercepts and opens externally; page stays put
+    // Android System WebView does NOT call shouldOverrideUrlLoading for JS
+    // `location.href` changes — only for link-click navigations. So trigger a
+    // real same-frame anchor click: the host (gh#384) intercepts it, CANCELs the
+    // nav (skin stays put) and launches the system browser. No target=_blank —
+    // that routes to onCreateWindow, which the host doesn't handle.
+    const a = document.createElement('a');
+    a.href = url;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
 
     setTimeout(() => {
         document.removeEventListener('visibilitychange', onHide);
