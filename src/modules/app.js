@@ -4,6 +4,7 @@ import * as chart from './chart.js';
 import * as ui from './ui.js';
 import { initI18n, getTranslation } from './i18n.js';
 import * as history from './history.js';
+import { openExternalUrl } from './externalLink.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
 import * as api from './api.js';
@@ -1141,84 +1142,14 @@ async function prefetchSettingsToIDB() {
     }
 }
 
-// External links (target="_blank"):
-//  - Browser: window.open succeeds -> new tab.
-//  - In-app webview: window.open is disabled and returns null; the location.href
-//    fallback reaches the host's shouldOverrideUrlLoading, which launches the URL
-//    in the system browser and keeps the skin loaded (reaprime gh#384).
-// ponytail: one delegated listener covers every target="_blank" link, present and future.
+// One delegated listener routes every target="_blank" link (present and future)
+// through the shared, webview-aware opener.
 document.addEventListener('click', (e) => {
     const link = e.target.closest('a[target="_blank"]');
     if (!link || !link.href) return;
     e.preventDefault();
-    // Note: passing 'noopener' as a feature makes window.open return null even on
-    // success, which would wrongly trigger the fallback below and navigate the
-    // current page too. Open without it and null opener manually.
-    const win = window.open(link.href, '_blank');
-    if (win) { win.opener = null; return; } // browser: opened in a new tab
-    openExternalWithFallback(link.href);    // webview (window.open disabled)
+    openExternalUrl(link.href);
 });
-
-// In the in-app webview window.open is disabled, so we navigate to the URL: the
-// host CANCELs the nav and launches it in the system browser (reaprime gh#384).
-// We can't get a direct success/fail signal, but if the system browser opens,
-// our webview is backgrounded -> the page goes hidden / loses focus. So if we're
-// still visible a moment later, the launch didn't happen -> show the copy modal.
-function openExternalWithFallback(url) {
-    let backgrounded = false;
-    const onHide = () => { if (document.visibilityState === 'hidden') backgrounded = true; };
-    const onBlur = () => { backgrounded = true; };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('blur', onBlur, { once: true });
-
-    location.href = url; // host intercepts and opens externally; page stays put
-
-    setTimeout(() => {
-        document.removeEventListener('visibilitychange', onHide);
-        window.removeEventListener('blur', onBlur);
-        if (!backgrounded && document.visibilityState === 'visible') {
-            showExternalUrlModal(url); // external open didn't happen -> let user copy it
-        }
-    }, 1200);
-}
-
-// Surface a URL in a DaisyUI modal with a Copy button (webview launch-failure fallback).
-function showExternalUrlModal(url) {
-    document.getElementById('external-url-modal')?.remove();
-    const modal = document.createElement('div');
-    modal.id = 'external-url-modal';
-    modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-6';
-    modal.innerHTML = `
-        <div class="bg-white text-[#385a92] rounded-2xl p-8 max-w-[700px] w-full flex flex-col gap-6">
-            <p class="text-[28px] font-bold">Open this page in your browser</p>
-            <input id="external-url-input" type="text" readonly value="${url}"
-                class="w-full text-[24px] px-4 py-3 rounded-lg border-2 border-[#385a92] bg-[#f5f7fa] select-all" />
-            <div class="flex gap-4 justify-end">
-                <button id="external-url-copy" class="bg-[#385a92] text-white text-[24px] font-bold px-8 py-3 rounded-full">Copy</button>
-                <button id="external-url-close" class="border-2 border-[#385a92] text-[24px] font-bold px-8 py-3 rounded-full">Close</button>
-            </div>
-        </div>`;
-    document.body.appendChild(modal);
-
-    const input = modal.querySelector('#external-url-input');
-    input.focus();
-    input.select();
-
-    const close = () => modal.remove();
-    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-    modal.querySelector('#external-url-close').addEventListener('click', close);
-    modal.querySelector('#external-url-copy').addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        try {
-            await navigator.clipboard.writeText(url);
-        } catch {
-            input.select();
-            document.execCommand('copy'); // fallback when clipboard API is blocked
-        }
-        btn.textContent = 'Copied';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-    });
-}
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {

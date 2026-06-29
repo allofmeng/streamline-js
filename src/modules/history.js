@@ -6,7 +6,8 @@ import { renderPastShot, clearShotData } from './shotData.js';
 import { getTranslation } from './i18n.js';
 import { generateShotSummary } from './shotSummary.js';
 import { openContextMenu } from './context-menu.js';
-import { showToast } from './ui.js';
+import { openExternalUrl } from './externalLink.js';
+import { showToast, setupPressAndHold } from './ui.js';
 
 const DEREK_URL = 'https://derek.decentespresso.com/';
 
@@ -223,45 +224,29 @@ async function discussCurrentShotWithDerek() {
     if (md == null) return;
     const ok = await copyText(md);
     showToast(getTranslation(ok ? 'Summary copied — paste it into Derek' : 'Could not copy summary'), 4000, ok ? 'success' : 'error');
-    // Browser: new tab. Webview: window.open returns null, so location.href hands
-    // off to the system browser while the skin stays put (reaprime gh#384).
-    const win = window.open(DEREK_URL, '_blank');
-    if (win) win.opener = null;
-    else window.location.href = DEREK_URL;
+    openExternalUrl(DEREK_URL); // shared webview-aware opener
 }
 
-// Guarded long-press on the shot history panel -> options menu. Ignores the
-// prev/next buttons so navigation taps still work; no preventDefault on down.
+// Long-press the shot history panel -> options menu. Reuses the shared
+// setupPressAndHold helper (same one profile cards use) so behaviour matches
+// the rest of the app. The nav arrows stop their own press from bubbling so
+// navigation taps still work.
 function setupHistoryLongPress() {
     const panel = document.getElementById('shot-history-panel');
-    if (!panel || panel.dataset.lpInit) return;
-    panel.dataset.lpInit = '1';
+    if (!panel) return;
 
-    // Suppress OS/browser text selection, the iOS long-press callout, the
-    // desktop right-click menu, and drag — otherwise they fire during the hold
-    // and pre-empt our long-press menu.
-    panel.style.userSelect = 'none';
-    panel.style.webkitUserSelect = 'none';
-    panel.style.webkitTouchCallout = 'none';
-    panel.style.webkitTapHighlightColor = 'transparent';
-    panel.style.touchAction = 'manipulation';
-    ['contextmenu', 'selectstart', 'dragstart'].forEach((ev) =>
-        panel.addEventListener(ev, (e) => e.preventDefault()));
-
-    let timer = null;
-    const clear = () => { clearTimeout(timer); timer = null; };
-    panel.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('button, a, input')) return; // let controls work
-        clear();
-        timer = setTimeout(() => {
-            openContextMenu(panel, [
-                { label: getTranslation('Discuss with Derek'), onSelect: discussCurrentShotWithDerek },
-                { label: getTranslation('Copy Shot Summary'), onSelect: copyCurrentShotSummary },
-            ]);
-        }, 450);
+    ['history-prev-btn', 'history-next-btn'].forEach((id) => {
+        const btn = document.getElementById(id);
+        ['mousedown', 'touchstart', 'pointerdown'].forEach((ev) =>
+            btn?.addEventListener(ev, (e) => e.stopPropagation()));
     });
-    ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) =>
-        panel.addEventListener(ev, clear));
+
+    setupPressAndHold(panel, () => {}, () => {
+        openContextMenu(panel, [
+            { label: getTranslation('Discuss with Derek'), onSelect: discussCurrentShotWithDerek },
+            { label: getTranslation('Copy Shot Summary'), onSelect: copyCurrentShotSummary },
+        ]);
+    });
 }
 
 export async function initHistory() {
