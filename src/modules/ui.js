@@ -95,12 +95,19 @@ function updateDoseValue(type, newValue) {
     const currentDoseIn = doseInEl ? parseFloat(doseInEl.textContent) : 0;
     const currentDoseOut = drinkOutEl ? parseFloat(drinkOutEl.textContent) : 0;
 
+    const targetYield = type === 'out' ? parseFloat(newValue) : currentDoseOut;
     const payload = {
         context: {
             targetDoseWeight: type === 'in' ? parseFloat(newValue) : currentDoseIn,
-            targetYield: type === 'out' ? parseFloat(newValue) : currentDoseOut
+            targetYield
         }
     };
+    // Non-autonomous machines stop on profile.target_weight, not context.targetYield —
+    // fold the yield into the sent profile so the stop matches the UI number.
+    const activeProfile = window.app?.getActiveProfileRecord?.()?.profile;
+    if (activeProfile && Number.isFinite(targetYield) && targetYield > 0) {
+        payload.profile = { ...activeProfile, target_weight: targetYield };
+    }
 
     updateWorkflow(payload).then(() => {
         logger.debug(`Dose ${type} value updated via workflow:`, newValue);
@@ -121,6 +128,11 @@ export function updateDoseAndDrinkOutValue(newDoseIn, newDrinkOut) {
             targetYield: newDrinkOut
         }
     };
+    // Keep the machine stop-at-weight (profile.target_weight) in sync with the yield.
+    const activeProfile = window.app?.getActiveProfileRecord?.()?.profile;
+    if (activeProfile && Number.isFinite(newDrinkOut) && newDrinkOut > 0) {
+        payload.profile = { ...activeProfile, target_weight: newDrinkOut };
+    }
 
     updateWorkflow(payload).then(() => {
         logger.debug(`Dose In and Drink Out values updated via workflow: ${newDoseIn}g : ${newDrinkOut}g`);

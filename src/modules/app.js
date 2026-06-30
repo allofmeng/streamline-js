@@ -1081,6 +1081,7 @@ async function initMainPageOnce() {
         await profileManager.init();
         window.app.saveGrindToActiveProfile = (val) => profileManager.saveGrindToActiveProfile(val);
         window.app.saveContextToActiveProfile = (fields) => profileManager.saveContextToActiveProfile(fields);
+        window.app.getActiveProfileRecord = () => profileManager.getActiveProfileRecord();
         await loadInitialData();
         await initializeDe1Connection();
         await initVisualizer();

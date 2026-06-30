@@ -597,31 +597,24 @@ async function handleProfileClick(index) {
     const grindContext = savedGrind != null ? { grinderSetting: savedGrind } : { grinderSetting: null };
     const effectiveDose  = meta.targetDoseWeight  ?? (profile.dose_weight   || 18);
     const effectiveYield = meta.targetYield        ?? parseFloat(profile.target_weight);
+    const displayYield = Number.isFinite(effectiveYield) ? effectiveYield : 0;
+    // The UI yield override lives in metadata (targetYield), but on non-autonomous
+    // machines Rea's stop-at-weight reads profile.target_weight — so a metadata-only
+    // yield never reaches the machine's stop and the shot runs past it. Fold the
+    // override into a *copy* of the profile (don't mutate the cached record) so the
+    // sent target_weight matches the number the user set.
+    const profileToSend = displayYield > 0 ? { ...profile, target_weight: displayYield } : profile;
     try {
         // Skip the sendProfile call since updateWorkflow can handle sending the profile
         logger.info(`Skipping sendProfile call, using updateWorkflow directly (callId: ${callId})`);
 
-        let workflowResponse;
-        if (profile.target_weight) {
-            const workflowUpdate = {
-                profile: profile,
-                context: {
-                    targetDoseWeight: effectiveDose,
-                    targetYield: effectiveYield,
-                    ...grindContext
-                }
-            };
-            workflowResponse = await updateWorkflow(workflowUpdate);
-            updateDrinkOut(effectiveYield);
-            updateDoseInDisplay(effectiveDose);
-            updateDrinkRatio();
-        } else {
-            const displayYield = isNaN(effectiveYield) ? 0 : effectiveYield;
-            workflowResponse = await updateWorkflow({ profile, context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext } });
-            updateDrinkOut(displayYield);
-            updateDoseInDisplay(effectiveDose);
-            updateDrinkRatio();
-        }
+        const workflowResponse = await updateWorkflow({
+            profile: profileToSend,
+            context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext }
+        });
+        updateDrinkOut(displayYield);
+        updateDoseInDisplay(effectiveDose);
+        updateDrinkRatio();
 
         // Use the response from updateWorkflow to confirm the profile was set
         if (workflowResponse && workflowResponse.profile && workflowResponse.profile.title === profile.title) {
