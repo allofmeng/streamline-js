@@ -3225,22 +3225,88 @@ export function renderMainAirPurgeSettings() {
     `;
 }
 
+// ── Skin update check ────────────────────────────────────────────────────────
+// For every bundled skin installed from a GitHub release, "Update available"
+// compares the installed version the bridge reports (GET /api/v1/webui/skins ->
+// s.version) against the latest release tag of that skin's own repo. Older
+// installed version => update available. Skins not installed from a GitHub release
+// have no signal and show "Up to date". APP_VERSION is NOT used here — it is a
+// hardcoded build marker shown only so dist/preview users know which build runs.
+
+function compareVersions(a, b) {
+    const parse = (v) => {
+        const [core, pre] = String(v || '').trim().replace(/^v/i, '').split('-');
+        return { nums: core.split('.').map((n) => parseInt(n, 10) || 0), pre: pre || '' };
+    };
+    const pa = parse(a), pb = parse(b);
+    const len = Math.max(pa.nums.length, pb.nums.length);
+    for (let i = 0; i < len; i++) {
+        const d = (pa.nums[i] || 0) - (pb.nums[i] || 0);
+        if (d !== 0) return d < 0 ? -1 : 1;
+    }
+    // Equal core: a release outranks a prerelease (1.0.0 > 1.0.0-beta.1).
+    if (pa.pre && !pb.pre) return -1;
+    if (!pa.pre && pb.pre) return 1;
+    if (pa.pre && pb.pre) {
+        const c = pa.pre.localeCompare(pb.pre, undefined, { numeric: true });
+        return c < 0 ? -1 : c > 0 ? 1 : 0;
+    }
+    return 0;
+}
+
+// owner/repo for a skin from the bridge's install metadata, or null when it wasn't
+// installed from a GitHub release. Our own skin falls back to the canonical repo so
+// it stays checkable even if its metadata is missing.
+function skinRepoSlug(s) {
+    const m = (s?.reaMetadata?.sourceUrl || '').match(/github_release:([^@\s]+)/i);
+    if (m) return m[1];
+    if (s?.id === SKIN_ID) return 'allofmeng/streamline_project';
+    return null;
+}
+
+// Fetch each repo's latest release tag once per settings session (deduped by repo),
+// then re-render. Non-fatal per repo: offline / rate-limited / no releases leaves
+// that skin at "Up to date".
+function maybeCheckLatestReleases() {
+    const cache = settingsCache.latestReleases || (settingsCache.latestReleases = {});
+    const inFlight = settingsCache.releaseInFlight || (settingsCache.releaseInFlight = new Set());
+    const slugs = new Set((settingsCache.allSkins || []).map(skinRepoSlug).filter(Boolean));
+    for (const slug of slugs) {
+        if (slug in cache || inFlight.has(slug)) continue;
+        inFlight.add(slug);
+        fetch(`https://api.github.com/repos/${slug}/releases/latest`, {
+            headers: { Accept: 'application/vnd.github+json' },
+        })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => { cache[slug] = data?.tag_name?.trim() || null; })
+            .catch(() => { cache[slug] = null; })
+            .finally(() => {
+                inFlight.delete(slug);
+                // renderSkinSettings() is reached via either category id — re-render
+                // whichever is active so the freshly-fetched release tag is shown.
+                if (activeSettingsCategory === 'skin' || activeSettingsCategory === 'appearance') {
+                    updateSettingsContentArea(activeSettingsCategory);
+                }
+            });
+    }
+}
+
 // Render skin settings
 export function renderSkinSettings() {
     const activeSkin = settingsCache.skinInfo;
     const allSkins = settingsCache.allSkins || [];
     const activeSkinId = activeSkin?.id || '';
 
-    // Per-skin update badge. Only the running skin can be detected as needing an update — its on-disk
-    // version differs from APP_VERSION baked into the running bundle. The API exposes no per-skin
-    // "newer available" signal (reaprime's own UI has none either), and the global Update button keeps
-    // every other on-disk skin current, so they show "Up to date".
-    // Compare loosely: the bridge derives the on-disk version from the release tag
-    // (e.g. "v0.1.59" -> "0.1.59"), so tolerate a leading "v"/whitespace. The bundle
-    // version (APP_VERSION) must otherwise match the released tag exactly.
-    const normVersion = (v) => String(v || '').trim().replace(/^v/i, '');
+    maybeCheckLatestReleases();
+
+    // Per-skin update badge: each skin installed from a GitHub release is compared
+    // against the latest release tag of its own repo. Skins without a GitHub-release
+    // source (or whose release we couldn't fetch) show "Up to date".
+    const releases = settingsCache.latestReleases || {};
     const skinBadge = (s, isActive) => {
-        const needsUpdate = s.id === SKIN_ID && s.version && normVersion(s.version) !== normVersion(APP_VERSION);
+        const slug = skinRepoSlug(s);
+        const latest = slug ? releases[slug] : null;
+        const needsUpdate = !!latest && !!s.version && compareVersions(s.version, latest) < 0;
         const base = 'text-[16px] font-semibold px-[8px] py-[2px] rounded-full';
         if (isActive) return `<span class="${base} bg-white/20 text-white">${needsUpdate ? 'Update available' : 'Up to date'}</span>`;
         return needsUpdate
@@ -3284,6 +3350,10 @@ export function renderSkinSettings() {
                 <div class="grid grid-cols-2 gap-[14px] w-full">
                     ${(allSkins.length > 0 ? allSkins : (activeSkin ? [activeSkin] : [])).map(s => {
                         const isActive = s.id === activeSkinId;
+                        // Show the hardcoded build marker for our skin so dist/preview
+                        // users can tell which build they run; other skins use the
+                        // version the bridge reports.
+                        const displayVersion = s.id === SKIN_ID ? APP_VERSION : s.version;
                         return `
                         <button
                             onclick="${isActive ? '' : `window.setActiveSkin('${s.id}')`}"
@@ -3298,7 +3368,7 @@ export function renderSkinSettings() {
                                 ${isActive ? `<span class="text-[14px] font-bold tracking-widest uppercase px-[10px] py-[4px] rounded-full bg-white bg-opacity-20 text-white shrink-0" data-i18n-key="Active">Active</span>` : ''}
                             </div>
                             <div class="flex items-center gap-[10px]">
-                                ${s.version ? `<span class="text-[17px] font-['Inter:Regular',sans-serif] opacity-80">v${s.version}</span>` : ''}
+                                ${displayVersion ? `<span class="text-[17px] font-['Inter:Regular',sans-serif] opacity-80">v${displayVersion}</span>` : ''}
                                 ${skinBadge(s, isActive)}
                                 <span class="text-[14px] font-['Inter:Regular',sans-serif] opacity-60 uppercase tracking-wider">${s.isBundled ? 'Bundled' : 'Installed'}</span>
                             </div>
