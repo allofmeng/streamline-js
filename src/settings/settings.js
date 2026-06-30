@@ -3235,8 +3235,12 @@ export function renderSkinSettings() {
     // version differs from APP_VERSION baked into the running bundle. The API exposes no per-skin
     // "newer available" signal (reaprime's own UI has none either), and the global Update button keeps
     // every other on-disk skin current, so they show "Up to date".
+    // Compare loosely: the bridge derives the on-disk version from the release tag
+    // (e.g. "v0.1.59" -> "0.1.59"), so tolerate a leading "v"/whitespace. The bundle
+    // version (APP_VERSION) must otherwise match the released tag exactly.
+    const normVersion = (v) => String(v || '').trim().replace(/^v/i, '');
     const skinBadge = (s, isActive) => {
-        const needsUpdate = s.id === SKIN_ID && s.version && s.version !== APP_VERSION;
+        const needsUpdate = s.id === SKIN_ID && s.version && normVersion(s.version) !== normVersion(APP_VERSION);
         const base = 'text-[16px] font-semibold px-[8px] py-[2px] rounded-full';
         if (isActive) return `<span class="${base} bg-white/20 text-white">${needsUpdate ? 'Update available' : 'Up to date'}</span>`;
         return needsUpdate
