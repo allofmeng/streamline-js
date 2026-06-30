@@ -1590,6 +1590,14 @@ async function initAiGenerateButton() {
     link.parentNode.replaceChild(link.cloneNode(true), link); // drop any stale listeners
 }
 
+// User consent for an AI generation lives in the plugin (its "upload to Decent"
+// button), so importing the pushed profile here is correct. But the
+// profileGenerated WS retains its last message and replays it to every new
+// subscriber, so this handler also fires on each page open — re-importing the
+// last generation. Skip a profile we've already imported; persisted so the guard
+// survives reloads, not just in-app navigation.
+const LAST_AI_IMPORT_KEY = 'lastImportedAiProfileSignature';
+
 async function handleGeneratedProfile(data) {
     if (data.format !== 'json-v2') {
         logger.warn(`Ignoring profileGenerated event: format=${data.format} (expected json-v2)`);
@@ -1608,9 +1616,13 @@ async function handleGeneratedProfile(data) {
 
     if (data.title && !profileJson.title) profileJson.title = data.title;
 
+    const signature = JSON.stringify(profileJson);
+    if (localStorage.getItem(LAST_AI_IMPORT_KEY) === signature) return; // replay of an already-imported profile
+
     try {
         const saved = await uploadProfileWithParent(profileJson, null);
         availableProfiles[saved.id] = saved;
+        localStorage.setItem(LAST_AI_IMPORT_KEY, signature); // mark imported only after a successful save
         document.dispatchEvent(new CustomEvent('profiles-updated'));
         showToast(`AI profile "${profileJson.title || 'Untitled'}" imported.`, 4000, 'success');
     } catch (e) {
