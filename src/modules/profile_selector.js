@@ -2,7 +2,7 @@ import { init as initProfileManager, unhideProfile,availableProfiles, assignProf
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
-import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, uploadProfileWithParent, deleteProfile, updateProfileVisibility, API_BASE_URL, connectProfileGeneratedWebSocket } from './api.js';
+import { sendProfile, getWorkflow, updateWorkflow, callPluginEndpoint, getPluginSettings, setPluginSettings, verifyVisualizerCredentials, deleteProfile, updateProfileVisibility, API_BASE_URL } from './api.js';
 import { initChart, plotProfile } from './chart.js';
 import { translatePage, getTranslation } from './i18n.js';
 import { loadPage } from './router.js';
@@ -1578,7 +1578,10 @@ async function initAiGenerateButton() {
         return;
     }
 
-    connectProfileGeneratedWebSocket(handleGeneratedProfile);
+    // No profileGenerated WS subscription here on purpose: a generated profile
+    // must never be auto-imported. The plugin's "upload to Decent" button is the
+    // only path — it uploads on explicit user action. Subscribing here re-imported
+    // the WS's retained last generation on every page open (spurious green toast).
 
     // Set the output format once now (not on click) so the tap can navigate
     // natively — the plain <a href> (no target) is a same-frame navigation, which
@@ -1588,47 +1591,6 @@ async function initAiGenerateButton() {
 
     // ponytail: no click handler — the anchor's own same-frame navigation does it.
     link.parentNode.replaceChild(link.cloneNode(true), link); // drop any stale listeners
-}
-
-// User consent for an AI generation lives in the plugin (its "upload to Decent"
-// button), so importing the pushed profile here is correct. But the
-// profileGenerated WS retains its last message and replays it to every new
-// subscriber, so this handler also fires on each page open — re-importing the
-// last generation. Skip a profile we've already imported; persisted so the guard
-// survives reloads, not just in-app navigation.
-const LAST_AI_IMPORT_KEY = 'lastImportedAiProfileSignature';
-
-async function handleGeneratedProfile(data) {
-    if (data.format !== 'json-v2') {
-        logger.warn(`Ignoring profileGenerated event: format=${data.format} (expected json-v2)`);
-        showToast(`Plugin returned ${data.format}; cannot import. Set Output format to json-v2.`, 5000, 'warning');
-        return;
-    }
-
-    let profileJson;
-    try {
-        profileJson = typeof data.profile === 'string' ? JSON.parse(data.profile) : data.profile;
-    } catch (e) {
-        logger.error('Could not parse generated profile JSON:', e);
-        showToast('AI profile import failed (bad JSON).', 4000, 'error');
-        return;
-    }
-
-    if (data.title && !profileJson.title) profileJson.title = data.title;
-
-    const signature = JSON.stringify(profileJson);
-    if (localStorage.getItem(LAST_AI_IMPORT_KEY) === signature) return; // replay of an already-imported profile
-
-    try {
-        const saved = await uploadProfileWithParent(profileJson, null);
-        availableProfiles[saved.id] = saved;
-        localStorage.setItem(LAST_AI_IMPORT_KEY, signature); // mark imported only after a successful save
-        document.dispatchEvent(new CustomEvent('profiles-updated'));
-        showToast(`AI profile "${profileJson.title || 'Untitled'}" imported.`, 4000, 'success');
-    } catch (e) {
-        logger.error('Failed to save generated profile:', e);
-        showToast('Failed to save AI profile.', 4000, 'error');
-    }
 }
 
 // Call initialization when DOM is ready for traditional page loads
