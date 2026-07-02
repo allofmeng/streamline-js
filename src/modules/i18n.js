@@ -82,6 +82,37 @@ export function translatePage() {
         const key = element.getAttribute('data-i18n-key');
         element.textContent = getTranslation(key);
     });
+    // Shrink text to fit fixed-size elements (e.g. header buttons) so long
+    // translations stay on one line without changing the box. Opt in with
+    // data-fit-text; the element must be whitespace-nowrap and have a fixed width.
+    document.querySelectorAll('[data-fit-text]').forEach(fitTextToWidth);
+}
+
+// Shared canvas for text measurement — reliable even for centered flex items,
+// where scrollWidth wrongly reports ~clientWidth and the shrink never triggers.
+const _fitCanvas = document.createElement('canvas');
+const _fitCtx = _fitCanvas.getContext('2d');
+
+/**
+ * Shrinks an element's font-size until its text fits its width (no overflow).
+ * Resets to the CSS-defined size first so switching to a shorter language grows
+ * it back. ponytail: 1px steps, min 8px — plenty precise for button labels.
+ */
+function fitTextToWidth(el) {
+    el.style.fontSize = '';
+    const cs = getComputedStyle(el);
+    // clientWidth excludes border; -8px inset so text clears the rounded corners
+    const avail = el.clientWidth - 8;
+    const text = el.textContent;
+    let size = parseFloat(cs.fontSize);
+    const measure = s => {
+        _fitCtx.font = `${cs.fontWeight} ${s}px ${cs.fontFamily}`;
+        return _fitCtx.measureText(text).width;
+    };
+    while (measure(size) > avail && size > 8) {
+        size -= 1;
+    }
+    el.style.fontSize = size + 'px';
 }
 
 /**

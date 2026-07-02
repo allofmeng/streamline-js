@@ -68,8 +68,8 @@
         </nav>
         <!-- Right side controls -->
         <div class="absolute right-[38px] top-[50px] flex items-center gap-[10px]">
-            <button id="settings-btn" class="settings-button flex justify-center items-center min-h-0 w-[165px] h-[67px] border border-solid border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] rounded-[25px] text-[26px] font-semibold" data-i18n-key="Settings">Settings</button>
-            <button id="sleep-button" class="flex justify-center items-center min-h-0 w-[150px] h-[67px] border border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] rounded-[25px] text-[25px] font-semibold" data-i18n-key="Sleep">Sleep</button>
+            <button id="settings-btn" class="settings-button flex justify-center items-center min-h-0 w-[165px] h-[67px] whitespace-nowrap border border-solid border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] rounded-[25px] text-[26px] font-semibold" data-i18n-key="Settings" data-fit-text>Settings</button>
+            <button id="sleep-button" class="flex justify-center items-center min-h-0 w-[150px] h-[67px] whitespace-nowrap border border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] rounded-[25px] text-[25px] font-semibold" data-i18n-key="Sleep" data-fit-text>Sleep</button>
             <button id="fullscreen-toggle-btn" title="Toggle fullscreen" class="  w-[50px] h-[50px] flex items-center justify-center  border border-[var(--mimoja-blue)] rounded-[10px]  text-[var(--mimoja-blue)]" aria-label="Toggle Fullscreen">
                 <svg class="enter-fullscreen-icon w-50 h-50" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
                 <svg class="exit-fullscreen-icon w-6 h-6 " aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
@@ -81,8 +81,8 @@
         <!-- Left Sidebar: Shot Settings -->
         <aside class="bg-[var(--box-color)] pl-9 pr-3 md:pr-[6px] py-3 flex flex-col justify-around border-r border-base-400 w-[480px] h-[1036px]" aria-label="Shot Settings">
             <!-- Grind -->
-            <div id="grind-section" class="flex justify-start items-center gap-9">
-                <span id="grind-label" class="w-[114px] text-[var(--left-label-text)] text-[26px] font-bold" data-i18n-key="Grind">Grind</span>
+            <div id="grind-section" class="flex justify-start items-center gap-[20px]">
+                <span id="grind-label" class="w-[130px] text-[var(--left-label-text)] text-[26px] font-bold break-words" data-i18n-key="Grind">Grind</span>
                 <div class="relative w-[256px] h-[72px]">
                     <button id="grind-minus" class="absolute left-[4px] top-[38px] -translate-y-1/2 w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" aria-label="Decrease Grind"><svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <span id="grind-value" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88px] text-center text-[var(--text-primary)] text-[26px] font-bold" aria-labelledby="grind-label">1.4</span>
@@ -90,8 +90,8 @@
                 </div>
             </div>
             <!-- Dose In -->
-            <div id="dose-section" class="flex justify-start items-center gap-9">
-                <span id="dose-label" class="w-[114px] text-[var(--left-label-text)] text-[26px] font-bold" data-i18n-key="Dose">Dose</span>
+            <div id="dose-section" class="flex justify-start items-center gap-[20px]">
+                <span id="dose-label" class="w-[130px] text-[var(--left-label-text)] text-[26px] font-bold break-words" data-i18n-key="Dose">Dose</span>
                 <div class="relative w-[256px] h-[72px]">
                     <button id="dose-in-minus" class="absolute left-[4px] top-[33px] -translate-y-1/2 w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" aria-label="Decrease Dose"><svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <span id="dose-in-value" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88px] text-center text-[var(--text-primary)] text-[26px] font-bold" aria-labelledby="dose-label">g</span>
@@ -99,8 +99,8 @@
                 </div>
             </div>
             <!-- Drink out -->
-            <div id="drink-section" class="flex justify-start items-center gap-9">
-                <span id="drink-label" class="w-[114px] text-[var(--left-label-text)] text-[26px] font-bold" data-i18n-key="Drink">Drink</span>
+            <div id="drink-section" class="flex justify-start items-center gap-[20px]">
+                <span id="drink-label" class="w-[130px] text-[var(--left-label-text)] text-[26px] font-bold break-words" data-i18n-key="Drink">Drink</span>
                 <div class="relative w-[256px] h-[72px]">
                     <button id="drink-out-minus" class="absolute left-[4px] top-[33px] -translate-y-1/2 w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" aria-label="Decrease Drink Amount"><svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88px] text-center" aria-labelledby="drink-label">
@@ -118,8 +118,8 @@
             </div>
             <div class="border-t border-base-400 w-[480px] ml-[-36px] mr-[-24px]" role="separator"></div>
             <!-- Temp -->
-             <div id="brew-section" class="flex justify-start items-center gap-9">
-                <span id="brew-label" class="w-[114px] text-[var(--left-label-text)] text-[26px] font-bold" data-i18n-key="Brew">Brew</span>
+             <div id="brew-section" class="flex justify-start items-center gap-[20px]">
+                <span id="brew-label" class="w-[130px] text-[var(--left-label-text)] text-[26px] font-bold break-words" data-i18n-key="Brew">Brew</span>
                 <div class="relative w-[256px] h-[72px]">
                     <button id="temp-minus" class="absolute left-[4px] top-[33px] -translate-y-1/2 w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" aria-label="Decrease Brew Temperature"><svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                     <span id="temp-value" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[88px] text-center text-[var(--text-primary)] text-[26px] font-bold" aria-labelledby="brew-label">92°c</span>
@@ -181,10 +181,10 @@
 
             <div class="border-t border-base-400 w-[480px] ml-[-36px] mr-[-24px]" role="separator"></div>
             <!-- Hot Water -->
-            <div id="hotwater-section" class="flex justify-start items-center gap-9">
-                <div class="w-[114px]">
-                    <span id="hotwater-label" class="text-[var(--left-label-text)] text-[26px] font-bold block text-nowrap" data-i18n-key="Hot Water">Hot Water</span>
-                    <span id="hot-water-mode-toggle" class="w-[114px] text-[var(--low-contrast-white)] text-[20px] font-semibold text-nowrap block leading-6 cursor-pointer" role="button" tabindex="0" aria-label="Toggle Hot Water Mode">
+            <div id="hotwater-section" class="flex justify-start items-center gap-[20px]">
+                <div class="w-[130px]">
+                    <span id="hotwater-label" class="text-[var(--left-label-text)] text-[26px] font-bold block break-words" data-i18n-key="Hot Water">Hot Water</span>
+                    <span id="hot-water-mode-toggle" class="w-[130px] text-[var(--low-contrast-white)] text-[20px] font-semibold text-nowrap block leading-6 cursor-pointer" role="button" tabindex="0" aria-label="Toggle Hot Water Mode">
                         <span id="hot-water-mode-temp" data-i18n-key="Temp">Temp</span> | <span id="hot-water-mode-vol" data-i18n-key="Vol">Vol</span>
                     </span>
                 </div>
@@ -217,13 +217,13 @@
                                 Current Profile
                             </h1>
                             <div class="h-9 pt-10 inline-flex justify-start items-center gap-[22px]" aria-label="Machine Telemetry">
-                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Mix">Mix</span> <span id="data-mix-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
-                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Group">Group</span> <span id="data-group-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
-                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Steam">Steam</span> <span id="data-steam-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
-                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Tank">Tank</span> <span id="data-tank-vol" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">ml</span></p>
-                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Clock">Clock</span> <span id="data-clock" class="text-[var(--text-primary)] text-[24px] font-['NotoSansMono'] leading-6">--:--</span></p>
+                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Mix">Mix</span>&nbsp;&nbsp;<span id="data-mix-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
+                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Group">Group</span>&nbsp;&nbsp;<span id="data-group-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
+                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Steam">Steam</span>&nbsp;&nbsp;<span id="data-steam-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
+                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Tank">Tank</span>&nbsp;&nbsp;<span id="data-tank-vol" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">ml</span></p>
+                                <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Clock">Clock</span>&nbsp;&nbsp;<span id="data-clock" class="text-[var(--text-primary)] text-[24px] font-['NotoSansMono'] leading-6">--:--</span></p>
                                 <div id="scale-info-container" style="display: none;">
-                                    <p><span id = 'weight-text' class="no-select text-[var(--mimoja-blue-v2)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Weight"></span> <span id="data-weight" class="text-[var(--mimoja-blue-v2)] text-[24px]  font-['NotoSansMono'] leading-6 no-select"> </span></p>
+                                    <p><span id = 'weight-text' class="no-select text-[var(--mimoja-blue-v2)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Weight"></span>&nbsp;&nbsp;<span id="data-weight" class="text-[var(--mimoja-blue-v2)] text-[24px]  font-['NotoSansMono'] leading-6 no-select"> </span></p>
                                 </div>
                             </div>
                         </div>
