@@ -203,17 +203,39 @@ async function attemptScaleAutoRetry() {
     scaleAutoRetryTimer = setTimeout(attemptScaleAutoRetry, SCALE_AUTO_RETRY_INTERVAL_MS);
 }
 
+// Spinner shown in the weight slot while a scale scan is in flight. SMIL-animated
+// so it spins without a CSS class (keeps the weight item narrow — no text width —
+// so it never overflows the GHC column, and needs no Tailwind rebuild).
+const SCAN_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="display:inline-block;vertical-align:middle" aria-label="Scanning"><path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.9s" repeatCount="indefinite"/></path></svg>`;
+
+function renderScanIcon() {
+    const weightEl = document.getElementById('data-weight');
+    const weightTextEl = document.getElementById('weight-text');
+    if (weightTextEl) weightTextEl.classList.add('text-red-600');
+    if (weightEl) {
+        weightEl.classList.add('text-[var(--mimoja-blue)]');
+        weightEl.classList.remove('text-[var(--text-primary)]');
+        weightEl.innerHTML = SCAN_ICON_SVG;
+    }
+}
+
 function renderScaleDisconnectedText() {
     if (isScaleConnected) return;
     // Container is display:none by default and only revealed on first weight frame.
-    // Force it visible here so the [Reconnect] / Scanning text — and the tap target — render.
+    // Force it visible here so the Retry text / Scan spinner — and the tap target — render.
     const scaleInfoContainer = document.getElementById('scale-info-container');
     if (scaleInfoContainer) scaleInfoContainer.style.display = '';
     const showScanning = isScaleScanning || isInWakeGracePeriod;
-    ui.updateWeight(showScanning ? 'Scanning...' : '[Reconnect]', {
-        weightText: { add: ['text-red-600'] },
-        dataWeight: { add: ['text-[var(--mimoja-blue)]'], remove: ['text-[var(--text-primary)]'] }
-    });
+    if (showScanning) {
+        renderScanIcon();
+    } else {
+        // 'Retry' is translated; most languages are short (German is longer but
+        // the user accepts it here).
+        ui.updateWeight(getTranslation('Retry'), {
+            weightText: { add: ['text-red-600'] },
+            dataWeight: { add: ['text-[var(--mimoja-blue)]'], remove: ['text-[var(--text-primary)]'] }
+        });
+    }
 }
 
 function handleDeviceWsData(data) {
@@ -637,7 +659,9 @@ async function handleWeightClick() {
     if (isConnectingScale) return;
 
     isConnectingScale = true;
-    ui.updateWeight('Connecting...');
+    // Show the scanning spinner immediately (instead of a 'Connecting...' text
+    // placeholder that flashed briefly and was wider/unstyled).
+    renderScanIcon();
 
     try {
         const deviceWs = getDeviceWebSocket();

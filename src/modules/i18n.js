@@ -94,8 +94,20 @@ export function translatePage() {
 // Shrink text to fit fixed-size elements (e.g. header buttons) so long
 // translations stay on one line without changing the box. Opt in with
 // data-fit-text; the element must be whitespace-nowrap and have a fixed width.
+let _fitObserver;
 function fitAllText() {
-    document.querySelectorAll('[data-fit-text]').forEach(fitTextToWidth);
+    const els = document.querySelectorAll('[data-fit-text]');
+    els.forEach(fitTextToWidth);
+    // Re-fit when an element's size changes — crucially the 0 -> 165px jump when
+    // #main-page returns from display:none (language was changed on the Settings
+    // sub-page, so the header buttons were hidden and skipped the first fit).
+    // Width is fixed, so setting font-size doesn't resize it -> no feedback loop.
+    if (!_fitObserver && typeof ResizeObserver !== 'undefined') {
+        _fitObserver = new ResizeObserver(entries => {
+            for (const e of entries) fitTextToWidth(e.target);
+        });
+    }
+    if (_fitObserver) els.forEach(el => _fitObserver.observe(el));
 }
 
 // Off-screen span that measures text using the page's REAL rendered fonts.
