@@ -2005,7 +2005,7 @@ export function updateWeight(weight, classUpdates = {}) {
 
     if (weightEl) {
         if (typeof weight === 'number' && !isNaN(weight)) {
-            weightEl.textContent = ` ${weight.toFixed(1)}g`;
+            weightEl.textContent = `${weight.toFixed(1)}g`;
         } else {
             weightEl.textContent = weight;
         }

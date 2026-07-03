@@ -111,12 +111,16 @@ export function fitTelemetry() {
     if (avail > 0 && natural > avail) {
         row.style.transform = `scale(${(avail / natural).toFixed(3)})`;
     }
-    // Re-fit when the band resizes — chiefly the GHC column toggling, which
-    // changes the available width. Setting transform doesn't resize the band,
-    // so there's no feedback loop.
+    // Re-fit on any size change, delivered immediately once observing starts:
+    //  - band: GHC column toggling / window resize (available width changes)
+    //  - row:  content/font changes (Retry text appearing, first layout, Inter
+    //          loading) — catches the initial clip before it's visible.
+    // transform is visual-only, so it never changes either observed box -> no loop.
     if (!_telemetryObserved && typeof ResizeObserver !== 'undefined') {
         _telemetryObserved = true;
-        new ResizeObserver(() => fitTelemetry()).observe(band);
+        const ro = new ResizeObserver(() => fitTelemetry());
+        ro.observe(band);
+        ro.observe(row);
     }
 }
 
