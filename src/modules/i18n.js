@@ -83,11 +83,40 @@ export function translatePage() {
         element.textContent = getTranslation(key);
     });
     fitAllText();
+    fitTelemetry();
     // The header buttons are laid out with the custom Inter font; if it hasn't
     // finished loading yet the first fit measures against a fallback (or a
     // not-yet-sized box) and mis-shrinks. Re-fit once fonts are ready.
     if (document.fonts && document.fonts.status !== 'loaded') {
-        document.fonts.ready.then(fitAllText);
+        document.fonts.ready.then(() => { fitAllText(); fitTelemetry(); });
+    }
+}
+
+// Scale the machine-telemetry row down so long-language rows (e.g. German:
+// "Mischwasser … Gewicht 65.0g") stay on ONE line instead of wrapping. The row
+// is nowrap; we measure its natural one-line width and, if it exceeds the space
+// available (which shrinks when the GHC column is shown), apply transform:scale.
+let _telemetryObserved = false;
+export function fitTelemetry() {
+    const row = document.getElementById('telemetry-row');
+    if (!row) return;
+    row.style.transformOrigin = 'left center';
+    row.style.transform = '';                    // reset so scrollWidth is the true 1-line width
+    // Grandparent = the header band (full left-column width; shrinks when GHC shows).
+    const band = row.parentElement && row.parentElement.parentElement;
+    if (!band) return;
+    const LEFT = 40, RESERVE = 24;               // row's left offset + gap before GHC/edge
+    const avail = band.clientWidth - LEFT - RESERVE;
+    const natural = row.scrollWidth;
+    if (avail > 0 && natural > avail) {
+        row.style.transform = `scale(${(avail / natural).toFixed(3)})`;
+    }
+    // Re-fit when the band resizes — chiefly the GHC column toggling, which
+    // changes the available width. Setting transform doesn't resize the band,
+    // so there's no feedback loop.
+    if (!_telemetryObserved && typeof ResizeObserver !== 'undefined') {
+        _telemetryObserved = true;
+        new ResizeObserver(() => fitTelemetry()).observe(band);
     }
 }
 

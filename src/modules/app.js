@@ -2,7 +2,7 @@ import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayMode
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
-import { initI18n, getTranslation } from './i18n.js';
+import { initI18n, getTranslation, fitTelemetry } from './i18n.js';
 import * as history from './history.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
@@ -236,6 +236,8 @@ function renderScaleDisconnectedText() {
             dataWeight: { add: ['text-[var(--mimoja-blue)]'], remove: ['text-[var(--text-primary)]'] }
         });
     }
+    // Retry text / spinner change the row's width — re-fit so it stays one line.
+    fitTelemetry();
 }
 
 function handleDeviceWsData(data) {
