@@ -2449,7 +2449,9 @@ export function showGhcControls() {
     el.style.display = 'flex';
 
     const panel = document.getElementById('shot-data-panel');
-    if (panel) panel.style.width = '878px';
+    // 885px = GHC left edge (1748) - panel left (863): panel's right edge meets the
+    // GHC column so their borders form one continuous line (was 878 -> 7px gap).
+    if (panel) panel.style.width = '885px';
 
     const status = document.getElementById('machine-status');
     if (status) {

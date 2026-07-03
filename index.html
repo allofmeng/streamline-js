@@ -237,7 +237,7 @@
                 </div>
 
                 <!-- GHC column: h = 116 (header) + 675 (chart) = 791px -->
-                <aside id="ghc-controls" class="bg-[var(--box-color)] border-l border-base-400 w-[172px] shrink-0 h-[791px] flex flex-col items-center justify-around py-[20px]" style="display:none" aria-label="Machine Controls">
+                <aside id="ghc-controls" class="bg-[var(--box-color)] border-l border-b border-base-400 w-[172px] shrink-0 h-[790px] flex flex-col items-center justify-around py-[20px]" style="display:none" aria-label="Machine Controls">
                     <button id="ghc-coffee-btn" class="flex flex-col items-center justify-center w-[116px] h-[116px] rounded-[18px]  bg-[var(--profile-button-background-color)]" aria-label="Start Coffee">
                         <img src="src/ui/icons/icon_coffee.svg" alt="" class="w-[52px] h-[52px]" aria-hidden="true">
                         <span class="text-[var(--mimoja-blue)] text-[24px] font-semibold mt-1" data-i18n-key="Coffee">Coffee</span>
@@ -262,7 +262,7 @@
             </div>
 
             <!-- Footer: Shot History and Data -->
-            <div id="shot-history-panel" class="w-[385px] h-60 left-[479px] top-[955px] absolute bg-[var(--bgmain-color)] border border-b-0 border-base-400" aria-label="Shot History">
+            <div id="shot-history-panel" class="w-[385px] h-60 left-[479px] top-[958px] absolute bg-[var(--bgmain-color)] border border-b-0 border-base-400" aria-label="Shot History">
                 <div id= 'shot-history-label'class="left-[193px] top-[46px] absolute -translate-x-1/2 text-center text-[var(--data-card-title-text-color)] text-[22px] font-semibold font-['Inter'] leading-6 whitespace-nowrap tracking-wider" data-i18n-key="SHOT HISTORY">SHOT HISTORY</div>
                 <div class="w-[340px] left-[22px] top-[92px] absolute h-[148px]" aria-live="polite">
                     <div class="w-[340px] absolute top-[0px] h-[36px]">
@@ -278,7 +278,7 @@
                     </div>
                 </div>
             </div>
-            <div id="shot-data-panel" class="w-[1050px] h-60 left-[863px] top-[955px] border-r-0 border-b-0 absolute bg-[var(--bgmain-color)] border border-base-400" role="grid" aria-label="Detailed Shot Data">
+            <div id="shot-data-panel" class="w-[1050px] h-60 left-[863px] top-[958px] border-r-0 border-b-0 absolute bg-[var(--bgmain-color)] border border-base-400" role="grid" aria-label="Detailed Shot Data">
                 <div class="shot-data-cols grid grid-cols-7 w-full left-[198px] top-[35px] absolute" style="grid-template-columns: 90px 100px 110px 120px 190px 150px;" role="row">
                     <div class="h-9 text-[var(--data-card-title-text-color)] text-[22px] font-semibold font-['Inter'] leading-6 text-left flex items-center justify-start whitespace-nowrap" data-i18n-key="Time" role="columnheader">Time</div>
                     <div class="h-9 text-[var(--data-card-title-text-color)] text-[22px] font-semibold font-['Inter'] leading-6 text-left flex items-center justify-start whitespace-nowrap" data-i18n-key="Grams" role="columnheader">Grams</div>
