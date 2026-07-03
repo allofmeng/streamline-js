@@ -82,16 +82,30 @@ export function translatePage() {
         const key = element.getAttribute('data-i18n-key');
         element.textContent = getTranslation(key);
     });
-    // Shrink text to fit fixed-size elements (e.g. header buttons) so long
-    // translations stay on one line without changing the box. Opt in with
-    // data-fit-text; the element must be whitespace-nowrap and have a fixed width.
+    fitAllText();
+    // The header buttons are laid out with the custom Inter font; if it hasn't
+    // finished loading yet the first fit measures against a fallback (or a
+    // not-yet-sized box) and mis-shrinks. Re-fit once fonts are ready.
+    if (document.fonts && document.fonts.status !== 'loaded') {
+        document.fonts.ready.then(fitAllText);
+    }
+}
+
+// Shrink text to fit fixed-size elements (e.g. header buttons) so long
+// translations stay on one line without changing the box. Opt in with
+// data-fit-text; the element must be whitespace-nowrap and have a fixed width.
+function fitAllText() {
     document.querySelectorAll('[data-fit-text]').forEach(fitTextToWidth);
 }
 
-// Shared canvas for text measurement — reliable even for centered flex items,
-// where scrollWidth wrongly reports ~clientWidth and the shrink never triggers.
-const _fitCanvas = document.createElement('canvas');
-const _fitCtx = _fitCanvas.getContext('2d');
+// Off-screen span that measures text using the page's REAL rendered fonts.
+// A <canvas> 2D context silently falls back to a wider default when the custom
+// font (Inter) isn't honored, which over-shrinks; a DOM span never does.
+const _fitMeter = document.createElement('span');
+_fitMeter.style.cssText =
+    'position:absolute;left:-9999px;top:-9999px;white-space:nowrap;visibility:hidden;pointer-events:none';
+if (document.body) document.body.appendChild(_fitMeter);
+else document.addEventListener('DOMContentLoaded', () => document.body.appendChild(_fitMeter));
 
 /**
  * Shrinks an element's font-size until its text fits its width (no overflow).
@@ -100,15 +114,19 @@ const _fitCtx = _fitCanvas.getContext('2d');
  */
 function fitTextToWidth(el) {
     el.style.fontSize = '';
-    const cs = getComputedStyle(el);
-    // clientWidth excludes border; -8px inset so text clears the rounded corners
+    // clientWidth excludes border; -8px inset so text clears the rounded corners.
     const avail = el.clientWidth - 8;
-    const text = el.textContent;
+    // Not laid out yet (hidden/zero-width): leave the CSS size, a later fit
+    // (fonts.ready / next translatePage) handles it. Never shrink to the floor here.
+    if (avail <= 0) return;
+    const cs = getComputedStyle(el);
+    _fitMeter.style.fontFamily = cs.fontFamily;
+    _fitMeter.style.fontWeight = cs.fontWeight;
+    _fitMeter.style.fontStyle = cs.fontStyle;
+    _fitMeter.style.letterSpacing = cs.letterSpacing;
+    _fitMeter.textContent = el.textContent;
     let size = parseFloat(cs.fontSize);
-    const measure = s => {
-        _fitCtx.font = `${cs.fontWeight} ${s}px ${cs.fontFamily}`;
-        return _fitCtx.measureText(text).width;
-    };
+    const measure = s => { _fitMeter.style.fontSize = s + 'px'; return _fitMeter.offsetWidth; };
     while (measure(size) > avail && size > 8) {
         size -= 1;
     }
