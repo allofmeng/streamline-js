@@ -2133,7 +2133,7 @@ function describeStep(step, index) {
 
         const placeholder = document.createElement('span');
         placeholder.className = PILL_ACTIVE;
-        placeholder.textContent = '+ max';
+        placeholder.textContent = getTranslation('+ max');
         placeholder.addEventListener('click', () => {
             if (expandedReviewField) expandedReviewField.collapseFunc();
             maxExpanded = true;
@@ -2554,7 +2554,7 @@ function renderReviewTab() {
         };
 
         if (profile.tank_temperature != null) {
-            appendRow(getTranslation('Preheat water tank at'), createSettingPill({
+            appendRow(getTranslation('Preheat water tank'), createSettingPill({
                 value: profile.tank_temperature, step: 1, unit: '\u00b0C', min: 0, max: 110,
                 fieldType: 'pe-tank-temp', title: 'TANK TEMPERATURE',
                 onCommit: (v) => { editorState.profile.tank_temperature = v; }

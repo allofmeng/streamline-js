@@ -78,7 +78,7 @@
             <p id="reset-profile-msg" class="text-[20px] text-gray-500 leading-relaxed"></p>
             <div class="flex justify-end gap-4 mt-2">
                 <button id="reset-profile-cancel" class="h-[60px] px-8 border-2 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] font-bold rounded-[15px] text-[18px]">KEEP</button>
-                <button id="reset-profile-confirm" class="h-[60px] px-8 bg-red-400 text-white font-bold rounded-[15px] text-[18px]">RESET</button>
+                <button id="reset-profile-confirm" class="h-[60px] px-8 bg-red-400 text-white font-bold rounded-[15px] text-[18px]" data-i18n-key="RESET">RESET</button>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
@@ -113,8 +113,8 @@
         <input type="text" id="share-code-input" maxlength="4" placeholder="ABCD" autocomplete="off" class="w-full h-[70px] text-[36px] text-center font-bold tracking-[20px] bg-[var(--profile-button-background-color)] border-2 border-[var(--border-color)] rounded-[15px] focus:outline-none focus:border-[var(--mimoja-blue)] mb-4 placeholder-gray-400" style="color: black;"/>
         <p id="share-code-error" class="text-[16px] text-red-500 mb-4 hidden"></p>
         <div class="flex gap-4">
-            <button id="share-code-cancel-btn" class="flex-1 h-[60px] border-2 border-[var(--border-color)] text-[var(--text-primary)] text-[20px] font-bold rounded-[15px]">Cancel</button>
-            <button id="share-code-import-btn" class="flex-1 h-[60px] bg-[var(--mimoja-blue)] text-white text-[20px] font-bold rounded-[15px]">Import</button>
+            <button id="share-code-cancel-btn" class="flex-1 h-[60px] border-2 border-[var(--border-color)] text-[var(--text-primary)] text-[20px] font-bold rounded-[15px]" data-i18n-key="Cancel">Cancel</button>
+            <button id="share-code-import-btn" class="flex-1 h-[60px] bg-[var(--mimoja-blue)] text-white text-[20px] font-bold rounded-[15px]" data-i18n-key="Import">Import</button>
         </div>
         <button id="share-code-modal-close" class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 text-[var(--text-primary)]">✕</button>
     </div>
@@ -126,7 +126,7 @@
         <h3 class="font-bold text-[26px] text-[var(--text-primary)] mb-4">Login Required</h3>
         <p class="text-[18px] text-[var(--text-primary)] mb-6">You need to configure your Visualizer credentials first to profiles from import share codes.</p>
         <div class="flex gap-4">
-            <button id="login-modal-cancel-btn" class="flex-1 h-[60px] border-2 border-[var(--border-color)] text-[var(--text-primary)] text-[20px] font-bold rounded-[15px]">Cancel</button>
+            <button id="login-modal-cancel-btn" class="flex-1 h-[60px] border-2 border-[var(--border-color)] text-[var(--text-primary)] text-[20px] font-bold rounded-[15px]" data-i18n-key="Cancel">Cancel</button>
             <button id="login-modal-go-btn" class="flex-1 h-[60px] bg-[var(--mimoja-blue)] text-white text-[20px] font-bold rounded-[15px]">Go to Settings</button>
         </div>
         <button id="login-required-modal-close" class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 text-[var(--text-primary)]">✕</button>

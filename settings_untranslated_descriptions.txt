@@ -187,3 +187,31 @@ Stopped by weight: {value}
 Stopped by volume: {value}
 Stopped by time: {value}
 Shot stopped: {value}
+
+--- Home screen & profile selector (missing CSV keys) ---
+
+Grind Size
+Choose a Profile
+Upload a Profile
+Fullscreen Recommended
+For the best experience, please use fullscreen mode.
+Enter Fullscreen
+Descaling Instruction
+Assign favourite
+Click Rebind next to an action, then press any key to assign it.
+
+
+--- Profile editor (missing CSV keys) ---
+ Import from Share Code
+ Upload Local File
+Overwrite
+Save profile
+Save As New
+Limiter Tolerance (bar)
+Limiter Tolerance (mL/s)
+Importing
+Tap to edit notes…
+Enter a 4-character code.
+How would you like to save changes to
+New profile name (for "Save As New")
+Discard the imported profile? This cannot be undone.

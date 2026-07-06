@@ -2427,7 +2427,7 @@ export function renderSteamSettings() {
         return `
             <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
                 <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                    <p class="leading-[1.2]">Steam Settings</p>
+                    <p class="leading-[1.2]">${getTranslation('Steam')} ${getTranslation('Settings')}</p>
                 </div>
                 <div class="text-red-500 p-4 text-[24px]" data-i18n-key="Failed to load settings">Failed to load settings</div>
             </div>
@@ -2442,7 +2442,7 @@ export function renderSteamSettings() {
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                <p class="leading-[1.2]">Steam Settings</p>
+                <p class="leading-[1.2]">${getTranslation('Steam')} ${getTranslation('Settings')}</p>
             </div>
 
             <!-- Steam Temperature -->
@@ -3008,7 +3008,7 @@ export function renderCalibDefaultLoadSettings() {
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                <p class="leading-[1.2]">Default Load Settings</p>
+                <p class="leading-[1.2]">${getTranslation('Default Load Settings')}</p>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -3017,7 +3017,7 @@ export function renderCalibDefaultLoadSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Reset to Defaults</p>
+                            <p class="leading-[1.2]">${getTranslation('Default Load Settings')}</p>
                         </div>
                         <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
                                 onclick="window.resetDe1Settings()" data-i18n-key="Reset">
@@ -3747,7 +3747,7 @@ export function renderMachineInformationSettings() {
             </div>
 
             <div class="flex items-center justify-between py-[16px] border-t border-[#c9c9c9]">
-                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">${getTranslation('Firmware Version')}</span>
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)]">${getTranslation('Firmware')} ${getTranslation('Version')}</span>
                 <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${machineInfo.version}</span>
             </div>
 
@@ -3829,7 +3829,7 @@ export function renderFirmwareUpdateSettings() {
                         </div>
                         <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
                                 onclick="document.getElementById('firmware-file-input').click()">
-                            Select File
+                            ${getTranslation('Select')} ${getTranslation('File')}
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.">
@@ -4241,7 +4241,7 @@ async function _preloadSettingsInternal() {
                         <p class="text-[var(--text-primary)] text-[30px] font-bold text-center">Unable to reach De1</p>
                         <p class="text-[var(--text-primary)] text-[24px] text-center opacity-60">Retrying automatically every 3 seconds...</p>
                         <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
-                                onclick="window.retryLoadSettings()">Retry Now</button>
+                                onclick="window.retryLoadSettings()">${getTranslation('Retry')} ${getTranslation('Now')}</button>
                     </div>`;
             }
             ui.showToast('Unable to reach De1. Retrying...', 3000, 'warning');
@@ -4987,7 +4987,7 @@ export async function initializeSettings() {
             logger.error('Feedback submit error:', err);
             statusEl.innerHTML = `<span class="text-red-500 text-[22px]">Error: ${err.message}</span>`;
         } finally {
-            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit'; }
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = getTranslation('Submit'); }
         }
     };
 
@@ -5021,7 +5021,7 @@ export async function initializeSettings() {
             if (label) label.textContent = file.name;
             if (uploadBtn) uploadBtn.disabled = false;
         } else {
-            if (label) label.textContent = 'No file selected';
+            if (label) label.textContent = getTranslation('No file selected');
             if (uploadBtn) uploadBtn.disabled = true;
         }
     };
@@ -5034,7 +5034,7 @@ export async function initializeSettings() {
         const uploadBtn = document.getElementById('firmware-upload-btn');
         if (uploadBtn) {
             uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Uploading...';
+            uploadBtn.textContent = getTranslation('Uploading...');
         }
 
         try {
@@ -5046,7 +5046,7 @@ export async function initializeSettings() {
             ui.showToast(`Firmware upload failed: ${error.message}`, 5000, 'error');
             if (uploadBtn) {
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload';
+                uploadBtn.textContent = getTranslation('Upload');
             }
         }
     };
@@ -6531,7 +6531,7 @@ const KEYBOARD_ACTIONS = [
     { label: 'Hot Water',   state: 'hotWater',  defaultKey: 'w' },
     { label: 'Steam',       state: 'steam',     defaultKey: 's' },
     { label: 'Flush',       state: 'flush',     defaultKey: 'f' },
-    { label: 'Idle / Stop', state: 'idle',      defaultKey: ' ' },
+    { label: 'Stop',        state: 'idle',      defaultKey: ' ' },
     { label: 'Sleep',       state: 'sleeping',  defaultKey: 'p' },
 ];
 
@@ -6551,7 +6551,7 @@ export function renderKeyboardShortcutsSettings() {
         return `
             <div class="content-stretch flex items-center justify-between relative w-full py-[10px] border-b border-[var(--box-color)]">
                 <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[28px]">
-                    <p class="leading-[1.2]">${label}</p>
+                    <p class="leading-[1.2]">${getTranslation(label)}</p>
                 </div>
                 <div class="flex items-center gap-[20px]">
                     <span id="kb-current-${state}" class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[24px] w-[80px] text-center">${keyDisplayName(currentKey)}</span>
@@ -6576,7 +6576,7 @@ export function renderKeyboardShortcutsSettings() {
             </div>
             <button onclick="window.resetKeyboardBindings()"
                 class="border border-[#385a92] rounded-[10px] px-[30px] h-[52px] text-[#385a92] text-[22px] font-bold">
-                Reset to Defaults
+                ${getTranslation('Reset to default')}
             </button>
         </div>`;
 }
@@ -6585,7 +6585,7 @@ window.startKeyRebind = function(stateValue) {
     const btn = document.getElementById(`kb-btn-${stateValue}`);
     if (!btn) return;
 
-    btn.textContent = 'Press a key…';
+    btn.textContent = getTranslation('Press a key…');
     btn.disabled = true;
 
     function onKey(e) {
@@ -6596,7 +6596,7 @@ window.startKeyRebind = function(stateValue) {
         btn.disabled = false;
 
         if (e.key === 'Escape') {
-            btn.textContent = 'Rebind';
+            btn.textContent = getTranslation('Rebind');
             return;
         }
 
@@ -6611,7 +6611,7 @@ window.startKeyRebind = function(stateValue) {
         });
 
         if (conflict) {
-            btn.textContent = 'Rebind';
+            btn.textContent = getTranslation('Rebind');
             ui.showToast(`Key "${keyDisplayName(newKey)}" already used by ${conflict.label}`, 4000, 'error');
             return;
         }
@@ -6621,7 +6621,7 @@ window.startKeyRebind = function(stateValue) {
 
         const display = document.getElementById(`kb-current-${stateValue}`);
         if (display) display.textContent = keyDisplayName(newKey);
-        btn.textContent = 'Rebind';
+        btn.textContent = getTranslation('Rebind');
 
         ui.showToast('Keyboard shortcut saved', 3000, 'success');
     }

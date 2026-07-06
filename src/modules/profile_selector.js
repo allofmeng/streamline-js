@@ -239,7 +239,7 @@ async function handleShareCodeImport() {
         
         if (importBtn) {
             importBtn.disabled = false;
-            importBtn.textContent = 'Import';
+            importBtn.textContent = getTranslation('Import');
         }
     }
 }
