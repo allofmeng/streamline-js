@@ -3804,15 +3804,23 @@ paths:
     get:
       summary: Get recent log entries
       description: |
-      Returns the last N kilobytes of the app log file, newest entries first. Query parameter `kb` controls the size (default: 16).
+        Returns the most recent window of the app log, newest entries first.
+        The live log file and any rotated siblings (`log.txt.1`, `log.txt.2`,
+        …) are always stitched in chronological order — oldest rotation
+        first, live file last — before the window and `order` are applied.
+        The window is `kb` kilobytes when given (clamped to 4096), 1024 KB
+        otherwise, so a full rotation set is never buffered in memory.
       tags: [System]
       parameters:
         - name: kb
           in: query
           schema:
             type: integer
+            minimum: 1
+            default: 1024
           description: |
-          Number of kilobytes to return (default: 16)
+            Tail window size in kilobytes. Defaults to 1024 (1 MB); values
+            above 4096 (4 MB) are clamped to that ceiling.
         - name: order
           in: query
           schema:
@@ -4104,6 +4112,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/v1/derek/answers/stream:
+    post:
+      summary: Relay to the Derek RAG assistant (streaming)
+      description: >
+        Forwards the request body verbatim to Derek's public answer endpoint
+        (`https://derek.decentespresso.com/api/answers/stream`) and pipes the
+        Server-Sent Events response straight back, unbuffered, so a browser
+        skin can render the answer as it streams.
+
+
+        Exists because Derek's server does not answer CORS preflight; routing
+        through Reaprime turns it into a same-API call the existing CORS
+        middleware handles. Derek is public knowledge-base data, so this route
+        needs no authentication. Request validation, rate limiting, and error
+        shapes are Derek's — the upstream status and body are relayed verbatim.
+      tags: [System]
+      requestBody:
+        description: >
+          JSON answer request relayed verbatim to Derek. Only `query` is
+          required; remaining fields are optional source toggles. See the Derek
+          RAG API reference for the full field list.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  description: The question to ask Derek.
+              additionalProperties: true
+            example:
+              query: "Which Decent Espresso machine should I buy for home?"
+              include_documents: true
+              include_videos: true
+      responses:
+        "200":
+          description: >
+            Server-Sent Events stream. Event types: `queue`, `phase`, `delta`
+            (draft answer text), `result` (final answer or snippet fallback),
+            `error`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          description: Upstream status and body relayed verbatim (e.g. Derek's
+            400 with a `detail.code`, or a 429 rate-limit).
 
 components:
   schemas:
@@ -5198,6 +5256,19 @@ components:
             $ref: "#/components/schemas/ShotSnapshot"
         workflow:
           $ref: "#/components/schemas/WorkflowRequest"
+        stopReason:
+          type: string
+          nullable: true
+          description: |
+            Why the shot ended, as decided by the app's shot sequencer.
+            OPEN SET — clients must tolerate unknown values from newer builds.
+            Known persisted values: targetWeight, targetVolume, apiStop,
+            appStop, machineEnded, error. (Aborted shots — no scale, or a stop
+            before the pour began — and mid-shot disconnects are not persisted
+            at all; their reasons appear only on the /ws/v1/machine/shotState
+            feed.) Null for legacy shots and shots the app did not sequence
+            (e.g. full gateway mode while backgrounded).
+          example: targetWeight
         shotNotes:
           type: string
           nullable: true
@@ -5259,6 +5330,13 @@ components:
               type: object
               nullable: true
               additionalProperties: true
+        stopReason:
+          type: string
+          nullable: true
+          description: |
+            Why the shot ended (open set — tolerate unknown values).
+            See ShotRecord.stopReason.
+          example: targetWeight
         shotNotes:
           type: string
           nullable: true

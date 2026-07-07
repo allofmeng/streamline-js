@@ -163,6 +163,7 @@ let latestScaleWeight = 0;
 let latestScaleWeightFlow = null; // server-smoothed g/s from ScaleSnapshot; null until a frame arrives
 let latestScaleBattery = null;
 window.getLatestScaleBattery = () => latestScaleBattery;
+window.getIsScaleConnected = () => isScaleConnected;
 let heatingStartTime = null;
 let heatingStartTemp = 0;
 let isConnectingScale = false;
@@ -255,6 +256,7 @@ function onScaleReconnect() {
 function onScaleDisconnect() {
     logger.warn('Scale has disconnected.');
     isScaleConnected = false;
+    window.onScaleConnectionChange?.(false);
     renderScaleDisconnectedText();
     clearScaleAutoRetry();
     scaleAutoRetryTimer = setTimeout(attemptScaleAutoRetry, SCALE_AUTO_RETRY_INTERVAL_MS);
@@ -622,6 +624,7 @@ function handleScaleData(data) {
         if (!isScaleConnected) {
             logger.info('Scale reconnected.');
             isScaleConnected = true;
+            window.onScaleConnectionChange?.(true);
             clearScaleAutoRetry();
             if (scaleInfoContainer) {
                 scaleInfoContainer.style.display = '';

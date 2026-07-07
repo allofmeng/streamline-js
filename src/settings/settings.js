@@ -26,8 +26,11 @@ const SETTINGS_NUMPAD_CONFIGS = {
     hotWaterFlowInput:       { title: 'HOT WATER FLOW',      unit: 'ml/s', min: 0.1, max: 8,    fieldType: 'settings-hw-flow' },
     heaterPh1FlowInput:      { title: 'HEATER PH1 FLOW',     unit: 'ml/s', min: 0,   max: 10,   fieldType: 'settings-heater-ph1' },
     heaterPh2FlowInput:      { title: 'HEATER PH2 FLOW',     unit: 'ml/s', min: 0,   max: 10,   fieldType: 'settings-heater-ph2' },
-    weightFlowMultiplierInput: { title: 'WEIGHT FLOW MULT',  unit: '',     min: 0,   max: 5,    fieldType: 'settings-weight-mult' },
-    volumeFlowMultiplierInput: { title: 'VOLUME FLOW MULT',  unit: '',     min: 0,   max: 5,    fieldType: 'settings-volume-mult' },
+    heaterIdleTempInput:     { title: 'HEATER IDLE TEMP',    unit: '°C',   min: 0,   max: 95,   fieldType: 'settings-heater-idle-temp' },
+    heaterPh2TimeoutInput:   { title: 'HEATER PH2 TIMEOUT',  unit: 'sec',  min: 0,   max: 60,   fieldType: 'settings-heater-ph2-timeout' },
+    weightFlowMultiplierInput: { title: 'WEIGHT FLOW MULT',  unit: '',     min: 0,              fieldType: 'settings-weight-mult' },
+    volumeFlowMultiplierInput: { title: 'VOLUME FLOW MULT',  unit: '',     min: 0,              fieldType: 'settings-volume-mult' },
+    hotWaterFlowMultiplierInput: { title: 'HW FLOW MULT',    unit: 's',    min: 0,              fieldType: 'settings-hw-flow-mult' },
 };
 
 let _settingsNumpadSelected = null;
@@ -66,7 +69,7 @@ function attachSettingsNumpad() {
                     onConfirm: (val) => {
                         const num = parseFloat(val);
                         if (!isNaN(num)) {
-                            const clamped = Math.max(config.min, Math.min(config.max, num));
+                            const clamped = Math.max(config.min ?? -Infinity, Math.min(config.max ?? Infinity, num));
                             input.value = clamped;
                             input.dispatchEvent(new Event('change'));
                         }
@@ -268,7 +271,8 @@ const settingsTree = {
             { id: 'steam', name: 'Steam', settingsCategory: 'steam' },
             { id: 'hotwater', name: 'Hot Water', settingsCategory: 'hotwater' },
             { id: 'watertank', name: 'Water Tank', settingsCategory: 'watertank' },
-            { id: 'flush', name: 'Flush', settingsCategory: 'flush' }
+            { id: 'flush', name: 'Flush', settingsCategory: 'flush' },
+            { id: 'machineadvancedsettings', name: 'Machine Advanced Settings', settingsCategory: 'de1advanced' }
         ]
     },
     'bluetooth': {
@@ -331,7 +335,6 @@ const settingsTree = {
             { id: 'presence', name: 'Presence Detection', settingsCategory: 'presence' },
             { id: 'fontsize', name: 'Display Size', settingsCategory: 'fontsize' },
             { id: 'screensaver', name: 'Screen Saver', settingsCategory: 'screensaver' },
-            { id: 'machineadvancedsettings', name: 'Machine Advanced Settings', settingsCategory: 'de1advanced' },
             { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' }
         ]
     },
@@ -796,7 +799,7 @@ export function renderFlowMultiplierSettings(settings) {
                              style="width: 130px;">
                             <input type="text" inputmode="decimal" id="weightFlowMultiplierInput" aria-labelledby="weight-flow-multiplier-label" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
                                    value="${settings.weightFlowMultiplier !== undefined ? settings.weightFlowMultiplier : 1.0}"
-                                   step="0.1" min="0" max="5"
+                                   step="0.1" min="0"
                                    onchange="window.updateReaSetting('weightFlowMultiplier', parseFloat(this.value))">
                         </div>
                         <button id="weight-flow-mult-plus" aria-label="Increase weight flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -807,8 +810,7 @@ export function renderFlowMultiplierSettings(settings) {
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
-                        Multiplier for projected weight calculation. Higher values stop shots earlier.<br>
-                        <span class="text-[20px] opacity-60">Range: 0 – 5</span>
+                        Multiplier for projected weight calculation. Higher values stop shots earlier.
                     </p>
                 </div>
 
@@ -829,7 +831,7 @@ export function renderFlowMultiplierSettings(settings) {
                              style="width: 130px;">
                             <input type="text" inputmode="decimal" id="volumeFlowMultiplierInput" aria-labelledby="volume-flow-multiplier-label" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
                                    value="${settings.volumeFlowMultiplier !== undefined ? settings.volumeFlowMultiplier : 0.3}"
-                                   step="0.05" min="0" max="2"
+                                   step="0.05" min="0"
                                    onchange="window.updateReaSetting('volumeFlowMultiplier', parseFloat(this.value))">
                             <span class="ml-2 text-nowrap" aria-hidden="true">s</span>
                         </div>
@@ -841,8 +843,7 @@ export function renderFlowMultiplierSettings(settings) {
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
-                        Look-ahead time for projected volume calculation. Accounts for system lag.<br>
-                        <span class="text-[20px] opacity-60">Range: 0 – 2 s</span>
+                        Look-ahead time for projected volume calculation. Accounts for system lag.
                     </p>
                 </div>
             </div>
@@ -1424,6 +1425,80 @@ export function renderDe1AdvancedSettingsForm(settings) {
                             </div>
                             <button aria-label="Increase heater phase 2 flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                     onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh2Flow(0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="h-0 relative w-full">
+                <hr class="border-t border-[#c9c9c9] w-full" />
+            </div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Heater Idle Temp (°C)">Heater Idle Temp (°C)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">0 – 95 °C</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease heater idle temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterIdleTemp(-1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="heaterIdleTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${settings.heaterIdleTemp !== undefined ? settings.heaterIdleTemp : ''}"
+                                       step="1" min="0" max="95"
+                                       onchange="window.updateDe1AdvancedSetting('heaterIdleTemp', parseFloat(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                            </div>
+                            <button aria-label="Increase heater idle temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterIdleTemp(1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="h-0 relative w-full">
+                <hr class="border-t border-[#c9c9c9] w-full" />
+            </div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Heater Phase 2 Timeout (sec)">Heater Phase 2 Timeout (sec)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">0 – 60 sec</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease heater phase 2 timeout" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh2Timeout(-1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="heaterPh2TimeoutInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${settings.heaterPh2Timeout !== undefined ? settings.heaterPh2Timeout : ''}"
+                                       step="1" min="0" max="60"
+                                       onchange="window.updateDe1AdvancedSetting('heaterPh2Timeout', parseInt(this.value, 10))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">sec</span>
+                            </div>
+                            <button aria-label="Increase heater phase 2 timeout" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHeaterPh2Timeout(1);">
                                 <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
@@ -2583,6 +2658,12 @@ export function renderHotWaterSettings() {
     const volume = hotWaterData.volume ?? 50;
     const duration = hotWaterData.duration ?? 30;
     const flow = hotWaterData.flow ?? 2.5;
+    // Stop-at-weight toggle + its lookahead multiplier — Rea (not workflow) settings.
+    // The toggle only works with a scale: on (default) when one is connected,
+    // forced off and locked when not (see applyStopHotWaterToggleState for live sync).
+    const scaleConnected = window.getIsScaleConnected?.() ?? false;
+    const stopHwAtWeight = scaleConnected && (settingsCache.rea?.stopHotWaterAtWeight ?? true);
+    const hwFlowMult = settingsCache.rea?.hotWaterFlowMultiplier ?? 0.3;
 
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
@@ -2709,6 +2790,57 @@ export function renderHotWaterSettings() {
                             </div>
                             <button aria-label="Increase hot water flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                     onclick="window.flashPlusMinusButton(this); window.adjustHotWaterFlow(0.1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stop Hot Water at Weight (needs a scale connected to take effect) -->
+            <div class="flex items-center justify-between gap-[24px] w-full">
+                <div class="flex flex-col gap-[4px]">
+                    <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Stop at Weight">Stop at Weight</p>
+                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]" data-i18n-key="Requires a connected scale">Requires a connected scale</span>
+                    </div>
+                </div>
+                <label class="stopHotWaterAtWeightLabel relative flex items-center flex-shrink-0 w-[100px] h-[50px] ${scaleConnected ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'}">
+                    <input type="checkbox" id="stopHotWaterAtWeightToggle"
+                           class="sr-only peer"
+                           ${stopHwAtWeight ? 'checked' : ''}
+                           ${scaleConnected ? '' : 'disabled'}
+                           onchange="window.updateReaSetting('stopHotWaterAtWeight', this.checked)">
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                </label>
+            </div>
+
+            <!-- Hot Water Flow Multiplier (stop-at-weight lookahead) -->
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Flow Multiplier (s)">Flow Multiplier (s)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">Lookahead for stop-at-weight</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease hot water flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterFlowMultiplier(-0.05);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="decimal" id="hotWaterFlowMultiplierInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${hwFlowMult}" step="0.05" min="0"
+                                       onchange="window.updateReaSetting('hotWaterFlowMultiplier', parseFloat(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
+                            </div>
+                            <button aria-label="Increase hot water flow multiplier" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustHotWaterFlowMultiplier(0.05);">
                                 <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
@@ -5134,7 +5266,7 @@ export async function initializeSettings() {
         const input = document.getElementById('weightFlowMultiplierInput');
         if (input) {
             let newValue = parseFloat(input.value) + change;
-            newValue = Math.max(0, Math.min(5, newValue));
+            newValue = Math.max(0, newValue);
             input.value = newValue.toFixed(1);
             input.dispatchEvent(new Event('change'));
         }
@@ -5144,9 +5276,39 @@ export async function initializeSettings() {
         const input = document.getElementById('volumeFlowMultiplierInput');
         if (input) {
             let newValue = parseFloat(input.value) + change;
-            newValue = Math.max(0, Math.min(2, newValue));
+            newValue = Math.max(0, newValue);
             input.value = newValue.toFixed(2);
             input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHotWaterFlowMultiplier = function(change) {
+        const input = document.getElementById('hotWaterFlowMultiplierInput');
+        if (input) {
+            let newValue = parseFloat(input.value) + change;
+            newValue = Math.max(0, newValue);
+            input.value = newValue.toFixed(2);
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    // Live-sync the Hot Water "Stop at Weight" toggle to scale connection state.
+    // Called from app.js on scale connect/disconnect; no-ops if the toggle isn't
+    // on screen. No scale → forced off + disabled; scale → enabled, stored pref.
+    window.onScaleConnectionChange = function(connected) {
+        const input = document.getElementById('stopHotWaterAtWeightToggle');
+        if (!input) return;
+        const label = input.closest('label');
+        if (connected) {
+            input.disabled = false;
+            input.checked = settingsCache.rea?.stopHotWaterAtWeight ?? true;
+            label?.classList.remove('opacity-40', 'cursor-not-allowed');
+            label?.classList.add('cursor-pointer');
+        } else {
+            input.checked = false;
+            input.disabled = true;
+            label?.classList.remove('cursor-pointer');
+            label?.classList.add('opacity-40', 'cursor-not-allowed');
         }
     };
 
@@ -5206,6 +5368,26 @@ export async function initializeSettings() {
             let newValue = parseFloat(input.value) + change;
             newValue = Math.max(0, Math.min(10, newValue));
             input.value = newValue.toFixed(1);
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHeaterIdleTemp = function(change) {
+        const input = document.getElementById('heaterIdleTempInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(0, Math.min(95, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    window.adjustHeaterPh2Timeout = function(change) {
+        const input = document.getElementById('heaterPh2TimeoutInput');
+        if (input) {
+            let newValue = parseInt(input.value, 10) + change;
+            newValue = Math.max(0, Math.min(60, newValue));
+            input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
     };

@@ -170,7 +170,9 @@ export async function loadAvailableProfiles() {
         for (const profileRecord of profilesFromApi) {
             // DELETE is a soft delete (visibility='deleted'); includeHidden=true
             // still returns those records, so drop them or they reappear on reload.
-            if (profileRecord.visibility === 'deleted') continue;
+            // 'hidden' is a superseded version kept for the editor's revert history
+            // (see saveProfile) — it must stay out of the visible list too.
+            if (profileRecord.visibility === 'deleted' || profileRecord.visibility === 'hidden') continue;
             availableProfiles[profileRecord.id] = profileRecord;
         }
 

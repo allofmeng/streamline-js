@@ -757,6 +757,15 @@ export async function uploadProfileWithParent(profileData, parentId = null) {
     return response.json();
 }
 
+// Full version chain (parents + children) for a profile. Array of ProfileRecords.
+export async function getProfileLineage(profileId) {
+    const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(profileId)}/lineage`);
+    if (!response.ok) {
+        throw new Error(`Failed to get lineage for profile ${profileId}`);
+    }
+    return response.json();
+}
+
 export async function deleteProfile(profileId) {
     const response = await fetch(`${API_BASE_URL}/profiles/${encodeURIComponent(profileId)}`, {
         method: 'DELETE',

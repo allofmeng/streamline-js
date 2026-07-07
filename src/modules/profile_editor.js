@@ -2653,69 +2653,6 @@ function initTitleEditing() {
 
 // ─── Save / Cancel ──────────────────────────────────────────────────────────
 
-// Prompt user whether to overwrite an existing KV profile or save as new.
-// Returns { action: 'overwrite' | 'new' | 'cancel', title? }. Anchored near
-// the top of the viewport so the soft keyboard (overlays-content, no resize)
-// does not cover the input.
-function promptOverwriteOrSaveAs(currentTitle, suggestedNewTitle) {
-    return new Promise((resolve) => {
-        const dlg = document.createElement('dialog');
-        dlg.className = 'pe-save-dialog rounded-[16px] bg-[var(--box-color)] p-0 border border-[var(--border-color)] max-w-[520px] w-[90vw] shadow-2xl';
-        dlg.style.marginTop = '8vh';
-        dlg.style.marginBottom = 'auto';
-
-        dlg.innerHTML = `
-            <div class="flex flex-col gap-[16px] p-[24px]">
-                <h3 class="text-[24px] font-bold text-[var(--text-primary)]">${getTranslation('Save profile')}</h3>
-                <p class="text-[20px] text-[var(--text-primary)]">${getTranslation('How would you like to save changes to')} <span class="font-semibold">"${currentTitle}"</span>?</p>
-                <label class="text-[18px] text-[var(--text-primary)] flex flex-col gap-[6px]">
-                    <span>${getTranslation('New profile name (for "Save As New")')}</span>
-                    <input type="text" inputmode="text" autocomplete="off" class="w-full px-[12px] py-[10px] text-[20px] rounded-[8px] border border-[var(--border-color)] bg-[var(--box-color)] text-[var(--text-primary)] outline-none focus:border-[var(--mimoja-blue)]" />
-                </label>
-                <div class="flex justify-end gap-[10px] mt-[8px] flex-wrap">
-                    <button type="button" data-act="cancel" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${getTranslation('Cancel')}</button>
-                    <button type="button" data-act="new" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${getTranslation('Save As New')}</button>
-                    <button type="button" data-act="overwrite" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold cursor-pointer">${getTranslation('Overwrite')}</button>
-                </div>
-            </div>
-        `;
-
-        const input = dlg.querySelector('input');
-        input.value = suggestedNewTitle;
-
-        function done(result) {
-            try { dlg.close(); } catch (_) {}
-            dlg.remove();
-            resolve(result);
-        }
-
-        dlg.querySelectorAll('button[data-act]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const act = btn.dataset.act;
-                if (act === 'cancel') return done({ action: 'cancel' });
-                if (act === 'overwrite') return done({ action: 'overwrite' });
-                const title = input.value.trim();
-                if (!title) {
-                    input.focus();
-                    return;
-                }
-                done({ action: 'new', title });
-            });
-        });
-
-        // ESC / backdrop cancel
-        dlg.addEventListener('cancel', (e) => {
-            e.preventDefault();
-            done({ action: 'cancel' });
-        });
-
-        document.body.appendChild(dlg);
-        dlg.showModal();
-        // Don't autofocus — would pop the keyboard immediately. User taps the
-        // input when they want to rename.
-    });
-}
-
 // Presentation fields don't feed the execution hash — REA treats a change to
 // only these as a metadata update (same id). Everything else is execution.
 const PRESENTATION_FIELDS = ['title', 'author', 'notes'];
@@ -2739,7 +2676,7 @@ async function saveProfile() {
     }
 
     try {
-        const { updateProfile, uploadProfileWithParent } = await import('./api.js');
+        const { updateProfile, uploadProfileWithParent, updateProfileVisibility } = await import('./api.js');
         const { availableProfiles, remapFavorite } = await import('./profileManager.js');
 
         // No-op save guard — if the profile is byte-identical to its source,
@@ -2757,34 +2694,11 @@ async function saveProfile() {
             return;
         }
 
-        // Overwrite-or-save-as prompt: only when editing an existing non-default
-        // profile with changes and the title hasn't been edited yet. Defaults
-        // fork on execution change (separate path), and a renamed title already
-        // signals "save as new".
+        // Overwrite-in-place is the default: editing an existing user profile and
+        // keeping its title updates the same record (no "(2)" cruft on a
+        // draft→test→tweak loop). Renaming via the inline title editor is the
+        // explicit save-as — titleChanged below routes it to a new record.
         const src = editorState.sourceProfileRecord;
-        const isExistingUserProfile = !!src && !src.isDefault;
-        const sourceTitleOrig = (src?.profile?.title || '').trim();
-        const currentTitleNow = editorState.profile.title.trim();
-        if (isExistingUserProfile && sourceTitleOrig && currentTitleNow === sourceTitleOrig) {
-            const existingTitlesForSuggest = new Set(
-                Object.values(availableProfiles).map(r => r.profile?.title).filter(Boolean)
-            );
-            let n = 2;
-            let suggested = `${sourceTitleOrig} (${n})`;
-            while (existingTitlesForSuggest.has(suggested)) {
-                n++;
-                suggested = `${sourceTitleOrig} (${n})`;
-            }
-            const choice = await promptOverwriteOrSaveAs(sourceTitleOrig, suggested);
-            if (choice.action === 'cancel') return;
-            if (choice.action === 'new') {
-                editorState.profile.title = choice.title;
-                const titleDisplay = document.getElementById('editor-title-display');
-                if (titleDisplay) titleDisplay.textContent = choice.title;
-                // titleChanged below will now be true → forces new KV entry.
-            }
-            // 'overwrite' → fall through unchanged → updates in place.
-        }
 
         // Title change at save = user intent to save as a brand-new profile.
         const sourceTitle = (src?.profile?.title || '').trim();
@@ -2830,7 +2744,15 @@ async function saveProfile() {
             saved = await uploadProfileWithParent(editorState.profile, src.id);
         } else if (!src || titleChanged) {
             saved = await uploadProfileWithParent(editorState.profile, src?.id ?? null);
+        } else if (execChanged) {
+            // Overwrite of an existing user profile: keep the prior version as a
+            // hidden, restorable snapshot instead of letting the server drop it on
+            // rehash. The new record links back via parentId, so /lineage returns
+            // the full history the Revert picker reads.
+            try { await updateProfileVisibility(src.id, 'hidden'); } catch (_) {}
+            saved = await uploadProfileWithParent(editorState.profile, src.id);
         } else {
+            // Presentation-only change (title/author/notes) → same id, PUT in place.
             saved = await updateProfile(src.id, editorState.profile);
         }
 
@@ -2877,6 +2799,107 @@ async function cancelEditor() {
 }
 
 
+// ─── Version history / revert ────────────────────────────────────────────────
+
+// Coerce legacy step shape onto the current Rea spec: prior versions persisted
+// exit.type of 'weight'/'time'/'off' (not in spec) and stored both flow and
+// pressure on every step. Applied when loading any saved profile (fresh edit or
+// a restored older version) so the UI never reads undefined EXIT_UNIT_MAP entries.
+function normalizeLegacySteps(profile) {
+    if (Array.isArray(profile?.steps)) {
+        for (const step of profile.steps) {
+            if (step.pump === 'flow') delete step.pressure;
+            else if (step.pump === 'pressure') delete step.flow;
+            if (step.limiter && step.limiter.value === 0) step.limiter = null;
+            if (step.exit && step.exit.type !== 'pressure' && step.exit.type !== 'flow') {
+                step.exit = null;
+            }
+        }
+    }
+    return profile;
+}
+
+// Version picker. Returns the chosen ProfileRecord, or null on cancel.
+function promptVersionRestore(versions) {
+    return new Promise((resolve) => {
+        const dlg = document.createElement('dialog');
+        dlg.className = 'pe-history-dialog rounded-[16px] bg-[var(--box-color)] p-0 border border-[var(--border-color)] max-w-[560px] w-[90vw] shadow-2xl';
+        dlg.style.marginTop = '8vh';
+        dlg.style.marginBottom = 'auto';
+
+        const rows = versions.map((v, i) => {
+            const when = new Date(v.createdAt);
+            const label = isNaN(when.getTime()) ? '' : when.toLocaleString();
+            return `
+                <button type="button" data-idx="${i}" class="text-left px-[16px] py-[14px] rounded-[10px] border border-[var(--border-color)] bg-[var(--box-color)] hover:border-[var(--mimoja-blue)] cursor-pointer">
+                    <div class="text-[20px] font-semibold text-[var(--text-primary)]">${v.profile?.title || 'Untitled'}</div>
+                    <div class="text-[16px] text-[var(--text-primary)]" style="opacity:0.6">${label}</div>
+                </button>`;
+        }).join('');
+
+        dlg.innerHTML = `
+            <div class="flex flex-col gap-[16px] p-[24px]">
+                <h3 class="text-[24px] font-bold text-[var(--text-primary)]">${getTranslation('Version history')}</h3>
+                <p class="text-[18px] text-[var(--text-primary)]">${getTranslation('Restore a previous version. Your current version is kept until you Save.')}</p>
+                <div class="flex flex-col gap-[10px] max-h-[46vh] overflow-y-auto">${rows}</div>
+                <div class="flex justify-end mt-[8px]">
+                    <button type="button" data-act="cancel" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${getTranslation('Cancel')}</button>
+                </div>
+            </div>`;
+
+        function done(result) {
+            try { dlg.close(); } catch (_) {}
+            dlg.remove();
+            resolve(result);
+        }
+
+        dlg.querySelector('[data-act="cancel"]').addEventListener('click', () => done(null));
+        dlg.querySelectorAll('button[data-idx]').forEach((btn) => {
+            btn.addEventListener('click', () => done(versions[+btn.dataset.idx]));
+        });
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
+
+        document.body.appendChild(dlg);
+        dlg.showModal();
+    });
+}
+
+async function openVersionHistory() {
+    const id = editorState.sourceProfileId;
+    if (!id) return;
+
+    let lineage;
+    try {
+        const { getProfileLineage } = await import('./api.js');
+        lineage = await getProfileLineage(id);
+    } catch (err) {
+        showToast('Could not load version history', 3000, 'error');
+        return;
+    }
+
+    // Prior versions = the chain minus the record we're editing, newest first.
+    const versions = (lineage || [])
+        .filter(r => r.id !== id && r.profile)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (!versions.length) {
+        showToast('No previous versions yet', 2500, 'info');
+        return;
+    }
+
+    const chosen = await promptVersionRestore(versions);
+    if (!chosen) return;
+
+    // Load the snapshot into the editor. Saving mints a new current version and
+    // hides this restored state's predecessor — a non-destructive revert.
+    editorState.profile = normalizeLegacySteps(deepCopy(chosen.profile));
+    const titleDisplay = document.getElementById('editor-title-display');
+    if (titleDisplay) titleDisplay.textContent = editorState.profile.title || 'Untitled Profile';
+    setActiveTab(editorState.activeTab || 0);
+    renderStepCards();
+    renderSettingsTab();
+    showToast('Restored — Save to keep this version', 3000, 'success');
+}
+
 // ─── Init ───────────────────────────────────────────────────────────────────
 
 export async function initializeProfileEditor() {
@@ -2898,21 +2921,7 @@ export async function initializeProfileEditor() {
     // 2. Deep copy
     editorState.sourceProfileRecord = profileRecord;
     editorState.sourceProfileId = profileRecord.id;
-    editorState.profile = deepCopy(profileRecord.profile);
-    // Normalize legacy step shape: prior versions persisted exit.type of
-    // 'weight' / 'time' / 'off' (not in Rea spec) and stored both flow and
-    // pressure on every step. Coerce on load so the UI never reads undefined
-    // EXIT_UNIT_MAP entries and the saved record converges on the spec shape.
-    if (Array.isArray(editorState.profile.steps)) {
-        for (const step of editorState.profile.steps) {
-            if (step.pump === 'flow') delete step.pressure;
-            else if (step.pump === 'pressure') delete step.flow;
-            if (step.limiter && step.limiter.value === 0) step.limiter = null;
-            if (step.exit && step.exit.type !== 'pressure' && step.exit.type !== 'flow') {
-                step.exit = null;
-            }
-        }
-    }
+    editorState.profile = normalizeLegacySteps(deepCopy(profileRecord.profile));
     editorState.activeTab = 0;
     _isNewProfileSession = !profileRecord.id;
     _sessionImportedIds = [];
@@ -2948,6 +2957,16 @@ export async function initializeProfileEditor() {
     const cancelBtn = document.getElementById('editor-cancel-btn');
     if (saveBtn) saveBtn.addEventListener('click', saveProfile);
     if (cancelBtn) cancelBtn.addEventListener('click', cancelEditor);
+
+    // Version history — only for an already-saved, non-default profile.
+    const historyBtn = document.getElementById('editor-history-btn');
+    if (historyBtn) {
+        historyBtn.addEventListener('click', openVersionHistory);
+        if (editorState.sourceProfileId && !editorState.sourceProfileRecord?.isDefault) {
+            historyBtn.classList.remove('hidden');
+            historyBtn.classList.add('flex');
+        }
+    }
 
     console.log('Profile Editor: Initialization complete.');
 }
