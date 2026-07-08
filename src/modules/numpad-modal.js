@@ -1,5 +1,6 @@
 import { getValueFromStore, setValueInStore, getShots } from './api.js';
 import { flashElement } from './ui.js';
+import { getTranslation } from './i18n.js';
 
 const fieldDisplayElementIds = {
     'dose-in': 'dose-in-value',
@@ -364,20 +365,23 @@ async function openModal(inputElement, options = {}) {
     isFirstInput = true;
     console.log('[Numpad] currentValue set to:', currentValue);
     
-    // Update modal title and label
+    // Update modal title and label. Run both through i18n so the field name
+    // and helper text follow the selected language (falls back to the English
+    // string when a key isn't in the translation table).
     const titleEl = document.querySelector('.numpad-modal-title');
     if (titleEl) {
-        titleEl.textContent = config.title;
+        titleEl.textContent = getTranslation(config.title);
     }
-    
+
     const labelEl = document.querySelector('.numpad-modal-input-label');
     if (labelEl) {
         // Synthesize from min/max when caller supplied them so the helper text
         // always reflects the actual valid range + unit for the field.
         const hasRange = config.min !== undefined && config.max !== undefined;
-        labelEl.textContent = hasRange
+        const labelText = hasRange
             ? `Input value between ${config.min}–${config.max}${config.unit ? ' ' + config.unit : ''}`
             : (config.label || '');
+        labelEl.textContent = getTranslation(labelText);
     }
     
     // Load previous values
