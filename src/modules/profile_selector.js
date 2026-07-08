@@ -1583,14 +1583,43 @@ async function initAiGenerateButton() {
     // only path — it uploads on explicit user action. Subscribing here re-imported
     // the WS's retained last generation on every page open (spurious green toast).
 
+    // Point the link at the SAME reaprime the skin talks to (reaHostname), not a
+    // hardcoded localhost. Otherwise, when reaHostname is a remote/device IP, the
+    // plugin opens on localhost and its "Upload to Decent" POST /api/v1/profiles
+    // saves to a DIFFERENT server than the skin lists from — the profile persists
+    // but never shows up here. API_BASE_URL already encodes host:port.
+    link.href = `${API_BASE_URL}/plugins/decent-profile.reaplugin/ui?layout=baseline`;
+
     // Set the output format once now (not on click) so the tap can navigate
     // natively — the plain <a href> (no target) is a same-frame navigation, which
     // the host intercepts to open the OS browser with the plugin URL (gh#384).
     setPluginSettings('decent-profile.reaplugin', { profileFormat: 'json-v2' })
         .catch((err) => logger.warn('Could not set profileFormat=json-v2:', err));
 
-    // ponytail: no click handler — the anchor's own same-frame navigation does it.
-    link.parentNode.replaceChild(link.cloneNode(true), link); // drop any stale listeners
+    // The anchor's own same-frame navigation performs the tap; we only add a flag
+    // handler so we know the user left for the plugin. The plugin's "Upload to
+    // Decent" saves via POST /api/v1/profiles, so when the user returns we just
+    // re-pull the library and it appears. Same-frame nav guarantees the skin page
+    // is either hidden (webview -> OS browser) or unloaded (browser), so one of
+    // pageshow/visibilitychange always fires on return.
+    const fresh = link.cloneNode(true); // drop stale listeners
+    link.parentNode.replaceChild(fresh, link);
+    fresh.addEventListener('click', () => { window.__reaAwaitGeneratedProfile = true; });
+
+    // Register the return-listeners once — initAiGenerateButton re-runs on every
+    // dynamic-content-loaded, so guard against stacking duplicate handlers.
+    if (!window.__reaProfileRefreshWired) {
+        window.__reaProfileRefreshWired = true;
+        const refreshIfReturning = async () => {
+            if (!window.__reaAwaitGeneratedProfile) return;
+            if (document.visibilityState === 'hidden') return; // wait until actually shown
+            window.__reaAwaitGeneratedProfile = false;
+            await initProfileManager(); // re-fetch /api/v1/profiles into availableProfiles
+            renderProfiles();
+        };
+        document.addEventListener('visibilitychange', refreshIfReturning);
+        window.addEventListener('pageshow', refreshIfReturning); // bfcache restore (browser)
+    }
 }
 
 // Call initialization when DOM is ready for traditional page loads

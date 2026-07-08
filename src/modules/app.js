@@ -97,7 +97,11 @@ function initMobileValueInputs() {
                         } else if (type === 'temperature') {
                             window.app.ui.updateTemperatureValue(parseFloat(newVal));
                         } else if (type === 'steam-duration') {
-                            const v = parseFloat(newVal);
+                            // The numpad blanks a bare "0" to '' — treat empty/NaN as 0.
+                            // 0 = steam heater off: the middleware gates steamEnabled on
+                            // duration > 0, so sending 0 sets targetSteamTemp 0 and the
+                            // firmware disables the steam heater (temporary, reversible).
+                            const v = (newVal === '' || isNaN(parseFloat(newVal))) ? 0 : parseFloat(newVal);
                             window.app.ui.updateSteamDisplay({ targetSteamDuration: v });
                             window.app.api.setTargetSteamDuration(v).catch(e => logger.error('setTargetSteamDuration failed:', e));
                         } else if (type === 'steam-flow') {

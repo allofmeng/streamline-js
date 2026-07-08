@@ -782,7 +782,7 @@ export function renderFlowMultiplierSettings(settings) {
             </div>
 
             <div class="content-stretch flex flex-col items-center relative w-full">
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p id="weight-flow-multiplier-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Weight Flow Multiplier">
                             Weight Flow Multiplier
@@ -810,11 +810,11 @@ export function renderFlowMultiplierSettings(settings) {
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
-                        Multiplier for projected weight calculation. Higher values stop shots earlier.
+                        Multiplier factor applied to weight flow for projected weight calculation when stopping shots by weight. Default is 1.0. Higher values stop the shot earlier, lower values stop later.
                     </p>
                 </div>
 
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px] mt-[30px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px] mt-[30px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p id="volume-flow-multiplier-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Volume Flow Multiplier (s)">
                             Volume Flow Multiplier (s)
@@ -843,7 +843,7 @@ export function renderFlowMultiplierSettings(settings) {
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full text-center">
-                        Look-ahead time for projected volume calculation. Accounts for system lag.
+                        Multiplier factor (in seconds) applied to machine flow for projected volume calculation when stopping shots by volume. Default is 0.3. This accounts for system lag between stop command and actual flow stop.
                     </p>
                 </div>
             </div>
@@ -1022,7 +1022,7 @@ export function renderFlushSettingsForm(settings) {
             </div>
 
             <div class="content-stretch flex flex-col items-center relative w-full">
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-baseline gap-[14px] relative shrink-0">
                         <p id="flush-temp-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Temperature for flush cycles">
                             Temperature for flush cycles
@@ -1053,7 +1053,7 @@ export function renderFlushSettingsForm(settings) {
                     </div>
                 </div>
 
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px] mt-[30px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px] mt-[30px]">
                     <div class="content-stretch flex items-baseline gap-[14px] relative shrink-0">
                         <p id="flush-flow-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Flush flow rate">
                             Flush flow rate
@@ -2867,7 +2867,7 @@ export function renderWaterTankSettings() {
     }
 
     return `
-        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+        <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
                 <p class="leading-[1.2]" data-i18n-key="Water Tank Settings">Water Tank Settings</p>
             </div>
@@ -2877,8 +2877,8 @@ export function renderWaterTankSettings() {
                 <hr class="border-t border-[#c9c9c9] w-full" />
             </div>
 
-            <div class="content-stretch flex flex-col gap-[30px] items-center relative w-full">
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+            <div class="content-stretch flex flex-col gap-[20px] items-center relative w-full">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Tank Temperature (°c)">
                             Tank Temperature (°c)
@@ -2911,7 +2911,7 @@ export function renderWaterTankSettings() {
                     </p>
                 </div>
 
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
                             Water Alert Level
@@ -2944,7 +2944,7 @@ export function renderWaterTankSettings() {
                     </p>
                 </div>
 
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
                             Display Unit
@@ -3097,7 +3097,7 @@ export function renderCalibFanSettings(settings) {
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
             <div class="content-stretch flex flex-col items-center relative w-full">
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Fan Threshold">
                             Fan Threshold
@@ -3256,7 +3256,7 @@ export function renderCalibSteamSettings() {
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
             <div class="content-stretch flex flex-col items-center relative w-full">
-                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 w-[590px]">
+                <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
                         <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Steam temperature">
                             Steam temperature
