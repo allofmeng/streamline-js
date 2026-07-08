@@ -1616,6 +1616,15 @@ async function initAiGenerateButton() {
             window.__reaAwaitGeneratedProfile = false;
             await initProfileManager(); // re-fetch /api/v1/profiles into availableProfiles
             renderProfiles();
+            // The plugin's "Upload to Decent" also does PUT /workflow, making the
+            // uploaded profile the active one. Re-pull the workflow so #profile-name
+            // (and the dose/grind/steam displays) reflect the new active profile.
+            try {
+                const workflow = await getWorkflow();
+                if (workflow) applyWorkflowToMainPageUI(workflow); // updateName defaults true
+            } catch (e) {
+                logger.warn('Workflow refresh after profile upload failed:', e);
+            }
         };
         document.addEventListener('visibilitychange', refreshIfReturning);
         window.addEventListener('pageshow', refreshIfReturning); // bfcache restore (browser)
