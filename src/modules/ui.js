@@ -1469,9 +1469,8 @@ export function initUI(callbacks) {
                 alert('Flush time is limited to 255s.');
                 newValue = 255;
             }
-            if (newValue < 3) {
-                alert('Flush time must be at least 3s.');
-                newValue = 3;
+            if (newValue < 0) {
+                newValue = 0; // 0 = no flush
             }
             flushValueEl.textContent = `${newValue}s`;
             updateFlushDisplay(newValue);
