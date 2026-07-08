@@ -389,9 +389,9 @@ function decrementHotWater() {
     const hotWaterMinusBtn = document.getElementById('hot-water-vol-minus');
     if (hotWaterMinusBtn) { flashPlusMinusButton(hotWaterMinusBtn); }
     if (hotWaterMode === 'volume') {
-        if (currentHotWaterVolume > 3) {
+        if (currentHotWaterVolume > 0) {
             currentHotWaterVolume -= 5;
-            if (currentHotWaterVolume < 3) currentHotWaterVolume = 3;
+            if (currentHotWaterVolume < 0) currentHotWaterVolume = 0;
         }
     } else {
         if (currentHotWaterTemp > 0) {
@@ -1436,9 +1436,8 @@ export function initUI(callbacks) {
                 alert('Hot water volume is limited to 255 ml.');
                 value = 255;
             }
-            if (value < 3) {
-                alert('Hot water volume must be at least 3 ml.');
-                value = 3;
+            if (value < 0) {
+                value = 0; // 0 = no volume limit (stop by time/manual)
             }
             currentHotWaterVolume = value;
             setTargetHotWaterVolume(currentHotWaterVolume).catch(e => logger.error(e));

@@ -112,7 +112,10 @@ function initMobileValueInputs() {
                             window.app.ui.updateFlushValue(parseFloat(newVal));
                             window.app.ui.updateFlushDisplay(parseFloat(newVal));
                         } else if (type === 'hot-water-vol') {
-                            const v = parseFloat(newVal);
+                            // The numpad blanks a bare "0" to '' — treat empty/NaN as 0.
+                            // 0 = no volume cap: hot water then stops by time/manual, not
+                            // volume. Sending 0 (not null) avoids the middleware 500.
+                            const v = (newVal === '' || isNaN(parseFloat(newVal))) ? 0 : parseFloat(newVal);
                             window.app.ui.updateHotWaterDisplay({ targetHotWaterVolume: v });
                             window.app.api.setTargetHotWaterVolume(v).catch(e => logger.error('setTargetHotWaterVolume failed:', e));
                         } else if (type === 'hot-water-temp') {
