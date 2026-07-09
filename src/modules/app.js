@@ -105,7 +105,12 @@ function initMobileValueInputs() {
                             window.app.ui.updateSteamDisplay({ targetSteamDuration: v });
                             window.app.api.setTargetSteamDuration(v).catch(e => logger.error('setTargetSteamDuration failed:', e));
                         } else if (type === 'steam-flow') {
-                            const v = parseFloat(newVal);
+                            // Numpad blanks a bare "0" to ''. Unlike duration, 0 steam
+                            // flow has no meaning (steam is gated on duration, not flow),
+                            // so floor empty/0/NaN to the 0.4 minimum the inline editor
+                            // enforces — avoids NaN on screen.
+                            const parsed = parseFloat(newVal);
+                            const v = (newVal === '' || isNaN(parsed) || parsed < 0.4) ? 0.4 : parsed;
                             window.app.ui.updateSteamDisplay({ targetSteamFlow: v });
                             window.app.api.setTargetSteamFlow(v).catch(e => logger.error('setTargetSteamFlow failed:', e));
                         } else if (type === 'flush') {

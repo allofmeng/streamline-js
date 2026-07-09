@@ -3440,7 +3440,9 @@ export function renderSkinSettings() {
         const latest = slug ? releases[slug] : null;
         const needsUpdate = !!latest && !!s.version && compareVersions(s.version, latest) < 0;
         const base = 'text-[16px] font-semibold px-[8px] py-[2px] rounded-full';
-        if (isActive) return `<span class="${base} bg-white/20 text-white">${needsUpdate ? 'Update available' : 'Up to date'}</span>`;
+        if (isActive) return needsUpdate
+            ? `<span class="${base} bg-white/20 text-white" data-i18n-key="Update available">Update available</span>`
+            : `<span class="${base} bg-white/20 text-white" data-i18n-key="Up to date">Up to date</span>`;
         return needsUpdate
             ? `<span class="${base} bg-[#da515e]/15 text-[#da515e]" data-i18n-key="Update available">Update available</span>`
             : `<span class="${base} bg-[#0ca581]/15 text-[#0ca581]" data-i18n-key="Up to date">Up to date</span>`;
@@ -3482,10 +3484,11 @@ export function renderSkinSettings() {
                 <div class="grid grid-cols-2 gap-[14px] w-full">
                     ${(allSkins.length > 0 ? allSkins : (activeSkin ? [activeSkin] : [])).map(s => {
                         const isActive = s.id === activeSkinId;
-                        // Show the hardcoded build marker for our skin so dist/preview
-                        // users can tell which build they run; other skins use the
-                        // version the bridge reports.
-                        const displayVersion = s.id === SKIN_ID ? APP_VERSION : s.version;
+                        // Prefer the version the bridge reports (the actually-installed
+                        // release, which tracks GitHub) so the card matches the update
+                        // badge. Fall back to the hardcoded build marker only when the
+                        // bridge reports no version for our skin (dist/preview builds).
+                        const displayVersion = s.version || (s.id === SKIN_ID ? APP_VERSION : '');
                         return `
                         <button
                             onclick="${isActive ? '' : `window.setActiveSkin('${s.id}')`}"
