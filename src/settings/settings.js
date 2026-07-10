@@ -17,9 +17,9 @@ const SETTINGS_NUMPAD_CONFIGS = {
     waterAlertInput:         { title: 'WATER ALERT LEVEL',   unit: 'mm',   min: 0,   max: 30,   fieldType: 'settings-water-alert' },
     calibFanInput:           { title: 'FAN THRESHOLD',       unit: '%',    min: 0,   max: 100,  fieldType: 'settings-calib-fan' },
     steamCalibTempInput:     { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 135, max: 170,  fieldType: 'settings-steam-calib-temp' },
-    steamTempInput:          { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 130, max: 170,  fieldType: 'settings-steam-temp' },
+    steamTempInput:          { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 0,   max: 170,  fieldType: 'settings-steam-temp' },
     steamDurationInput:      { title: 'STEAM DURATION',      unit: 'sec',  min: 10,  max: 120,  fieldType: 'settings-steam-duration' },
-    steamFlowInput:          { title: 'STEAM FLOW',          unit: 'ml/s', min: 0.1, max: 2.5,  fieldType: 'settings-steam-flow' },
+    steamFlowInput:          { title: 'STEAM FLOW',          unit: 'ml/s', min: 0.4, max: 2.5,  fieldType: 'settings-steam-flow' },
     hotWaterTempInput:       { title: 'HOT WATER TEMP',      unit: '°C',   min: 50,  max: 95,   fieldType: 'settings-hw-temp' },
     hotWaterVolumeInput:     { title: 'HOT WATER VOLUME',    unit: 'ml',   min: 10,  max: 500,  fieldType: 'settings-hw-volume' },
     hotWaterDurationInput:   { title: 'HOT WATER DURATION',  unit: 'sec',  min: 5,   max: 120,  fieldType: 'settings-hw-duration' },
@@ -2526,7 +2526,7 @@ export function renderSteamSettings() {
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">130 – 170 °C</span>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0 – 170 °C</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease steam temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2537,7 +2537,7 @@ export function renderSteamSettings() {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${targetTemp}" step="1" min="130" max="170"
+                                       value="${targetTemp}" step="1" min="0" max="170"
                                        onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
                                 <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
                             </div>
@@ -2549,6 +2549,7 @@ export function renderSteamSettings() {
                             </button>
                         </div>
                     </div>
+                    <p class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] leading-[1.2]" data-i18n-key="Setting below 130 °C turns the steam heater off">Setting below 130 °C turns the steam heater off</p>
                 </div>
             </div>
 
@@ -2590,7 +2591,7 @@ export function renderSteamSettings() {
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Flow">Flow</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0.1 – 2.5 ml/s</span>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0.4 – 2.5 ml/s</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease steam flow" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2601,7 +2602,7 @@ export function renderSteamSettings() {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="decimal" id="steamFlowInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${flow.toFixed(1)}" step="0.1" min="0.1" max="2.5"
+                                       value="${flow.toFixed(1)}" step="0.1" min="0.4" max="2.5"
                                        onchange="window.updateSteamSetting('flow', parseFloat(this.value))">
                                 <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">ml/s</span>
                             </div>
@@ -5495,7 +5496,7 @@ export async function initializeSettings() {
         const input = document.getElementById('steamFlowInput');
         if (input) {
             let newValue = parseFloat(input.value) + change;
-            newValue = Math.max(0.1, Math.min(2.5, newValue));
+            newValue = Math.max(0.4, Math.min(2.5, newValue));
             input.value = newValue.toFixed(1);
             input.dispatchEvent(new Event('change'));
         }
