@@ -10,6 +10,7 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
+import { setMachineModel } from './machine.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
@@ -936,19 +937,31 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         const hotwatersettings = workflow?.hotWaterData;
         const steamsettings = workflow?.steamSettings;
         if (hotwatersettings) ui.updateHotWaterDisplay(hotwatersettings);
+
+        // Resolve the machine model BEFORE the first updateSteamDisplay:
+        // Bengle-only steam UI (an armed milk stop persisted in the workflow)
+        // must be able to restore visually on boot, so the Bengle gate has to
+        // be set before the steam display first renders.
+        let machineInfo = null;
+        try {
+            machineInfo = await getMachineInfo();
+        } catch (e) {
+            logger.warn('Could not fetch machine info; Bengle gating stays off:', e);
+        }
+        setMachineModel(machineInfo?.model ?? null);
+
         if (steamsettings) ui.updateSteamDisplay(steamsettings);
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
         // presets based on machine model (group-head size).
         try {
-            const machineInfo = await getMachineInfo();
             if (machineInfo && machineInfo.GHC === false) {
                 isNonGhcMachine = true;
                 ui.showGhcControls();
             }
-            await ui.setSteamFlowPresetsFromMachineModel(machineInfo?.model);
+            await ui.setSteamFlowPresetsFromMachineModel(machineInfo?.model ?? null);
         } catch (e) {
-            logger.warn('Could not fetch machine info for GHC check / steam preset init:', e);
+            logger.warn('Could not init GHC controls / steam presets:', e);
             // Fall back to standard presets so the UI still works offline
             await ui.setSteamFlowPresetsFromMachineModel(null);
         }

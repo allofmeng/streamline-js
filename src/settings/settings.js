@@ -4,6 +4,7 @@ import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
+import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
@@ -4191,7 +4192,9 @@ export function renderSubcategories(mainCategoryKey) {
     }
 
     let subcategoryItems = '';
-    category.subcategories.forEach((subcat) => {
+    category.subcategories
+        .filter((subcat) => !subcat.bengleOnly || isBengleMachine())
+        .forEach((subcat) => {
         const prefixMatch = subcat.name.match(/^(\d+\.\s*)/);
         const prefix = prefixMatch ? prefixMatch[1] : '';
         const label = prefix ? subcat.name.slice(prefix.length) : subcat.name;
@@ -4439,6 +4442,9 @@ async function _preloadSettingsInternal() {
         settingsCache.de1Advanced = de1AdvancedSettings;
         settingsCache.appInfo = appInfo;
         settingsCache.machineInfo = machineInfo;
+        // Keep the shared Bengle gate fresh (the machine may have changed since
+        // boot); a failed fetch keeps the last known model rather than wiping it.
+        if (machineInfo) setMachineModel(machineInfo.model);
 
         // Update loading flags
         settingsCache.reaLoading = false;
@@ -5608,10 +5614,16 @@ function setupSettingsSearch() {
         Object.entries(settingsTree).forEach(([key, category]) => {
             // Check if main category name matches
             const mainCategoryMatches = category.name.toLowerCase().includes(searchTerm);
-            
+
+            // Search only the subcategories visible on this machine — Bengle-only
+            // pages must not surface via search on a non-Bengle machine.
+            const visibleSubcategories = category.subcategories.filter(
+                (subcat) => !subcat.bengleOnly || isBengleMachine()
+            );
+
             // Filter subcategories that match
-            const matchingSubcategories = category.subcategories.filter(subcat => 
-                subcat.name.toLowerCase().includes(searchTerm) || 
+            const matchingSubcategories = visibleSubcategories.filter(subcat =>
+                subcat.name.toLowerCase().includes(searchTerm) ||
                 subcat.id.toLowerCase().includes(searchTerm)
             );
 
@@ -5619,7 +5631,7 @@ function setupSettingsSearch() {
             if (mainCategoryMatches || matchingSubcategories.length > 0) {
                 filteredCategories[key] = {
                     name: category.name,
-                    subcategories: matchingSubcategories.length > 0 ? matchingSubcategories : category.subcategories
+                    subcategories: matchingSubcategories.length > 0 ? matchingSubcategories : visibleSubcategories
                 };
             }
         });
@@ -5837,14 +5849,20 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
         return `<div class="p-4 text-center text-gray-500" data-i18n-key="No sub-categories.">No sub-categories.</div>`;
     }
 
+    // Bengle-only subcategories are hidden on non-Bengle machines — search
+    // results must respect the same visibility as the normal navigation.
+    const visibleSubcategories = category.subcategories.filter(
+        (subcat) => !subcat.bengleOnly || isBengleMachine()
+    );
+
     // Filter subcategories that match the search term. If none match (the
     // category surfaced via its main-name match), show all subcats — matching
     // text still gets highlighted, the rest render plainly.
-    const matchingSubcategories = category.subcategories.filter(subcat =>
+    const matchingSubcategories = visibleSubcategories.filter(subcat =>
         subcat.name.toLowerCase().includes(searchTerm) ||
         subcat.id.toLowerCase().includes(searchTerm)
     );
-    const subcategoriesToShow = matchingSubcategories.length > 0 ? matchingSubcategories : category.subcategories;
+    const subcategoriesToShow = matchingSubcategories.length > 0 ? matchingSubcategories : visibleSubcategories;
 
     let subcategoryItems = '';
     subcategoriesToShow.forEach((subcat) => {
