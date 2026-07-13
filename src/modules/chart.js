@@ -1,5 +1,6 @@
 import { logger } from './logger.js';
 import { getTranslation } from './i18n.js';
+import { hasMachineGFlow, createScaleFlowResolver } from './historical-gflow.js';
 
 // Maps internal trace key → i18n key used for the chart label.
 const LABEL_KEYS = {
@@ -695,9 +696,12 @@ export function plotHistoricalShot(measurements, workflow = null) {
         weight: { x: [], y: [] }
     };
 
-    let lastScaleWeight = 0;
-    let lastScaleTime = 0;
-    let localSmoothedWeightChange = 0;
+    // A record from a machine that reports its own gravimetric flow persists it
+    // on every machine frame (machine.weightFlow) -- the exact series the live
+    // chart plotted. Source the GFlow trace from it so the post-shot repaint
+    // matches the live trace; every other record keeps the scale-sourced chain.
+    const useMachineGFlow = hasMachineGFlow(measurements);
+    const resolveScaleFlow = createScaleFlowResolver(SMOOTHING_FACTOR);
 
     let historicalCurrentProfileFrame = -1; // Track current profileFrame for historical data
     let histLastTargetPressure = null;      // for the vertical-jump anchor at step boundaries
@@ -743,6 +747,12 @@ export function plotHistoricalShot(measurements, workflow = null) {
                         tempChartData.groupTemperature.y.push((machineData.groupTemperature / 100) * 10);
                         tempChartData.targetTemperature.x.push(time);
                         tempChartData.targetTemperature.y.push((machineData.targetGroupTemperature / 100) * 10);
+                        // GFlow from the machine frames: same source, same
+                        // timestamps/cadence, same pouring-only gating as live.
+                        if (useMachineGFlow && typeof machineData.weightFlow === 'number' && isFinite(machineData.weightFlow)) {
+                            tempChartData.weight.x.push(time);
+                            tempChartData.weight.y.push(machineData.weightFlow);
+                        }
                     }
 
                     // New logic: Add vertical line and annotation at the start of each step based on profileFrame
@@ -757,7 +767,7 @@ export function plotHistoricalShot(measurements, workflow = null) {
             }
 
 
-            if (scaleData && scaleData.weight) {
+            if (!useMachineGFlow && scaleData && scaleData.weight) {
                 const scaleTimestamp = new Date(scaleData.timestamp);
                 if (shotEndTime && scaleTimestamp > shotEndTime) {
                     continue;
@@ -766,20 +776,8 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 if (time >= 0) {
                     // Prefer the stored server weightFlow (g/s); fall back to a local
                     // delta+EMA for older records that don't carry it.
-                    let weightChange = 0;
-                    if (scaleData.weightFlow !== null && scaleData.weightFlow !== undefined) {
-                        weightChange = scaleData.weightFlow;
-                        localSmoothedWeightChange = scaleData.weightFlow; // seed EMA in case we fall back later
-                    } else if (lastScaleTime > 0 && time > lastScaleTime) {
-                        const timeDiff = time - lastScaleTime;
-                        const rawWeightChange = (scaleData.weight - lastScaleWeight) / timeDiff;
-                        localSmoothedWeightChange = (SMOOTHING_FACTOR * rawWeightChange) + (1 - SMOOTHING_FACTOR) * localSmoothedWeightChange;
-                        weightChange = localSmoothedWeightChange;
-                    }
                     tempChartData.weight.x.push(time);
-                    tempChartData.weight.y.push(weightChange);
-                    lastScaleWeight = scaleData.weight;
-                    lastScaleTime = time;
+                    tempChartData.weight.y.push(resolveScaleFlow(scaleData, time));
                 }
             }
         }
@@ -810,11 +808,17 @@ export function plotHistoricalShot(measurements, workflow = null) {
                         tempChartData.groupTemperature.y.push((machineData.groupTemperature / 100) * 10);
                         tempChartData.targetTemperature.x.push(time);
                         tempChartData.targetTemperature.y.push((machineData.targetGroupTemperature / 100) * 10);
+                        // GFlow from the machine frames: same source, same
+                        // timestamps/cadence, same pouring-only gating as live.
+                        if (useMachineGFlow && typeof machineData.weightFlow === 'number' && isFinite(machineData.weightFlow)) {
+                            tempChartData.weight.x.push(time);
+                            tempChartData.weight.y.push(machineData.weightFlow);
+                        }
                     }
                 }
             }
 
-            if (scaleData && scaleData.weight) {
+            if (!useMachineGFlow && scaleData && scaleData.weight) {
                 const scaleTimestamp = new Date(scaleData.timestamp);
                 if (shotEndTime && scaleTimestamp > shotEndTime) {
                     continue;
@@ -823,20 +827,8 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 if (time >= 0) {
                     // Prefer the stored server weightFlow (g/s); fall back to a local
                     // delta+EMA for older records that don't carry it.
-                    let weightChange = 0;
-                    if (scaleData.weightFlow !== null && scaleData.weightFlow !== undefined) {
-                        weightChange = scaleData.weightFlow;
-                        localSmoothedWeightChange = scaleData.weightFlow; // seed EMA in case we fall back later
-                    } else if (lastScaleTime > 0 && time > lastScaleTime) {
-                        const timeDiff = time - lastScaleTime;
-                        const rawWeightChange = (scaleData.weight - lastScaleWeight) / timeDiff;
-                        localSmoothedWeightChange = (SMOOTHING_FACTOR * rawWeightChange) + (1 - SMOOTHING_FACTOR) * localSmoothedWeightChange;
-                        weightChange = localSmoothedWeightChange;
-                    }
                     tempChartData.weight.x.push(time);
-                    tempChartData.weight.y.push(weightChange);
-                    lastScaleWeight = scaleData.weight;
-                    lastScaleTime = time;
+                    tempChartData.weight.y.push(resolveScaleFlow(scaleData, time));
                 }
             }
         }
