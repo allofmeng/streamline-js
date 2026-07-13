@@ -1275,14 +1275,14 @@ export function renderUsbChargerModeSettings(settings) {
             <div class="flex items-center justify-between gap-[24px] w-full">
                 <div class="flex flex-col gap-[4px]">
                     <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power ${(settings.usb === true || settings.usb === 'enable') ? 'off' : 'on'}</p>
+                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power</p>
                     </div>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="usbChargerModeToggle"
                            class="sr-only peer"
                            ${(settings.usb === true || settings.usb === 'enable') ? 'checked' : ''}
-                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable'); document.getElementById('usbChargerModeLabel').textContent = 'USB Power ' + (this.checked ? 'off' : 'on')">
+                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
                     <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                     <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                 </label>
