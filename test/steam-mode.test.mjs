@@ -8,6 +8,7 @@ import {
     resolveMilkProbePresence,
     applyMilkProbeGate,
     resolveSteamTileMode,
+    milkTelemetryText,
 } from '../src/modules/steam-mode.js';
 
 // ── resolveSteamFlowPresetsForModel ─────────────────────────────────────────
@@ -180,4 +181,27 @@ test('tile: without milk, non-Milk modes pass through untouched', () => {
     assert.equal(resolveSteamTileMode('flow', false, false, 'time'), 'flow');
     // …even when the workflow still reports an armed stop (boot with no probe).
     assert.equal(resolveSteamTileMode('flow', false, true, 'time'), 'flow');
+});
+
+// ── milkTelemetryText ───────────────────────────────────────────────────────
+// Top-telemetry-row Milk field (after Weight): a string only while the probe
+// is present AND has a usable reading; null = hide the field entirely.
+
+test('milk telemetry: present probe with a positive reading formats to 0.1°c', () => {
+    assert.equal(milkTelemetryText(true, 43.25), '43.3°c');
+    assert.equal(milkTelemetryText(true, 4), '4.0°c');
+});
+
+test('milk telemetry: absent probe hides the field regardless of the reading', () => {
+    assert.equal(milkTelemetryText(false, 43.2), null);
+    assert.equal(milkTelemetryText(false, 0), null);
+});
+
+test('milk telemetry: unusable readings hide the field — never a fake value or dashes', () => {
+    assert.equal(milkTelemetryText(true, 0), null);       // snapshot contract: 0 = no reading
+    assert.equal(milkTelemetryText(true, -1), null);
+    assert.equal(milkTelemetryText(true, NaN), null);
+    assert.equal(milkTelemetryText(true, Infinity), null);
+    assert.equal(milkTelemetryText(true, undefined), null);
+    assert.equal(milkTelemetryText(true, '60'), null);
 });

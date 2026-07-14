@@ -1,7 +1,7 @@
 import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, setStopAtTemperature, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { isBengleMachine, isBengleModel } from './machine.js';
-import { STEAM_FLOW_PRESETS_BY_MODEL, resolveSteamFlowPresetsForModel, resolveSteamTileMode } from './steam-mode.js';
+import { STEAM_FLOW_PRESETS_BY_MODEL, resolveSteamFlowPresetsForModel, resolveSteamTileMode, milkTelemetryText } from './steam-mode.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
@@ -2128,6 +2128,21 @@ export function updateTemperatures({ mix, group, steam }) {
     }
     if (steamTempEl) {
         steamTempEl.textContent = `${steam.toFixed(0)}°c`;
+    }
+}
+
+// Live milk-probe temperature in the top telemetry row (right after Weight).
+// Fed per snapshot frame by app.js alongside the presence tracker. The field
+// only exists while the probe is present — milkTelemetryText returns null
+// (hide entirely, no dashes) for absent probes and unusable readings.
+export function updateMilkTelemetry(present, tempC) {
+    const container = document.getElementById('milk-info-container');
+    if (!container) return;
+    const text = milkTelemetryText(present, tempC);
+    container.style.display = text === null ? 'none' : '';
+    if (text !== null) {
+        const el = document.getElementById('data-milk-temp');
+        if (el) el.textContent = text;
     }
 }
 

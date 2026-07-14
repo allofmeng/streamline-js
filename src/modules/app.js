@@ -398,6 +398,7 @@ function updateMilkProbeFromSnapshot(tempC) {
         latestMilkTemp = 0;
     }
     ui.setMilkProbePresent(milkProbeState.present); // no-op until presence flips
+    ui.updateMilkTelemetry(milkProbeState.present, latestMilkTemp); // top-row Milk °C field, per frame
     window.onMilkProbeUpdate?.(milkProbeState.present, latestMilkTemp);
 }
 window.app.getMilkProbe = () => ({ present: milkProbeState.present, temperature: latestMilkTemp });

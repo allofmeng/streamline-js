@@ -227,6 +227,10 @@
                                 <div id="scale-info-container" style="display: none;">
                                     <p><span id = 'weight-text' class="no-select text-[var(--mimoja-blue-v2)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Weight"></span>&nbsp;&nbsp;<span id="data-weight" class="text-[var(--mimoja-blue-v2)] text-[24px]  font-['NotoSansMono'] leading-6 no-select"> </span></p>
                                 </div>
+                                <!-- Live milk-probe temperature (Bengle): shown only while the probe is present (ui.updateMilkTelemetry), hidden entirely otherwise. -->
+                                <div id="milk-info-container" style="display: none;">
+                                    <p><span class="text-[var(--data-card-title-text-color)] text-[24px] font-semibold font-['Inter'] leading-6" data-i18n-key="Milk">Milk</span>&nbsp;&nbsp;<span id="data-milk-temp" class="text-[var(--text-primary)] text-[24px]  font-['NotoSansMono'] leading-6">°c</span></p>
+                                </div>
                             </div>
                         </div>
                         <div id="machine-status" class="w-[556px] absolute top-[22px] py-[10px] right-[44px] text-right justify-center text-nowrap text-[30px] font-semibold font-['Inter'] leading-8 tracking-wide" data-i18n-key="Connecting" aria-live="assertive">

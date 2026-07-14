@@ -85,6 +85,21 @@ export function applyMilkProbeGate(mode, probePresent, fallbackMode) {
 }
 
 /**
+ * Text for the main page's top-telemetry-row Milk field (live milk probe
+ * temperature, shown after Weight). The field only EXISTS while the probe is
+ * present: null means hide it entirely — no dashes, no placeholder. A present
+ * probe with no usable reading yet (0 / non-finite / garbage) also hides it,
+ * so the row never shows a fake temperature.
+ * @param {boolean} present  debounced probe presence (resolveMilkProbePresence)
+ * @param {*} tempC  latest positive reading (any type — non-finite = unusable)
+ * @returns {string|null}  e.g. "43.2°c", or null to hide the field
+ */
+export function milkTelemetryText(present, tempC) {
+    if (!present || typeof tempC !== 'number' || !isFinite(tempC) || tempC <= 0) return null;
+    return `${tempC.toFixed(1)}°c`;
+}
+
+/**
  * Resolve the MAIN-PAGE steam tile's display mode against milk availability
  * (Bengle machine + probe present) and the armed milk stop
  * (workflow stopAtTemperature > 0). Re-run whenever either input changes.
