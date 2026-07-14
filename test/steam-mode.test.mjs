@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     STEAM_FLOW_PRESETS_BY_MODEL,
+    MILK_STOP_PRESETS,
     resolveSteamFlowPresetsForModel,
     resolveSteamStopMode,
     MILK_PROBE_ABSENT_AFTER_MS,
@@ -9,6 +10,7 @@ import {
     applyMilkProbeGate,
     resolveSteamTileMode,
     milkTelemetryText,
+    steamFlowHighlightIndex,
 } from '../src/modules/steam-mode.js';
 
 // ── resolveSteamFlowPresetsForModel ─────────────────────────────────────────
@@ -42,6 +44,24 @@ test('preset groups have four ascending values each', () => {
     for (const group of Object.values(STEAM_FLOW_PRESETS_BY_MODEL)) {
         assert.equal(group.length, 4);
         for (let i = 1; i < group.length; i++) assert.ok(group[i] > group[i - 1]);
+    }
+});
+
+// ── MILK_STOP_PRESETS ───────────────────────────────────────────────────────
+// Milk-mode counterpart of the main-page Time presets (15/30/45/60 s): four
+// tappable stop-target defaults shown on the steam tile while in Milk mode.
+
+test('milk-stop presets are 55/60/65/70 °C, mirroring the Time preset row', () => {
+    assert.deepEqual(MILK_STOP_PRESETS, [55, 60, 65, 70]);
+});
+
+test('milk-stop presets are four ascending values inside the 30–85 °C clamp', () => {
+    assert.equal(MILK_STOP_PRESETS.length, 4);
+    for (let i = 1; i < MILK_STOP_PRESETS.length; i++) {
+        assert.ok(MILK_STOP_PRESETS[i] > MILK_STOP_PRESETS[i - 1]);
+    }
+    for (const t of MILK_STOP_PRESETS) {
+        assert.ok(Number.isInteger(t) && t >= 30 && t <= 85);
     }
 });
 
@@ -204,4 +224,62 @@ test('milk telemetry: unusable readings hide the field — never a fake value or
     assert.equal(milkTelemetryText(true, Infinity), null);
     assert.equal(milkTelemetryText(true, undefined), null);
     assert.equal(milkTelemetryText(true, '60'), null);
+});
+
+// ── steamFlowHighlightIndex ─────────────────────────────────────────────────
+// The preset highlight is DERIVED from the current flow value -- selecting
+// or restoring a highlight never produces a flow value. (The old boot path did
+// the reverse: it pushed the persisted tap-index's VALUE into the workflow,
+// silently resetting a hand-dialed flow on every app load.)
+
+test('highlight: a flow equal to a preset highlights that preset', () => {
+    const presets = resolveSteamFlowPresetsForModel('Bengle'); // [0.4, 0.5, 0.6, 0.8]
+    assert.equal(steamFlowHighlightIndex(presets, 0.4), 0);
+    assert.equal(steamFlowHighlightIndex(presets, 0.5), 1);
+    assert.equal(steamFlowHighlightIndex(presets, 0.8), 3);
+});
+
+test('highlight: a hand-dialed non-preset flow highlights nothing', () => {
+    const presets = resolveSteamFlowPresetsForModel('Bengle');
+    assert.equal(steamFlowHighlightIndex(presets, 0.7), -1);
+    assert.equal(steamFlowHighlightIndex(presets, 1.5), -1); // old ui.js module default
+});
+
+test('highlight: matching is at the tile\'s 0.1 ml/s display precision', () => {
+    const presets = resolveSteamFlowPresetsForModel('Bengle');
+    assert.equal(steamFlowHighlightIndex(presets, 0.6000000000000001), 2); // float noise still matches
+});
+
+test('highlight: garbage input never throws — just no highlight', () => {
+    assert.equal(steamFlowHighlightIndex(null, 0.5), -1);
+    assert.equal(steamFlowHighlightIndex(undefined, 0.5), -1);
+    assert.equal(steamFlowHighlightIndex([], 0.5), -1);
+    assert.equal(steamFlowHighlightIndex([0.4, 0.5], NaN), -1);
+    assert.equal(steamFlowHighlightIndex([0.4, 0.5], Infinity), -1);
+    assert.equal(steamFlowHighlightIndex([0.4, 0.5], '0.5'), -1);
+    assert.equal(steamFlowHighlightIndex([0.4, 'x', 0.5], 0.5), 2); // bad preset entries skipped
+});
+
+test('highlight derivation is read-only — presets are never mutated', () => {
+    const presets = [...resolveSteamFlowPresetsForModel('Bengle')];
+    const before = [...presets];
+    steamFlowHighlightIndex(presets, 0.7);
+    steamFlowHighlightIndex(presets, 0.5);
+    assert.deepEqual(presets, before);
+});
+
+test('boot semantics: model resolution + persisted tap index yield highlight state WITHOUT a flow value', () => {
+    // Simulated boot: the workflow persisted a hand-dialed 0.7, and the last
+    // preset the user ever TAPPED was index 1 (0.5). Resolving the model's
+    // presets and deriving the highlight must leave the flow alone: the honest
+    // result is "no preset selected", not a 0.5 push (the old boot clobber).
+    const persistedWorkflowFlow = 0.7;
+    const presets = resolveSteamFlowPresetsForModel('Bengle');
+    assert.equal(steamFlowHighlightIndex(presets, persistedWorkflowFlow), -1);
+
+    // The tap index regains relevance only through an explicit user tap, which
+    // sets the flow to that preset's value — and then the highlight follows
+    // the VALUE, index-agnostically.
+    const tappedFlow = presets[1];
+    assert.equal(steamFlowHighlightIndex(presets, tappedFlow), 1);
 });

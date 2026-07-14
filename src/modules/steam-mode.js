@@ -12,12 +12,38 @@ export const STEAM_FLOW_PRESETS_BY_MODEL = {
     highGroup: [0.8, 1.0, 1.2, 1.5], // Bengle 15A
 };
 
+// Main-page Milk-mode stop-target presets (°C) — the temperature counterpart
+// of the Time presets (15/30/45/60 s). Applied via the same stopAtTemperature
+// path as every other milk-stop write, so values must sit inside the 30–85 °C
+// clamp shared by the tile's +/- buttons and the settings page.
+export const MILK_STOP_PRESETS = [55, 60, 65, 70];
+
 /** Baseline steam-flow preset group for a machine-model string. */
 export function resolveSteamFlowPresetsForModel(model) {
     const m = String(model || '').toLowerCase();
     if (m.includes('15a')) return STEAM_FLOW_PRESETS_BY_MODEL.highGroup;
     if (m.includes('10a') || m.includes('xxl')) return STEAM_FLOW_PRESETS_BY_MODEL.midGroup;
     return STEAM_FLOW_PRESETS_BY_MODEL.standard;
+}
+
+/**
+ * Index of the steam-flow preset to highlight for a given flow value, or -1
+ * when the flow matches no preset (no highlight — the honest state for a
+ * hand-dialed flow). Matching is at the tile's 0.1 ml/s display precision.
+ *
+ * The highlight is DERIVED from the current flow value, read-only in both
+ * directions: this function never yields a flow value and callers must never
+ * write one when applying it (the old boot path did the reverse, pushing
+ * the persisted tap-index's VALUE into the workflow, silently resetting a
+ * hand-dialed flow on every app load).
+ * @param {number[]} presets  resolved steam-flow presets (baseline or user-edited)
+ * @param {*} flow  current steam flow (workflow.steamSettings.flow)
+ * @returns {number}  matching preset index, or -1 for none
+ */
+export function steamFlowHighlightIndex(presets, flow) {
+    if (!Array.isArray(presets) || typeof flow !== 'number' || !isFinite(flow)) return -1;
+    return presets.findIndex(p =>
+        typeof p === 'number' && isFinite(p) && p.toFixed(1) === flow.toFixed(1));
 }
 
 // Steam-stop mode is a skin-side concept: reaprime stores only the independent

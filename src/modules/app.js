@@ -979,7 +979,20 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         // failed machine-info fetch leaves the gate off and the button hidden.
         if (isBengleMachine()) initCupWarmerToggle();
 
-        if (steamsettings) ui.updateSteamDisplay(steamsettings);
+        if (steamsettings) {
+            // Workflow steamSettings speaks {flow, duration, ...} while
+            // updateSteamDisplay speaks {targetSteamFlow, targetSteamDuration},
+            // so map flow explicitly. This boot paint is the ONLY feed of the
+            // persisted flow into the tile: the shot-settings WS carries no
+            // steam flow field, and the old "restore selected preset" push in
+            // setSteamFlowPresetsFromMachineModel is gone (it was
+            // resetting the stored flow, not painting it).
+            ui.updateSteamDisplay({
+                ...steamsettings,
+                ...(typeof steamsettings.flow === 'number' && isFinite(steamsettings.flow)
+                    ? { targetSteamFlow: steamsettings.flow } : {}),
+            });
+        }
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
         // presets based on machine model (group-head size).
