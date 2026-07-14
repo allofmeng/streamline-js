@@ -11,6 +11,7 @@ import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
 import { setMachineModel, isBengleMachine } from './machine.js';
+import { resolveMilkProbePresence } from './steam-mode.js';
 import { isCupWarmerOn, readCupWarmerTarget, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
@@ -380,6 +381,27 @@ function handleTimeToReadyData(data) {
     }
 }
 
+// ── Milk probe (Bengle) ──────────────────────────────────────────────────────
+// Fed one snapshot milkTemperature per frame (contract: 0/absent = no probe or
+// no reading). Presence survives brief 0-glitches and drops only after a
+// sustained absence (resolveMilkProbePresence, steam-mode.js). The main-screen
+// steam tile consumes this through ui.setMilkProbePresent (Milk-mode gating +
+// probe-loss un-arm); the settings steam page through window.app.getMilkProbe
+// (render-time state) and window.onMilkProbeUpdate (live ticks + presence flips).
+let milkProbeState = { present: false, lastPositiveMs: null };
+let latestMilkTemp = 0; // last positive reading while present; 0 when absent
+function updateMilkProbeFromSnapshot(tempC) {
+    milkProbeState = resolveMilkProbePresence(milkProbeState, tempC, Date.now());
+    if (typeof tempC === 'number' && isFinite(tempC) && tempC > 0) {
+        latestMilkTemp = tempC;
+    } else if (!milkProbeState.present) {
+        latestMilkTemp = 0;
+    }
+    ui.setMilkProbePresent(milkProbeState.present); // no-op until presence flips
+    window.onMilkProbeUpdate?.(milkProbeState.present, latestMilkTemp);
+}
+window.app.getMilkProbe = () => ({ present: milkProbeState.present, temperature: latestMilkTemp });
+
 function handleData(data) {
     if (!data?.state) {
         logger.warn('Received WebSocket message with missing state:', data);
@@ -573,6 +595,7 @@ function handleData(data) {
     });
     ui.updateSleepButton(state);
     ui.updateTemperatures({ mix: data.mixTemperature, group: data.groupTemperature, steam: data.steamTemperature });
+    updateMilkProbeFromSnapshot(data.milkTemperature);
 
     // Update Chart and Shot Data Table
     if (MachineState.ESPRESSO.includes(state)) {

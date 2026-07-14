@@ -1027,6 +1027,16 @@ export async function setTargetSteamFlow(flow) {
     });
 }
 
+// Milk-probe auto-stop target °C (0 = off). Bengle: the steam auto-stops when
+// the milk reaches this temperature.
+export async function setStopAtTemperature(celsius) {
+    return updateWorkflow({
+        steamSettings: {
+            stopAtTemperature: parseFloat(celsius)
+        }
+    });
+}
+
 export async function getReaSettings() {
     if (reatsettingscache.data && reatsettingscache.timestamp) {
         const now = Date.now();

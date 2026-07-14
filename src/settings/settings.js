@@ -5,6 +5,7 @@ import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, 
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
+import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from '../modules/cup-warmer.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
@@ -582,6 +583,10 @@ export async function reconcileSettingsWithBackup() {
         }
         if (backup.steamSettings && settingsCache.workflow?.steamSettings) {
             const diff = diffSettings(backup.steamSettings, settingsCache.workflow.steamSettings);
+            // Never reconcile the milk auto-stop target: it is armed/disarmed live
+            // from the main screen (which does not rewrite the backup), so a stale
+            // backup value would silently re-arm a milk stop the user turned off.
+            delete diff.stopAtTemperature;
             if (Object.keys(diff).length) {
                 const merged = { ...settingsCache.workflow.steamSettings, ...diff };
                 await updateWorkflow({ steamSettings: merged });
@@ -2515,6 +2520,83 @@ function timeStringToMinutes(timeStr) {
 }
 
 // Render Steam settings
+// Steam-stop mode is a skin-side concept: reaprime stores only the independent
+// `stopAtTemperature` field (0 = off), not a mode enum. The pure derivation
+// lives in ../modules/steam-mode.js (node-tested); this wraps it with the
+// settings cache and the skin-local preference.
+function getSteamStopMode() {
+    const stopTemp = settingsCache.workflow?.steamSettings?.stopAtTemperature ?? 0;
+    let stored = null;
+    try {
+        stored = localStorage.getItem('streamline.steamStopMode');
+    } catch (e) { /* localStorage unavailable */ }
+    return resolveSteamStopMode(stopTemp, stored, isBengleMachine());
+}
+
+// Milk-probe state tracked in app.js from the live machine snapshot
+// (milkTemperature; 0/absent = no probe, sustained-absence debounced).
+// Absent tracker (page loaded standalone / before the main page) = no probe —
+// never fake a reading.
+function getMilkProbe() {
+    return window.app?.getMilkProbe?.() ?? { present: false, temperature: 0 };
+}
+
+// Last non-temperature stop mode the user chose ('time'|'off') — what the page
+// falls back to while the probe is absent. Probe loss is NOT display-only:
+// ui.js un-arms an active stop on the machine (stopAtTemperature = 0) and
+// lands the stop-mode record on this fallback (onMilkProbeUpdate below mirrors
+// the un-arm into this page's cached/staged workflow), so re-attaching the
+// probe restores the Milk Temp OPTION but not the mode — Milk Temp comes back
+// only when the user re-selects it (or an armed stop survived, e.g. a boot
+// with the probe attached).
+function getSteamStopFallbackMode() {
+    try {
+        return localStorage.getItem('streamline.steamStopModeFallback');
+    } catch (e) { return null; }
+}
+
+// The steam page's effective stop mode: the resolved mode gated on probe
+// presence ('temperature' is not offerable without a probe).
+function getEffectiveSteamStopMode(probePresent) {
+    return applyMilkProbeGate(getSteamStopMode(), probePresent, getSteamStopFallbackMode());
+}
+
+// Live milk-probe feed from app.js (one call per machine snapshot, ~10 Hz).
+// A presence FLIP while the steam page is open re-renders the section (gates
+// the Milk Temp option and applies/undoes the Time/Off fallback); a plain
+// temperature tick patches only the live text node so input focus isn't
+// clobbered mid-edit. renderSteamSettings re-baselines the flip detector.
+let steamMilkProbeWasPresent = null;
+let milkProbeLastPresent = null; // page-independent flip tracker (cache mirror below)
+window.onMilkProbeUpdate = function(present, temperatureC) {
+    // On a probe LOSS the main screen un-arms the milk stop on the machine
+    // (ui.setMilkProbePresent writes stopAtTemperature = 0 and records the
+    // Time/Off fallback as the stop mode). Mirror that into this page's cached
+    // and STAGED workflow state whatever category is open, so a later steam
+    // render can't resurrect Milk Temp from a stale armed value and a pending
+    // Save can't silently re-arm it.
+    const flippedAbsent = milkProbeLastPresent === true && !present;
+    milkProbeLastPresent = present;
+    if (flippedAbsent) {
+        if (settingsCache.workflow?.steamSettings?.stopAtTemperature > 0) {
+            settingsCache.workflow.steamSettings.stopAtTemperature = 0;
+        }
+        if (pendingChanges.workflow?.steamSettings?.stopAtTemperature > 0) {
+            delete pendingChanges.workflow.steamSettings.stopAtTemperature;
+        }
+    }
+    if (activeSettingsCategory !== 'steam') { steamMilkProbeWasPresent = null; return; }
+    if (steamMilkProbeWasPresent !== null && present !== steamMilkProbeWasPresent) {
+        steamMilkProbeWasPresent = present;
+        updateSettingsContentArea('steam');
+        return;
+    }
+    steamMilkProbeWasPresent = present;
+    if (!present) return;
+    const el = document.getElementById('steam-milk-live-temp');
+    if (el) el.textContent = `${temperatureC.toFixed(1)} °C`;
+};
+
 export function renderSteamSettings() {
     if (!settingsCache.de1 && !settingsCache.workflow) {
         return `
@@ -2531,6 +2613,32 @@ export function renderSteamSettings() {
     const targetTemp = steamSettings.targetTemperature ?? 150;
     const duration = steamSettings.duration ?? 60;
     const flow = steamSettings.flow ?? 0.9;
+    const stopTemp = steamSettings.stopAtTemperature ?? 0;
+    const bengle = isBengleMachine();
+    const probe = getMilkProbe(); // { present, temperature } — live snapshot state
+    steamMilkProbeWasPresent = probe.present; // baseline for the live flip detector
+    // Effective mode: 'temperature' only offerable with the probe attached;
+    // absent probe falls back to the previously-set Time/Off (display-level).
+    const stopMode = getEffectiveSteamStopMode(probe.present); // 'off' | 'time' | 'temperature'
+    const milkTarget = stopTemp > 0 ? Math.round(stopTemp) : 60;
+
+    // Steam-stop segmented button (mimics the gatewayMode segmented control).
+    // A disabled button (Milk Temp with no probe) renders grayed and inert.
+    const stopSegBtn = (value, label, disabled = false) => {
+        if (disabled) {
+            return `<button class="flex-1 h-[96px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[28px] flex items-center justify-center cursor-not-allowed transition-colors duration-200 bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7] opacity-40"
+                    aria-pressed="false" aria-disabled="true" disabled data-i18n-key="${label}">${getTranslation(label)}</button>`;
+        }
+        const active = stopMode === value;
+        return `<button class="flex-1 h-[96px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[28px] flex items-center justify-center cursor-pointer transition-colors duration-200 ${active ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
+                    aria-pressed="${active}"
+                    onclick="window.setSteamStopMode('${value}')" data-i18n-key="${label}">${getTranslation(label)}</button>`;
+    };
+    const stopDescriptions = {
+        off: 'Steam runs until you stop it (subject to the machine safety timeout).',
+        time: 'Steam stops automatically after the set duration.',
+        temperature: 'Steam stops automatically when the milk reaches the target temperature.'
+    };
 
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
@@ -2543,7 +2651,7 @@ export function renderSteamSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
+                            <p class="leading-[1.2]" data-i18n-key="Heater Target Temperature (°C)">Heater Target Temperature (°C)</p>
                             <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0 – 170 °C</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
@@ -2568,38 +2676,6 @@ export function renderSteamSettings() {
                         </div>
                     </div>
                     <p class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] leading-[1.2]" data-i18n-key="Setting below 130 °C turns the steam heater off">Setting below 130 °C turns the steam heater off</p>
-                </div>
-            </div>
-
-            <!-- Steam Duration -->
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Duration (seconds)">Duration (seconds)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">10 – 120 s</span>
-                        </div>
-                        <div class="flex gap-[20px] h-[72px] items-center">
-                            <button aria-label="Decrease steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
-                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(-5);">
-                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                            </button>
-                            <div class="flex items-center justify-center" style="width: 130px;">
-                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamDurationInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${duration}" step="5" min="10" max="120"
-                                       onchange="window.updateSteamSetting('duration', parseInt(this.value))">
-                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
-                            </div>
-                            <button aria-label="Increase steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
-                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(5);">
-                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -2634,6 +2710,94 @@ export function renderSteamSettings() {
                     </div>
                 </div>
             </div>
+
+            <!-- Steam Stop mode -->
+            <div class="content-stretch flex flex-col gap-[24px] items-start relative w-full">
+                <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                    <p class="leading-[1.2]" data-i18n-key="Steam Stop">Steam Stop</p>
+                </div>
+                <div class="flex gap-[16px] w-full">
+                    ${stopSegBtn('off', 'Off')}
+                    ${stopSegBtn('time', 'Time')}
+                    ${bengle ? stopSegBtn('temperature', 'Milk Temp', !probe.present) : ''}
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="${stopDescriptions[stopMode]}">${getTranslation(stopDescriptions[stopMode])}</p>
+                ${bengle && !probe.present ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] opacity-60 text-[24px] w-full" data-i18n-key="Requires the Bengle milk temperature probe.">${getTranslation('Requires the Bengle milk temperature probe.')}</p>
+                ` : ''}
+            </div>
+
+            <!-- Steam Duration (Time mode) -->
+            ${stopMode === 'time' ? `
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Duration (seconds)">Duration (seconds)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">10 – 120 s</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(-5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamDurationInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${duration}" step="5" min="10" max="120"
+                                       onchange="window.updateSteamSetting('duration', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
+                            </div>
+                            <button aria-label="Increase steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Stop at Milk Temperature (Milk Temp mode — Bengle) -->
+            ${stopMode === 'temperature' && bengle ? `
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Stop at Milk Temperature (°C)">Stop at Milk Temperature (°C)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">30 – 85 °C</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustMilkStopTemp(-1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamMilkStopInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${milkTarget}" step="1" min="30" max="85"
+                                       onchange="window.updateSteamSetting('stopAtTemperature', Math.max(30, Math.min(85, Math.round(parseFloat(this.value)) || 30)))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                            </div>
+                            <button aria-label="Increase milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustMilkStopTemp(1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Probe present (this section is unreachable without it) → show the
+                         LIVE reading instead of the old "requires the probe" note; the text
+                         node is patched per snapshot by window.onMilkProbeUpdate. -->
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">${getTranslation('Live milk temperature:')} <span id="steam-milk-live-temp" class="font-bold">${probe.temperature.toFixed(1)} °C</span></p>
+                </div>
+            </div>
+            ` : ''}
 
             <!-- Steam Purge Mode -->
             ${settingsCache.de1 ? `
@@ -6183,6 +6347,42 @@ export async function initializeSettings() {
             input.value = newValue.toFixed(1);
             input.dispatchEvent(new Event('change'));
         }
+    };
+
+    window.adjustMilkStopTemp = function(change) {
+        const input = document.getElementById('steamMilkStopInput');
+        if (input) {
+            let newValue = Math.round(parseFloat(input.value)) + change;
+            newValue = Math.max(30, Math.min(85, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    // Steam-stop mode toggle (Off | Time | Milk Temp). Stages stopAtTemperature and
+    // re-renders so the correct dependent field (Duration or Milk target) is revealed.
+    window.setSteamStopMode = function(mode) {
+        // Milk Temp is unofferable without the probe (button renders disabled —
+        // this guard is belt-and-braces against a stale DOM).
+        if (mode === 'temperature' && !getMilkProbe().present) return;
+        // A hand-picked mode overrides any pending probe-loss restore, exactly
+        // like a tap on the main-page tile — without this, an Off/Time stop
+        // chosen here while the probe is away is auto-re-armed to Milk the
+        // moment the probe returns.
+        ui.clearMilkStopProbeRestore();
+        try {
+            localStorage.setItem('streamline.steamStopMode', mode);
+            // Remember the last non-temperature choice: it's what the page
+            // falls back to if the milk probe disappears.
+            if (mode !== 'temperature') localStorage.setItem('streamline.steamStopModeFallback', mode);
+        } catch (e) { /* non-fatal */ }
+        if (mode === 'temperature') {
+            const cur = settingsCache.workflow?.steamSettings?.stopAtTemperature ?? 0;
+            if (!(cur > 0)) updateSteamSetting('stopAtTemperature', 60);
+        } else if ((settingsCache.workflow?.steamSettings?.stopAtTemperature ?? 0) > 0) {
+            updateSteamSetting('stopAtTemperature', 0); // 'time'/'off' → no milk auto-stop
+        }
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     };
 
     const mainSeparator = document.getElementById('separator');
