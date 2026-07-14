@@ -291,15 +291,13 @@ export function getNewestShotId() {
 // A single fixed-delay reload races that write and silently shows the previous
 // shot. Poll the list until a shot newer than `knownNewestId` appears, then
 // render it. ponytail: fixed retry budget, not a server-side watcher.
-export async function refreshToNewestShot(knownNewestId, tries = 6, intervalMs = 2000) {
+export async function refreshToNewestShot(knownNewestId, tries = 6, intervalMs = 2000, expectedId = null) {
     for (let i = 0; i < tries; i++) {
         await loadShotHistory();
-        if (shots.length > 0 && shots[0].id !== knownNewestId) {
-            await displayShot(0);
-            // The shot that just landed IS the current shot — keep the label the
-            // live chart used instead of flipping to NEWEST.
-            const labelEl = document.getElementById('shot-history-label');
-            if (labelEl) labelEl.textContent = getTranslation('CURRENT');
+        // Success = the expected shot id is on top (exact, from the shotState
+        // feed) — or, without one, any id newer than what we knew before.
+        if (shots.length > 0 && (expectedId ? shots[0].id === expectedId : shots[0].id !== knownNewestId)) {
+            await displayShot(0); // labels itself NEWEST
             return;
         }
         await new Promise(r => setTimeout(r, intervalMs));

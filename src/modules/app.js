@@ -594,7 +594,7 @@ function handleData(data) {
                 shotData.clearShotData();
                 const historyLabelEl = document.getElementById('shot-history-label');
                 if (historyLabelEl) {
-                    historyLabelEl.textContent = 'CURRENT';
+                    historyLabelEl.textContent = getTranslation('NEWEST');
                 }
             }
             chart.updateChart(shotStartTime, data, latestScaleWeight, latestScaleWeightFlow);
@@ -765,6 +765,24 @@ async function handleWeightClick() {
 let seqTrackedShot = false;   // sequencer emitted frames for the current shot
 let seqLastState = 'idle';
 let seqScaleLostWarned = false;
+let seqHistoryRefreshed = false;
+let seqUploadPolled = false;
+
+// Refresh the history panel to the finished shot and confirm its upload.
+// Fired from stop/terminal AND finalize (first one wins): the feed replays
+// only its latest frame on reconnect, so a socket blip at shot end can
+// swallow the finalize frame — hanging the refresh on it alone left the
+// panel showing the previous shot.
+function seqRefreshHistory(shotId) {
+    if (!seqHistoryRefreshed) {
+        seqHistoryRefreshed = true;
+        history.refreshToNewestShot(history.getNewestShotId(), 6, 2000, shotId ?? null);
+    }
+    if (shotId && !seqUploadPolled) {
+        seqUploadPolled = true;
+        pollForUploadConfirmation(shotId);
+    }
+}
 
 function shotStateStopMessage(decision, machineHasAutonomousSAW) {
     const reason = decision.reason;
@@ -790,7 +808,11 @@ function handleShotStateEvent(frame) {
     // Any active-shot or decision frame proves the sequencer is running this
     // shot, so handleData's fallback heuristics stand down.
     if (active || frame.decision) seqTrackedShot = true;
-    if (active && (seqLastState === 'idle' || seqLastState === 'finished')) seqScaleLostWarned = false;
+    if (active && (seqLastState === 'idle' || seqLastState === 'finished')) {
+        seqScaleLostWarned = false;
+        seqHistoryRefreshed = false;
+        seqUploadPolled = false;
+    }
     seqLastState = frame.state ?? seqLastState;
 
     // Scale dropped mid-shot. Sticky per spec: stop-at-weight stays disabled
@@ -812,17 +834,16 @@ function handleShotStateEvent(frame) {
             break;
         case 'stop':
             ui.showToast(shotStateStopMessage(d, frame.machineHasAutonomousSAW), 6000, 'info');
+            seqRefreshHistory(frame.shotId);
             break;
         case 'terminal':
             // Abnormal end (error / disconnect).
             ui.showToast(d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`), 6000, 'error');
+            seqRefreshHistory(frame.shotId);
             break;
         case 'finalize':
-            // Post-stop settling closed — the shot record is persisted. Refresh
-            // history and confirm the Visualizer upload against the real shot id
-            // instead of guessing "newest id in the list".
-            history.refreshToNewestShot(history.getNewestShotId());
-            if (frame.shotId) pollForUploadConfirmation(frame.shotId);
+            // Post-stop settling closed — the shot record is persisted.
+            seqRefreshHistory(frame.shotId);
             break;
         // advance frames: chart already tracks step changes via profileFrame
     }
