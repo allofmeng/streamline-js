@@ -3360,11 +3360,12 @@ export function renderMainAirPurgeSettings() {
 
 // ── Skin update check ────────────────────────────────────────────────────────
 // For every bundled skin installed from a GitHub release, "Update available"
-// compares the installed version the bridge reports (GET /api/v1/webui/skins ->
-// s.version) against the latest release tag of that skin's own repo. Older
-// installed version => update available. Skins not installed from a GitHub release
-// have no signal and show "Up to date". APP_VERSION is NOT used here — it is a
-// hardcoded build marker shown only so dist/preview users know which build runs.
+// compares the installed release tag the bridge reports (reaMetadata.sourceUrl
+// "github_release:owner/repo@tag", falling back to the skin manifest's s.version)
+// against the latest release tag of that skin's own repo. Older installed tag
+// => update available. Skins not installed from a GitHub release have no signal
+// and show "Up to date". APP_VERSION is NOT used here — it is a hardcoded build
+// marker shown only so dist/preview users know which build runs.
 
 function compareVersions(a, b) {
     const parse = (v) => {
@@ -3385,6 +3386,15 @@ function compareVersions(a, b) {
         return c < 0 ? -1 : c > 0 ? 1 : 0;
     }
     return 0;
+}
+
+// Installed version of record: the release tag the bridge actually installed
+// (reaMetadata.sourceUrl "github_release:owner/repo@tag"). The manifest's own
+// version is a fallback — skin authors forget to bump it (e.g. extracto-patronum
+// v0.1.3 ships "version": "0.1.0"). Leading "v" stripped for display.
+function installedSkinVersion(s) {
+    const tag = (s?.reaMetadata?.sourceUrl || '').match(/github_release:[^@\s]+@(\S+)/i)?.[1];
+    return (tag || s?.version || '').replace(/^v/i, '');
 }
 
 // owner/repo for a skin from the bridge's install metadata, or null when it wasn't
@@ -3439,7 +3449,8 @@ export function renderSkinSettings() {
     const skinBadge = (s, isActive) => {
         const slug = skinRepoSlug(s);
         const latest = slug ? releases[slug] : null;
-        const needsUpdate = !!latest && !!s.version && compareVersions(s.version, latest) < 0;
+        const installed = installedSkinVersion(s);
+        const needsUpdate = !!latest && !!installed && compareVersions(installed, latest) < 0;
         const base = 'text-[16px] font-semibold px-[8px] py-[2px] rounded-full';
         if (isActive) return needsUpdate
             ? `<span class="${base} bg-white/20 text-white" data-i18n-key="Update available">Update available</span>`
@@ -3485,11 +3496,11 @@ export function renderSkinSettings() {
                 <div class="grid grid-cols-2 gap-[14px] w-full">
                     ${(allSkins.length > 0 ? allSkins : (activeSkin ? [activeSkin] : [])).map(s => {
                         const isActive = s.id === activeSkinId;
-                        // Prefer the version the bridge reports (the actually-installed
-                        // release, which tracks GitHub) so the card matches the update
-                        // badge. Fall back to the hardcoded build marker only when the
-                        // bridge reports no version for our skin (dist/preview builds).
-                        const displayVersion = s.version || (s.id === SKIN_ID ? APP_VERSION : '');
+                        // Show the installed release tag (same source as the update
+                        // badge) so card and badge never disagree. Fall back to the
+                        // hardcoded build marker only when the bridge reports nothing
+                        // for our skin (dist/preview builds).
+                        const displayVersion = installedSkinVersion(s) || (s.id === SKIN_ID ? APP_VERSION : '');
                         return `
                         <button
                             onclick="${isActive ? '' : `window.setActiveSkin('${s.id}')`}"
@@ -5217,14 +5228,18 @@ export async function initializeSettings() {
     window.updateSkin = async function() {
         try {
             ui.showToast('Checking for skin updates...', 3000, 'info');
+            // Reload only when the update actually changed the installed version —
+            // comparing against APP_VERSION reload-loops whenever the baked build
+            // marker drifts from the on-disk manifest (or the webview caches version.js).
+            const prevVersion = installedSkinVersion(settingsCache.allSkins?.find(s => s.id === SKIN_ID));
             await updateSkins(); // bridge checks sources & downloads newer skin files server-side
             settingsCache.allSkins = await getAllSkins();
-            const diskVersion = settingsCache.allSkins.find(s => s.id === SKIN_ID)?.version;
-            if (diskVersion && diskVersion !== APP_VERSION) {
+            const diskVersion = installedSkinVersion(settingsCache.allSkins.find(s => s.id === SKIN_ID));
+            if (diskVersion && diskVersion !== prevVersion) {
                 ui.showToast(`New version v${diskVersion} downloaded. Reloading...`, 2000, 'success');
                 setTimeout(() => window.location.reload(), 2000);
             } else {
-                ui.showToast(`Already up to date (v${APP_VERSION}).`, 4000, 'info');
+                ui.showToast(`Already up to date (v${diskVersion || APP_VERSION}).`, 4000, 'info');
                 if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
             }
         } catch (error) {

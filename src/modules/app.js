@@ -1,4 +1,4 @@
-import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings, getAppInfo } from './api.js';
+import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, connectShotStateWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings, getAppInfo } from './api.js';
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
@@ -473,8 +473,13 @@ function handleData(data) {
         ui.updateMachineStatus({ status: "Disconnected" });
     }
 
-    // Check for shot completion (transition from 'espresso' to 'ready' or 'idle')
-    if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE)) {
+    // Check for shot completion (transition from 'espresso' to 'ready' or 'idle').
+    // If the shotState feed tracked this shot, it already owns the stop toast,
+    // history refresh, and upload confirmation — the heuristics below are the
+    // gateway-mode fallback (no sequencer -> feed stays idle -> seqTrackedShot false).
+    if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE) && seqTrackedShot) {
+        logger.info('Shot finished — handled by shotState feed; skipping stop-reason heuristics.');
+    } else if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE)) {
         logger.info('Shot finished. Checking for upload confirmation and refreshing history.');
 
         (async () => {
@@ -582,6 +587,9 @@ function handleData(data) {
                     return;
                 }
                 shotStartTime = new Date(data.timestamp);
+                // Feed frames during this shot re-assert it; stays false in
+                // gateway mode so the fallback heuristics run at shot end.
+                seqTrackedShot = false;
                 chart.clearChart();
                 shotData.clearShotData();
                 const historyLabelEl = document.getElementById('shot-history-label');
@@ -746,6 +754,77 @@ async function handleWeightClick() {
         //         scaleInfoContainer.style.display = 'none';
         //     }
         // }
+    }
+}
+
+// ── ShotState feed (ws/v1/machine/shotState) ────────────────────────────────
+// Authoritative shot phase + decision frames from Rea's shot sequencer. When
+// frames arrive for a shot they replace the snapshot-based stop-reason
+// heuristics in handleData, which stay as fallback: in full gateway mode no
+// sequencer runs and this feed stays idle.
+let seqTrackedShot = false;   // sequencer emitted frames for the current shot
+let seqLastState = 'idle';
+let seqScaleLostWarned = false;
+
+function shotStateStopMessage(decision, machineHasAutonomousSAW) {
+    const reason = decision.reason;
+    // With firmware-side stop-at-weight (Bengle) the target-yield stop is
+    // reported as machineEnded — present it as a weight stop like app-side SAW.
+    if (reason === 'targetWeight' || (reason === 'machineEnded' && machineHasAutonomousSAW && isScaleConnected)) {
+        const w = parseFloat(decision.data?.projectedWeight ?? latestScaleWeight);
+        return getTranslation('Stopped by weight: {value}').replace('{value}', `${w.toFixed(1)}g`);
+    }
+    if (reason === 'targetVolume') {
+        const v = shotData.getCurrentShot()?.volumes?.at(-1) ?? 0;
+        return getTranslation('Stopped by volume: {value}').replace('{value}', `${Math.round(v)}ml`);
+    }
+    // apiStop / appStop / machineEnded / stoppingBackstop — and any unknown
+    // reason: the enum is an open set, newer builds may add values.
+    return getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`);
+}
+
+function handleShotStateEvent(frame) {
+    if (!frame?.event) return;
+
+    const active = frame.state && frame.state !== 'idle' && frame.state !== 'finished';
+    // Any active-shot or decision frame proves the sequencer is running this
+    // shot, so handleData's fallback heuristics stand down.
+    if (active || frame.decision) seqTrackedShot = true;
+    if (active && (seqLastState === 'idle' || seqLastState === 'finished')) seqScaleLostWarned = false;
+    seqLastState = frame.state ?? seqLastState;
+
+    // Scale dropped mid-shot. Sticky per spec: stop-at-weight stays disabled
+    // for the rest of the shot even if the scale reconnects — warn once.
+    if (frame.scaleLost && active && !seqScaleLostWarned) {
+        seqScaleLostWarned = true;
+        ui.showToast(getTranslation('Scale lost — stop at weight disabled'), 6000, 'error');
+    }
+
+    const d = frame.decision;
+    if (!d) return;
+
+    switch (d.kind) {
+        case 'abort':
+            ui.showToast(d.reason === 'noScale'
+                ? getTranslation('Shot blocked: no scale connected')
+                : (d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`)),
+                4000, 'error');
+            break;
+        case 'stop':
+            ui.showToast(shotStateStopMessage(d, frame.machineHasAutonomousSAW), 6000, 'info');
+            break;
+        case 'terminal':
+            // Abnormal end (error / disconnect).
+            ui.showToast(d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`), 6000, 'error');
+            break;
+        case 'finalize':
+            // Post-stop settling closed — the shot record is persisted. Refresh
+            // history and confirm the Visualizer upload against the real shot id
+            // instead of guessing "newest id in the list".
+            history.refreshToNewestShot(history.getNewestShotId());
+            if (frame.shotId) pollForUploadConfirmation(frame.shotId);
+            break;
+        // advance frames: chart already tracks step changes via profileFrame
     }
 }
 
@@ -1135,6 +1214,7 @@ async function initMainPageOnce() {
         initWaterTankSocket();
         initClockTicker();
         connectTimeToReadyWebSocket(handleTimeToReadyData);
+        connectShotStateWebSocket(handleShotStateEvent);
         connectDisplayWebSocket((data) => logger.debug('Display state updated:', data));
         ensureGatewayModeTracking();
         resetDataTimeout();

@@ -300,6 +300,36 @@ export function connectShotSettingsWebSocket(onData) {
     };
 }
 
+// ShotState feed (ws/v1/machine/shotState): shot phase + decision frames from
+// Rea's shot sequencer. The server replays the latest frame on connect and the
+// socket is not gated on a connected machine — attach once and keep it open.
+export function connectShotStateWebSocket(onData) {
+    const shotStateWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/shotState`, [], {
+        debug: true,
+        reconnectInterval: 3000,
+    });
+
+    shotStateWebSocket.onopen = () => {
+        logger.info('Shot State WebSocket connected');
+    };
+
+    shotStateWebSocket.onmessage = (event) => {
+        try {
+            onData(JSON.parse(event.data));
+        } catch (error) {
+            logger.error('Error parsing Shot State WebSocket message:', error);
+        }
+    };
+
+    shotStateWebSocket.onclose = () => {
+        logger.info('Shot State WebSocket disconnected. Attempting to reconnect...');
+    };
+
+    shotStateWebSocket.onerror = (error) => {
+        logger.error('Shot State WebSocket error:', error);
+    };
+}
+
 export function connectTimeToReadyWebSocket(onData) {
     const timeToReadyWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/plugins/time-to-ready.reaplugin/timeToReady`, [], {
         debug: true,

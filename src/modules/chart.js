@@ -32,8 +32,6 @@ function getChartElement() {
 }
 let currentSubstate = 'idle';
 let previousSubstateForShape = 'idle'; // To track step changes for vertical lines
-let annotationUpdateCounter = 0;
-const ANNOTATION_UPDATE_THROTTLE = 10; // Update every 10 data points
 let lastWeight = 0;
 let lastTime = 0;
 const SMOOTHING_FACTOR = 0.1;
@@ -297,10 +295,85 @@ function getAnnotations() {
 }
 
 // Apply current labels + restore default right margin. Use before
-// Plotly.newPlot / Plotly.react.
+// Plotly.newPlot / Plotly.react. While the live HTML overlay owns the labels,
+// Plotly gets none — double labels otherwise.
 function applyLabelLayout(layout) {
-    layout.annotations = getAnnotations();
+    layout.annotations = overlayActive ? [] : getAnnotations();
     layout.margin = { ...(layout.margin || {}), r: 50 };
+}
+
+// ── Live label overlay ───────────────────────────────────────────────────────
+// During a live shot the trace-end labels are HTML spans moved with CSS
+// transforms instead of Plotly annotations: any annotation change forces a
+// full SVG replot, which on slow webviews is the dominant live-chart cost.
+// Geometry (plot rect + x-range) is read from element._fullLayout — the values
+// Plotly actually drew with — so the spans land where the annotations would:
+// left edge LABEL_X_GAP px right of the line end (xanchor:left + xshift),
+// vertically centered on it (yanchor:middle), same collision shifts.
+// Historical / profile / idle charts keep Plotly annotations (one-shot draws).
+let labelOverlay = null;
+let overlaySpans = {};   // traceName -> span
+let overlayActive = false;
+
+function getOverlay(element) {
+    if (labelOverlay && labelOverlay.parentNode === element) return labelOverlay;
+    labelOverlay?.remove();
+    overlaySpans = {};
+    if (getComputedStyle(element).position === 'static') element.style.position = 'relative';
+    labelOverlay = document.createElement('div');
+    labelOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2;';
+    element.appendChild(labelOverlay);
+    return labelOverlay;
+}
+
+function hideLiveLabels() {
+    overlayActive = false;
+    if (labelOverlay) labelOverlay.style.display = 'none';
+}
+
+function updateLiveLabels(element) {
+    const overlay = getOverlay(element);
+    overlayActive = true;
+    overlay.style.display = '';
+
+    const fl = element._fullLayout;
+    const size = fl?._size; // actual plot rect from Plotly's last draw
+    const plotLeft = size?.l ?? 50;
+    const plotTop = size?.t ?? 20;
+    const plotW = size?.w ?? getPlotPixelWidth();
+    const plotH = size?.h ?? getPlotPixelHeight();
+    const [x0, x1] = fl?.xaxis?.range ?? [0, appliedRangeMax || 1];
+    const theme = localStorage.getItem('theme') || 'light';
+
+    // Same shape applyLabelCollisionAvoidance works on (reads .y, sets .yshift).
+    const items = [];
+    for (const traceName in chartData) {
+        if (traceName === 'targetPressure' || traceName === 'targetFlow' || traceName === 'targetTemperature') continue;
+        const trace = chartData[traceName];
+        if (trace.x.length === 0) continue;
+        items.push({ traceName, x: trace.x[trace.x.length - 1], y: trace.y[trace.y.length - 1] });
+    }
+    applyLabelCollisionAvoidance(items);
+
+    const seen = new Set();
+    for (const item of items) {
+        seen.add(item.traceName);
+        let span = overlaySpans[item.traceName];
+        if (!span) {
+            span = document.createElement('span');
+            span.style.cssText = `position:absolute;left:0;top:0;white-space:nowrap;font:${LABEL_FONT_CSS};will-change:transform;`;
+            overlay.appendChild(span);
+            overlaySpans[item.traceName] = span;
+        }
+        span.textContent = getLabelText(item.traceName, chartData[item.traceName].name);
+        span.style.color = labelColors[theme]?.[item.traceName] ?? chartData[item.traceName].line.color;
+        const px = plotLeft + ((item.x - x0) / ((x1 - x0) || 1)) * plotW + LABEL_X_GAP;
+        const py = plotTop + ((10 - item.y) / 10) * plotH - (item.yshift || 0); // yshift is negative-down
+        span.style.transform = `translate(${px}px, ${py}px) translateY(-50%)`;
+    }
+    for (const name in overlaySpans) {
+        if (!seen.has(name)) { overlaySpans[name].remove(); delete overlaySpans[name]; }
+    }
 }
 
 // Re-measure labels and refresh annotations + x-range so labels stay inside
@@ -321,7 +394,7 @@ export function refreshLabelMargin() {
     if (dataMax === 0) {
         // idle / cleared chart — let Plotly autoscale, don't pin a max.
         Plotly.relayout(element, {
-            annotations: getAnnotations(),
+            annotations: overlayActive ? [] : getAnnotations(),
             'xaxis.autorange': true
         });
         return;
@@ -329,10 +402,17 @@ export function refreshLabelMargin() {
 
     const rangeMax = rangeMaxForLabels(dataMax);
     Plotly.relayout(element, {
-        annotations: getAnnotations(),
+        annotations: overlayActive ? [] : getAnnotations(),
         'xaxis.range': [0, rangeMax],
         'xaxis.autorange': false
     });
+    // This set an exact (non-chunked) range — force the next live flush to
+    // re-pin its own range instead of trusting a stale applied value.
+    appliedRangeMax = null;
+    appliedDtick = null;
+    // Reposition overlay labels against the new geometry right away (mid-shot
+    // resize / language change) instead of waiting for the next data frame.
+    if (overlayActive) updateLiveLabels(element);
 }
 
 // Helper function to add vertical lines for substate changes and annotations
@@ -375,7 +455,6 @@ let pendingUpdates = {
 // the chart lags behind the real shot. rAF caps work to the display refresh.
 let pendingX, pendingY;
 let pendingReact = false;
-let pendingNeedAnnotations = false;
 let pendingTime = 0;
 let rafHandle = 0;
 
@@ -384,7 +463,6 @@ function resetPendingChartWrites() {
     pendingX = [[], [], [], [], [], []];
     pendingY = [[], [], [], [], [], []];
     pendingReact = false;
-    pendingNeedAnnotations = false;
 }
 resetPendingChartWrites();
 
@@ -395,6 +473,15 @@ function dtickForTime(time) {
     return 30;
 }
 
+// The x-range grows in chunks so the steady-state flush is ONE Plotly draw
+// (extendTraces). Plotly.relayout is a second full redraw of the whole SVG —
+// on slow devices (webview tablets) paying it every tick for a ~100ms range
+// nudge is what makes the live chart lag. Relayout now fires only when the
+// range crosses a chunk boundary, tick density changes, or labels move.
+const RANGE_CHUNK_S = 5;
+let appliedRangeMax = null;
+let appliedDtick = null;
+
 function flushChart() {
     rafHandle = 0;
     const element = getChartElement();
@@ -402,11 +489,12 @@ function flushChart() {
 
     const theme = localStorage.getItem('theme') || 'light';
     const dtickValue = dtickForTime(pendingTime);
-    const rangeMax = rangeMaxForLabels(pendingTime);
+    const rangeMax = Math.ceil(rangeMaxForLabels(pendingTime) / RANGE_CHUNK_S) * RANGE_CHUNK_S;
 
     // A step marker changed shapes → full react (also redraws all buffered
     // points, since they're already in chartData). Then pin the x-range.
     if (pendingReact) {
+        overlayActive = true; // live from here on — applyLabelLayout gives Plotly no annotations
         const layout = theme === 'dark' ? darkLayout : lightLayout;
         applyLabelLayout(layout);
         Plotly.react(element, Object.values(chartData), layout);
@@ -415,6 +503,9 @@ function flushChart() {
             'xaxis.autorange': false,
             'xaxis.dtick': dtickValue
         });
+        appliedRangeMax = rangeMax;
+        appliedDtick = dtickValue;
+        updateLiveLabels(element);
         resetPendingChartWrites();
         return;
     }
@@ -422,13 +513,17 @@ function flushChart() {
     if (pendingX[0].length > 0) {
         Plotly.extendTraces(element, { x: pendingX, y: pendingY }, [0, 1, 2, 3, 4, 5]);
     }
-    const relayoutPayload = {
-        'xaxis.range': [0, rangeMax],
-        'xaxis.autorange': false,
-        'xaxis.dtick': dtickValue
-    };
-    if (pendingNeedAnnotations) relayoutPayload.annotations = getAnnotations();
-    Plotly.relayout(element, relayoutPayload);
+    if (rangeMax !== appliedRangeMax || dtickValue !== appliedDtick) {
+        Plotly.relayout(element, {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        });
+        appliedRangeMax = rangeMax;
+        appliedDtick = dtickValue;
+    }
+    // HTML overlay labels track the line ends every flush — no Plotly cost.
+    updateLiveLabels(element);
     resetPendingChartWrites();
 }
 
@@ -552,8 +647,6 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     lastWeight = weight;
     lastTime = time;
 
-    const isFirstDataPoint = chartData.pressure.x.length === 0;
-
     // At a step boundary, anchor each target's PREVIOUS value at this x before the
     // new value is pushed below. That makes a pump-mode swap (pressure 8→0 / flow
     // 0→8) draw as a vertical step. Only fires on step changes, so smooth in-step
@@ -594,11 +687,6 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
         pendingX[3].push(time);            pendingY[3].push(targetFlowY);
         pendingX[4].push(time);            pendingY[4].push(groupTemperatureY);
         pendingX[5].push(time);            pendingY[5].push(weightY);
-        // Throttle annotation refresh so we don't recompute label layout every tick.
-        annotationUpdateCounter++;
-        if (isFirstDataPoint || annotationUpdateCounter % 10 === 0) {
-            pendingNeedAnnotations = true;
-        }
     }
     scheduleChartFlush();
 }
@@ -619,12 +707,15 @@ export function clearChart() {
     previousSubstateForShape = 'idle';
     liveProfileFrame = -1;  // FIX: Reset profile frame tracking
     currentSubstate = 'idle';  // FIX: Reset substate
-    annotationUpdateCounter = 0;  // FIX: Reset counter
 
     // Drop any buffered live points + cancel a queued flush so stale data from
     // the previous shot can't land on the freshly cleared chart.
     if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0; }
     resetPendingChartWrites();
+    appliedRangeMax = null;
+    appliedDtick = null;
+    // Back to non-live rendering: Plotly annotations own the labels again.
+    hideLiveLabels();
 
     // Clear shapes and annotations from BOTH layouts
     // This prevents issues when theme is switched between shots
@@ -1130,4 +1221,6 @@ export function setTheme(theme) {
         return;
     }
     Plotly.react(element, data, layoutUpdate);
+    // Mid-shot theme switch: recolor the overlay labels immediately.
+    if (overlayActive) updateLiveLabels(element);
 }
