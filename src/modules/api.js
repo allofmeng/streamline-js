@@ -1059,6 +1059,30 @@ export async function getMachineInfo() {
     return response.json();
 }
 
+// ── Bengle: cup warmer ──────────────────────────────────────────────────────
+// GET returns { temperature, currentTemperature? }. `temperature` is the
+// SETPOINT in °C (0 = off) — the field name reads like a measurement but it is
+// a MatSetPoint read-back. `currentTemperature` is the live mat temperature in
+// °C, null when the firmware has no valid reading, and ABSENT entirely on
+// older reaprime builds. PUT accepts { temperature } (0–80). 404 on a
+// non-Bengle. There is no separate enable field (firmware CupWarmerMode is not
+// exposed), so temperature 0 is the "off" signal.
+export async function getCupWarmer() {
+    const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`);
+    if (!response.ok) throw new Error(`Failed to get cup warmer (status ${response.status})`);
+    return response.json();
+}
+
+export async function setCupWarmer(temperature) {
+    const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temperature }),
+    });
+    if (!response.ok) throw new Error(`Failed to set cup warmer (status ${response.status})`);
+    return true;
+}
+
 // ── Bengle: LED strip ───────────────────────────────────────────────────────
 // State = { frontStrip, backStrip, frontSwitch }, each { awake, sleeping } as a
 // 12-char hex 'RRRRGGGGBBBB'. PUT pushes live (no NVM); commit persists to NVM;

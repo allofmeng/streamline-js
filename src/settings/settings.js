@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -6,6 +6,7 @@ import { loadPage } from '../modules/router.js'; // Singular and correctly forma
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
+import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from '../modules/cup-warmer.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
@@ -237,6 +238,8 @@ function updateSettingsContentArea(category) {
     // THEN stop previewing (flush-before-clear: one strip transition, and the
     // edit persists exactly as the old always-PUT behaviour did).
     if (category !== 'ledstrip') { ledFlushDirty(); ledClearPreview(); }
+    // Leaving the Cup Warmer page → stop its ~5 s revalidate poll.
+    if (category !== 'cupwarmer' && cupWarmerPollTimer !== null) stopCupWarmerPoll();
     const contentArea = document.getElementById('settings-content-area');
     if (contentArea) {
         contentArea.innerHTML = renderSettingsContent(category);
@@ -306,6 +309,7 @@ const settingsTree = {
         name: 'Machine',
         subcategories: [
             { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' },
+            { id: 'cupwarmer', name: 'Cup Warmer', settingsCategory: 'cupwarmer', i18nKey: 'Cup Warmer', bengleOnly: true },
             { id: 'ledstrip', name: 'Lighting', settingsCategory: 'ledstrip', i18nKey: 'Lighting', bengleOnly: true },
             { id: 'machineinfo', name: 'Machine Information', settingsCategory: 'machineinfo', i18nKey: 'Machine Info' }
         ]
@@ -754,6 +758,8 @@ export function renderSettingsContent(category) {
             return renderFanThresholdSettings(settingsCache.de1);
         case 'usbchargermode':
             return renderUsbChargerModeSettings(settingsCache.de1);
+        case 'cupwarmer':
+            return renderCupWarmerSettings();
         case 'ledstrip':
             return renderLedSettings();
         case 'machineinfo':
@@ -2652,6 +2658,205 @@ export function renderSteamSettings() {
         </div>
     `;
 }
+
+// ── Cup Warmer (Bengle) ─────────────────────────────────────────────────────
+// Machine truth is a single `temperature` setpoint (0 = off). We keep the
+// user's desired target in localStorage so toggling off (PUT 0) doesn't lose
+// it. Pure clamp/format helpers live in ../modules/cup-warmer.js so node:test
+// covers them.
+//
+// State lives in the SHARED store in ../modules/cup-warmer.js — one copy for
+// this page AND app.js's header quick-toggle (see the note there; the old
+// fetch-once cupWarmerCache here froze the bench display at a 20-minute-old
+// reading, audit I1 / checklist 2b). Freshness while the page is open comes
+// from startCupWarmerPoll(): an immediate revalidate on entry (stale-while-
+// revalidate — cached values paint instantly, fresh data patches in) plus a
+// ~5 s repeat whose ticks touch ONLY the #cupWarmerCurrentTemp text node so
+// input focus survives. The poll stops on category change (top of
+// updateSettingsContentArea — the same exit seam the Lighting preview and the
+// Load-Cell scale WS use), on Save/Cancel page exit, and self-guards against
+// any other page swap.
+let cupWarmerPollTimer = null;      // interval handle; non-null only while this page owns the poll
+const CUP_WARMER_POLL_MS = 5000;    // revalidate cadence while the page is open
+
+// One store subscription paints the open page: a missing enable-toggle
+// (loading/error placeholder on screen) or an on/off flip (header toggle,
+// reconnect invalidation, machine-side change) re-renders the section; a
+// plain temperature tick patches only the text node so it can never clobber
+// input focus mid-edit (same flip-vs-tick split as onMilkProbeUpdate above).
+onCupWarmerStateChange((state) => {
+    if (activeSettingsCategory !== 'cupwarmer') return;
+    const toggleEl = document.getElementById('cupWarmerEnableToggle');
+    if (!toggleEl || toggleEl.checked !== isCupWarmerOn(state?.temperature)) {
+        updateSettingsContentArea('cupwarmer');
+        return;
+    }
+    patchCupWarmerCurrentTemp(state?.currentTemperature);
+});
+
+// Patch just the current-temperature line (bold reading vs dimmed "No
+// reading"), leaving the rest of the rendered page — and any focused input —
+// untouched. Mirrors the two render variants in renderCupWarmerSettings.
+function patchCupWarmerCurrentTemp(currentTemperature) {
+    const el = document.getElementById('cupWarmerCurrentTemp');
+    if (!el) return;
+    const text = formatCurrentMatTemp(currentTemperature);
+    if (text !== null) {
+        el.textContent = `${text} °C`;
+        el.classList.add('font-bold');
+        el.classList.remove('font-normal', 'opacity-60');
+        el.removeAttribute('data-i18n-key');
+    } else {
+        el.textContent = getTranslation('No reading');
+        el.classList.add('font-normal', 'opacity-60');
+        el.classList.remove('font-bold');
+        el.setAttribute('data-i18n-key', 'No reading');
+    }
+}
+
+// Fetch fresh machine state and fold it into the shared store; the store
+// subscription above paints the page (and app.js's header button). A failed
+// fetch keeps the last snapshot on screen — the next tick retries — unless
+// nothing is loaded yet, in which case fall to "off" so the render can leave
+// its loading placeholder (same fallback the old fetch-once path used).
+async function revalidateCupWarmer() {
+    try {
+        const data = await getCupWarmer();
+        setCupWarmerState(data || { temperature: 0 });
+    } catch (e) {
+        if (getCupWarmerState() === null) setCupWarmerState({ temperature: 0 });
+    }
+}
+
+function startCupWarmerPoll() {
+    if (cupWarmerPollTimer !== null) return; // already armed — a re-render, not a page entry
+    cupWarmerPollTimer = setInterval(() => {
+        // Self-guard: an exit path that misses stopCupWarmerPoll() (e.g. a
+        // history/back page swap) lands here at most one tick later.
+        if (activeSettingsCategory !== 'cupwarmer' || !document.getElementById('settings-content-area')) {
+            stopCupWarmerPoll();
+            return;
+        }
+        revalidateCupWarmer();
+    }, CUP_WARMER_POLL_MS);
+    revalidateCupWarmer(); // stale-while-revalidate: refresh immediately on entry
+}
+
+function stopCupWarmerPoll() {
+    if (cupWarmerPollTimer === null) return;
+    clearInterval(cupWarmerPollTimer);
+    cupWarmerPollTimer = null;
+}
+
+export function renderCupWarmerSettings() {
+    startCupWarmerPoll(); // idempotent: page entry kicks a revalidate + arms the ~5 s poll
+    const cupWarmer = getCupWarmerState();
+    if (cupWarmer === null) return renderLoadingState(getTranslation('Cup Warmer'));
+
+    const machineTemp = Math.round(cupWarmer.temperature ?? 0);
+    const enabled = machineTemp > 0;
+    // When enabled the machine's setpoint is truth; when off, show the stored
+    // desired target. Either way the display stays within the 30–80 UI range.
+    let target = enabled ? machineTemp : readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
+    if (!(target >= 30 && target <= 80)) target = 70;
+    // Live mat temperature: shown when
+    // the app reports a non-null `currentTemperature`; "No reading" when it is
+    // null OR when the field is absent (older reaprime). Never fake data.
+    const currentTempText = formatCurrentMatTemp(cupWarmer.currentTemperature);
+
+    const minusSvg = `<svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const plusSvg = `<svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const toggle = (id, checked, onchange) => `
+        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+            <input type="checkbox" id="${id}" class="sr-only peer" ${checked ? 'checked' : ''} onchange="${onchange}">
+            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+        </label>`;
+
+    return `
+        <div class="content-stretch flex flex-col gap-[48px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Cup Warmer">Cup Warmer</p>
+            </div>
+
+            <!-- Enable -->
+            <div class="flex items-center justify-between gap-[24px] w-full">
+                <div class="flex flex-col gap-[4px]">
+                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]" data-i18n-key="Cup Warmer">Cup Warmer</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Warm your cups on the top plate">Warm your cups on the top plate</p>
+                </div>
+                ${toggle('cupWarmerEnableToggle', enabled, "window.toggleCupWarmer(this.checked)")}
+            </div>
+
+            <!-- Target Temperature -->
+            <div class="content-stretch flex items-center justify-between relative w-full">
+                <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                    <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
+                    <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">30 – 80 °C</span>
+                </div>
+                <div class="flex gap-[20px] h-[72px] items-center">
+                    <button aria-label="Decrease cup warmer temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerTemp(-1);">${minusSvg}</button>
+                    <div class="flex items-center justify-center" style="width: 130px;">
+                        <input type="text" inputmode="numeric" pattern="[0-9]*" id="cupWarmerTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full" value="${target}" step="1" min="30" max="80" onchange="window.setCupWarmerTarget(parseFloat(this.value))">
+                        <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                    </div>
+                    <button aria-label="Increase cup warmer temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerTemp(1);">${plusSvg}</button>
+                </div>
+            </div>
+
+            <!-- Current temperature (read-only; placeholder when no reading) -->
+            <div class="content-stretch flex items-center justify-between gap-[24px] relative w-full">
+                <div class="flex flex-col gap-[4px]">
+                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[var(--text-primary)] text-[30px] leading-[1.2]" data-i18n-key="Current Temperature (°C)">Current Temperature (°C)</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Live temperature of the cup-warming plate">Live temperature of the cup-warming plate</p>
+                </div>
+                ${currentTempText !== null
+                    ? `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-bold leading-[1.2] whitespace-nowrap">${currentTempText}&nbsp;°C</p>`
+                    : `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-normal opacity-60 leading-[1.2] whitespace-nowrap" data-i18n-key="No reading">No reading</p>`}
+            </div>
+
+        </div>
+    `;
+}
+
+// Cup-warmer window handlers — the settings UI is innerHTML-injected template
+// strings, so interactivity must go through window-scoped inline handlers.
+// Toggling / editing applies live via PUT /machine/cupWarmer.
+window.toggleCupWarmer = async function(on) {
+    const target = readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
+    const temp = on ? target : 0;
+    try {
+        await setCupWarmer(temp);
+        // Merge keeps currentTemperature visible across toggles;
+        // the store notify also repaints app.js's header quick-toggle.
+        patchCupWarmerState({ temperature: temp });
+        ui.showToast(on ? getTranslation('Cup warmer on') : getTranslation('Cup warmer off'), 2000, 'success');
+    } catch (e) {
+        ui.showToast(getTranslation('Failed to set cup warmer'), 3000, 'error');
+    }
+    if (activeSettingsCategory === 'cupwarmer') updateSettingsContentArea('cupwarmer');
+};
+
+window.adjustCupWarmerTemp = function(change) {
+    const input = document.getElementById('cupWarmerTempInput');
+    if (input) {
+        let v = parseInt(input.value, 10) + change;
+        v = Math.max(30, Math.min(80, v));
+        input.value = v;
+        input.dispatchEvent(new Event('change'));
+    }
+};
+
+window.setCupWarmerTarget = async function(value) {
+    const v = clampCupWarmerTarget(value);
+    try { localStorage.setItem(CUP_WARMER_TARGET_KEY, String(v)); } catch (e) { /* non-fatal */ }
+    // Apply live only if the warmer is currently on — editing the target while
+    // off must not power the mat.
+    if (isCupWarmerOn(getCupWarmerState()?.temperature)) {
+        try { await setCupWarmer(v); patchCupWarmerState({ temperature: v }); }
+        catch (e) { ui.showToast(getTranslation('Failed to set cup warmer'), 3000, 'error'); }
+    }
+};
 
 // ── Lighting / LED strip (Bengle) ────────────────────────────────────────────
 // State = { frontStrip, backStrip, frontSwitch } × { awake, sleeping }, each a
@@ -4938,6 +5143,7 @@ function getCategoryTitle(category) {
         case 'de1': return 'DE1 Settings';
         case 'fanthreshold': return 'Fan Threshold Settings';
         case 'usbchargermode': return 'USB Charger Settings';
+        case 'cupwarmer': return 'Cup Warmer';
         case 'ledstrip': return 'Lighting';
         case 'machineinfo': return 'Machine Info';
         case 'de1advanced': return 'Machine Advanced Settings';
@@ -4970,6 +5176,8 @@ export async function initializeSettings() {
             // palette PUT flushes first (flush → clear, one transition).
             ledFlushDirty();
             ledClearPreview();
+            // …and exiting from the Cup Warmer page must stop its revalidate poll.
+            stopCupWarmerPoll();
             loadPage('index.html');
         });
     }
@@ -4994,6 +5202,8 @@ export async function initializeSettings() {
             // palette PUT flushes first (flush → clear, one transition).
             ledFlushDirty();
             ledClearPreview();
+            // …and exiting from the Cup Warmer page must stop its revalidate poll.
+            stopCupWarmerPoll();
             loadPage('index.html');
         });
     }

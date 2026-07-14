@@ -10,7 +10,8 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
-import { setMachineModel } from './machine.js';
+import { setMachineModel, isBengleMachine } from './machine.js';
+import { isCupWarmerOn, readCupWarmerTarget, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
@@ -950,6 +951,10 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         }
         setMachineModel(machineInfo?.model ?? null);
 
+        // Bengle-only header quick-toggle for the cup warmer. Fails closed: a
+        // failed machine-info fetch leaves the gate off and the button hidden.
+        if (isBengleMachine()) initCupWarmerToggle();
+
         if (steamsettings) ui.updateSteamDisplay(steamsettings);
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
@@ -982,6 +987,59 @@ async function isShotBlockedByNoScale() {
     }
     ui.showToast('No scale connected — shot blocked', 4000, 'error');
     return true;
+}
+
+// ── Bengle cup-warmer quick toggle (header button) ───────────────────────────
+// Reflects/toggles the warmer live via /machine/cupWarmer (temperature 0 = off).
+// Uses the same target the Settings → Cup Warmer page stores in localStorage.
+//
+// On/off state is NOT kept here: this button and the Settings → Cup Warmer
+// page both render from the ONE shared snapshot in ./cup-warmer.js (the old
+// boot-seeded local boolean was one of three diverging copies — audit I1 /
+// bench checklist 2b). initCupWarmerToggle runs from loadInitialData on boot
+// AND on every machine (re)connect/wake, so a reconnect invalidates the
+// snapshot and re-seeds it fresh; the subscription below repaints the button
+// whenever anyone (this button, the Settings page, its ~5 s poll) updates the
+// store — #main-page is display-toggled, never rebuilt, so the element and
+// this one subscription live for the whole session.
+async function initCupWarmerToggle() {
+    invalidateCupWarmerState(); // (re)connect: drop any stale snapshot before re-seeding
+    const btn = document.getElementById('cupwarmer-toggle-btn');
+    if (!btn) return;
+    btn.style.display = '';
+    try {
+        const data = await api.getCupWarmer();
+        setCupWarmerState(data || { temperature: 0 });
+    } catch (e) {
+        // Model already said Bengle — keep the button. The snapshot stays null
+        // (renders as "off") and the Settings page refetches on entry.
+    }
+    if (!btn.dataset.wired) { // idempotent: init runs again on reconnect flows
+        btn.dataset.wired = '1';
+        btn.addEventListener('click', toggleCupWarmerFromHeader);
+    }
+}
+onCupWarmerStateChange(() => updateCupWarmerButton());
+function updateCupWarmerButton() {
+    const btn = document.getElementById('cupwarmer-toggle-btn');
+    if (!btn) return;
+    const on = isCupWarmerOn(getCupWarmerState()?.temperature);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.style.backgroundColor = on ? 'var(--mimoja-blue)' : '';
+    btn.style.color = on ? '#ffffff' : '';
+}
+async function toggleCupWarmerFromHeader() {
+    const target = readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
+    const next = !isCupWarmerOn(getCupWarmerState()?.temperature);
+    try {
+        await api.setCupWarmer(next ? target : 0);
+        // Store notify repaints this button and any open Settings page; merging
+        // keeps the last currentTemperature reading visible there.
+        patchCupWarmerState({ temperature: next ? target : 0 });
+        ui.showToast(next ? 'Cup warmer on' : 'Cup warmer off', 2000, 'success');
+    } catch (e) {
+        ui.showToast('Failed to set cup warmer', 3000, 'error');
+    }
 }
 
 // Delegated listener on document — survives all DOM replacements, no re-wiring needed
