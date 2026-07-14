@@ -406,10 +406,7 @@ export function refreshLabelMargin() {
         'xaxis.range': [0, rangeMax],
         'xaxis.autorange': false
     });
-    // This set an exact (non-chunked) range — force the next live flush to
-    // re-pin its own range instead of trusting a stale applied value.
-    appliedRangeMax = null;
-    appliedDtick = null;
+    appliedRangeMax = rangeMax;
     // Reposition overlay labels against the new geometry right away (mid-shot
     // resize / language change) instead of waiting for the next data frame.
     if (overlayActive) updateLiveLabels(element);
@@ -473,20 +470,12 @@ function dtickForTime(time) {
     return 30;
 }
 
-// The x-range grows on demand so the steady-state flush is ONE Plotly draw
-// (extendTraces). Plotly.relayout is a second full redraw of the whole SVG —
-// on slow devices (webview tablets) paying it every tick for a ~100ms range
-// nudge is what makes the live chart lag. The range holds until the line end
-// (plus its label room) reaches it, then extends by a small headroom —
-// max(1s, 10%) — so the trace always fills most of the axis.
-const RANGE_HEADROOM_MIN_S = 1;
-let appliedRangeMax = null;
-let appliedDtick = null;
-
-function computeRangeMax(required) {
-    if (appliedRangeMax !== null && required <= appliedRangeMax) return appliedRangeMax;
-    return Math.ceil(Math.max(required + RANGE_HEADROOM_MIN_S, required * 1.1));
-}
+// The x-range grows continuously — exact label-inflated max, relayouted every
+// flush (v0.1.65 behavior): the right edge glides with the line instead of
+// jumping in steps. Discrete on-demand growth was tried and read as jumpy.
+// The live-shot perf win lives in the HTML label overlay: this relayout
+// carries no annotations, so labels never force extra full replots.
+let appliedRangeMax = null; // last applied range end — overlay geometry fallback
 
 function flushChart() {
     rafHandle = 0;
@@ -495,7 +484,7 @@ function flushChart() {
 
     const theme = localStorage.getItem('theme') || 'light';
     const dtickValue = dtickForTime(pendingTime);
-    const rangeMax = computeRangeMax(rangeMaxForLabels(pendingTime));
+    const rangeMax = rangeMaxForLabels(pendingTime);
 
     // A step marker changed shapes → full react (also redraws all buffered
     // points, since they're already in chartData). Then pin the x-range.
@@ -510,7 +499,6 @@ function flushChart() {
             'xaxis.dtick': dtickValue
         });
         appliedRangeMax = rangeMax;
-        appliedDtick = dtickValue;
         updateLiveLabels(element);
         resetPendingChartWrites();
         return;
@@ -519,15 +507,12 @@ function flushChart() {
     if (pendingX[0].length > 0) {
         Plotly.extendTraces(element, { x: pendingX, y: pendingY }, [0, 1, 2, 3, 4, 5]);
     }
-    if (rangeMax !== appliedRangeMax || dtickValue !== appliedDtick) {
-        Plotly.relayout(element, {
-            'xaxis.range': [0, rangeMax],
-            'xaxis.autorange': false,
-            'xaxis.dtick': dtickValue
-        });
-        appliedRangeMax = rangeMax;
-        appliedDtick = dtickValue;
-    }
+    Plotly.relayout(element, {
+        'xaxis.range': [0, rangeMax],
+        'xaxis.autorange': false,
+        'xaxis.dtick': dtickValue
+    });
+    appliedRangeMax = rangeMax;
     // HTML overlay labels track the line ends every flush — no Plotly cost.
     updateLiveLabels(element);
     resetPendingChartWrites();
@@ -719,7 +704,6 @@ export function clearChart() {
     if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0; }
     resetPendingChartWrites();
     appliedRangeMax = null;
-    appliedDtick = null;
     // Back to non-live rendering: Plotly annotations own the labels again.
     hideLiveLabels();
 
