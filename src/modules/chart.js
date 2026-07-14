@@ -669,13 +669,16 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     scheduleChartFlush();
 }
 
-export function clearChart() {
+// Reset all chart data/tracking/layout state WITHOUT touching Plotly. Callers
+// that redraw themselves right after (plotHistoricalShot) use this to avoid
+// painting an empty chart just to overwrite it.
+function resetChartState() {
     // Clear all chart data arrays
     for (const trace in chartData) {
         chartData[trace].x = [];
         chartData[trace].y = [];
     }
-    
+
     // Reset all tracking variables
     lastWeight = 0;
     lastTime = 0;
@@ -700,7 +703,11 @@ export function clearChart() {
     lightLayout.shapes = [];
     darkLayout.annotations = [];
     lightLayout.annotations = [];
-    
+}
+
+export function clearChart() {
+    resetChartState();
+
     const theme = localStorage.getItem('theme') || 'light';
     const layout = theme === 'dark' ? darkLayout : lightLayout;
 
@@ -719,7 +726,9 @@ export function plotHistoricalShot(measurements, workflow = null) {
         return;
     }
 
-    clearChart();
+    // Reset state only — we render once at the end, so skip clearChart's two
+    // throwaway Plotly redraws of an empty chart.
+    resetChartState();
 
     let shotStartTime = null;
 
@@ -916,14 +925,13 @@ export function plotHistoricalShot(measurements, workflow = null) {
             chartData[key].y = tempChartData[key].y;
         }
     });
+    // x arrays are built in time order, so the last element is the max — no
+    // need to spread the whole array through Math.max.
     let maxTime = 0;
     for (const traceName in tempChartData) {
-        const trace = tempChartData[traceName];
-        if (trace.x && trace.x.length > 0) {
-            const traceMaxTime = Math.max(...trace.x);
-            if (traceMaxTime > maxTime) {
-                maxTime = traceMaxTime;
-            }
+        const x = tempChartData[traceName].x;
+        if (x.length > 0 && x[x.length - 1] > maxTime) {
+            maxTime = x[x.length - 1];
         }
     }
     let dtickValue;

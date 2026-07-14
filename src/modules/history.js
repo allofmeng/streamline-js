@@ -150,6 +150,25 @@ async function displayShot(index) {
     if (currentShotIndex >= shots.length - 3 && shots.length < totalAvailable) {
         loadMoreShots();
     }
+
+    // Warm the neighbours so the next arrow tap draws without a network stall.
+    prefetchMeasurements(index - 1);
+    prefetchMeasurements(index + 1);
+}
+
+// Fire-and-forget load of a shot's measurements into the cache. No-op if the
+// index is out of range or the shot already has data.
+function prefetchMeasurements(index) {
+    const shot = shots[index];
+    if (!shot || shot.measurements) return;
+    fetch(`${API_BASE_URL}/shots/${shot.id}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(full => {
+            if (!full || shots[index]?.id !== shot.id || shots[index].measurements) return;
+            shots[index] = { ...shots[index], ...full };
+            addShot(shots[index]);
+        })
+        .catch(() => {}); // prefetch is best-effort
 }
 
 // Re-plot the currently selected history shot. The main-page chart shares the
