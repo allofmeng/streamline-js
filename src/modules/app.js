@@ -10,7 +10,7 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
-import { deriveScreensaverAction } from './screensaver-policy.js';
+import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
@@ -388,11 +388,20 @@ function handleTimeToReadyData(data) {
 // awake" -- WOKE the machine. In the 46 ms after a sleep press, with the overlay
 // optimistically up and the snapshot still reporting 'idle', that is the command
 // that cancelled the user's sleep.
+//
+// The one concession to latency runs the OTHER way. When the user taps to wake, we
+// hide the overlay immediately instead of making them watch it for a round-trip —
+// so for the next frame or three the machine still (honestly) reports 'sleeping'
+// and this function would raise the overlay straight back up. `wakePending` marks
+// those frames as stale by our own doing. It is time-bounded, so a wake that never
+// lands expires and the overlay returns: we decline to repaint a state we have
+// asked the machine to leave, we never paint one it never reported.
 function applyScreensaverAction(state) {
     const action = deriveScreensaverAction({
         machineState: state,
         screensaverActive: ui.isScreensaverActive(),
         screensaverEnabled: localStorage.getItem('screensaverEnabled') !== 'false',
+        wakePending: ui.isWakeRequestPending(),
     });
     if (action === 'show') {
         logger.info('Machine confirmed sleeping. Activating screensaver.');
@@ -400,6 +409,11 @@ function applyScreensaverAction(state) {
     } else if (action === 'hide') {
         ui.hideScreensaver(); // PURE UI -- never a machine command
     }
+
+    // The machine has confirmed it is awake: the wake we were waiting on has
+    // landed, so stop suppressing. (A wake superseded by a sleep press is cleared
+    // by the sleep button itself.)
+    if (!isMachineAsleep(state)) ui.clearWakeRequest();
 }
 
 function handleData(data) {

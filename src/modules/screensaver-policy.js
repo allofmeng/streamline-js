@@ -26,18 +26,63 @@
 /** Machine states the policy cares about. Anything else counts as "awake". */
 const SLEEPING = 'sleeping';
 
+/** Is this CONFIRMED machine state a sleeping one? Case-insensitive, null-safe. */
+export function isMachineAsleep(machineState) {
+    return String(machineState || '').toLowerCase() === SLEEPING;
+}
+
+/**
+ * How long a wake WE asked for may go unconfirmed before we stop believing in it.
+ *
+ * A wake round-trips in ~100–300 ms (PUT, then the machine's next snapshot). This
+ * is deliberately far longer, because the only cost of being generous is that a
+ * genuinely-refused wake leaves the overlay down a little longer; and the only
+ * cost of being stingy is the flicker we are here to remove.
+ */
+export const WAKE_CONFIRM_GRACE_MS = 3000;
+
+/**
+ * Is a wake we requested still in flight?
+ *
+ * Bounded on purpose. If the PUT is lost, or the machine refuses it, the grace
+ * expires and the screensaver goes back to being a pure function of the machine's
+ * confirmed state — which, if the machine really is still asleep, means the
+ * overlay comes back. The suppression can never latch the overlay off.
+ *
+ * @param {number} wakeRequestedAt - Date.now() when the wake was sent; 0 = none.
+ */
+export function isWakePending(wakeRequestedAt, now = Date.now(), graceMs = WAKE_CONFIRM_GRACE_MS) {
+    if (!wakeRequestedAt) return false;
+    return (now - wakeRequestedAt) < graceMs;
+}
+
 /**
  * What the screensaver overlay should do, given the machine's CONFIRMED state.
  *
  * Never returns a machine command — a snapshot arriving, or an overlay being
  * torn down, is not a user asking for anything.
  *
+ * @param {boolean} wakePending - we have sent 'idle' and the machine has not yet
+ *   confirmed it. See the note on the 'show' branch below.
  * @returns {'show'|'hide'|'none'}
  */
-export function deriveScreensaverAction({ machineState, screensaverActive, screensaverEnabled = true } = {}) {
-    const asleep = String(machineState || '').toLowerCase() === SLEEPING;
+export function deriveScreensaverAction({ machineState, screensaverActive, screensaverEnabled = true, wakePending = false } = {}) {
+    if (isMachineAsleep(machineState)) {
+        // The mirror of the previous race. That one was an optimistic SHOW undone by a stale
+        // frame; this is an optimistic HIDE undone by one. The user tapped to wake,
+        // so we took the overlay down and sent 'idle' — but for the next frame or
+        // three the machine still honestly reports 'sleeping', because our PUT has
+        // not round-tripped yet. Raising the overlay on those frames flashes it
+        // back into the user's face for ~100–300 ms, right as they are reaching for
+        // the machine.
+        //
+        // "Confirmed state is the only source of truth" is the right rule and it is
+        // untouched: we are not painting a state we invented, we are declining to
+        // repaint a state we have already asked the machine to leave. The wake is
+        // still the ONLY thing that commands, and the suppression is time-bounded,
+        // so an unconfirmed wake cannot hold the overlay down.
+        if (wakePending) return 'none';
 
-    if (asleep) {
         // Only raise it if the user hasn't turned the feature off.
         return (screensaverEnabled && !screensaverActive) ? 'show' : 'none';
     }
@@ -61,9 +106,7 @@ export function deriveScreensaverAction({ machineState, screensaverActive, scree
  * @returns {{ command: 'idle'|'sleeping', hideScreensaver: boolean }}
  */
 export function deriveSleepButtonAction({ machineState, screensaverActive = false } = {}) {
-    const asleep = String(machineState || '').toLowerCase() === SLEEPING;
-
-    if (asleep) {
+    if (isMachineAsleep(machineState)) {
         // Asleep -> the user wants it awake. One command, and take the overlay
         // down ourselves (the hide is a paint; the wake is this explicit command).
         return { command: 'idle', hideScreensaver: screensaverActive };

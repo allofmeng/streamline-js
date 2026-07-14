@@ -1,6 +1,6 @@
 import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
-import { deriveSleepButtonAction } from './screensaver-policy.js';
+import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
@@ -822,6 +822,19 @@ let screensaverDimOverlay = null;
 let screensaverImages = [];
 let screensaverCurrentIndex = 0;
 let screensaverCycleInterval = null;
+
+// When we last sent a wake ('idle') the machine has not yet confirmed. 0 = none.
+//
+// A wake is the one place the skin legitimately gets ahead of the machine: the
+// user tapped, so we hide the overlay immediately rather than making them stare
+// at it for a round-trip. But for the next frame or three the machine still
+// honestly reports 'sleeping', and app.js would dutifully raise the overlay again
+// — a ~100–300 ms flash straight back into the user's face. This timestamp lets
+// app.js recognise those frames as stale-by-our-own-doing and leave the overlay
+// down. It is time-bounded (WAKE_CONFIRM_GRACE_MS), so a wake that is lost or
+// refused simply expires and the overlay returns: the suppression can never latch
+// the screensaver off.
+let wakeRequestedAt = 0;
 const DEFAULT_SCREENSAVER_CYCLE_SECONDS = 10;
 const MIN_SCREENSAVER_CYCLE_SECONDS = 2;
 const MAX_SCREENSAVER_CYCLE_SECONDS = 600;
@@ -978,7 +991,29 @@ export function hideScreensaver() {
 export function wakeFromScreensaver() {
     if (!screensaverActive) return; // a tap that lands twice only wakes once
     hideScreensaver();
-    setMachineState('idle');
+    noteWakeRequested();
+    // Until the machine confirms this, its snapshots still say 'sleeping'. If the
+    // wake fails, drop the suppression at once rather than making the user wait out
+    // the grace period for the overlay they are looking at to come back.
+    setMachineState('idle').catch((err) => {
+        logger.error('Screensaver tap: failed to wake the machine:', err);
+        clearWakeRequest();
+    });
+}
+
+/** We have asked the machine to wake and are waiting for it to confirm. */
+export function noteWakeRequested() {
+    wakeRequestedAt = Date.now();
+}
+
+/** The wake is settled (confirmed, superseded by a sleep, or failed). */
+export function clearWakeRequest() {
+    wakeRequestedAt = 0;
+}
+
+/** Is a wake we sent still unconfirmed (and still within its grace window)? */
+export function isWakeRequestPending() {
+    return isWakePending(wakeRequestedAt);
 }
 
 export function isScreensaverActive() {
@@ -1392,10 +1427,21 @@ export function initUI(callbacks) {
                 // when the machine is already awake, `action.command` is 'sleeping',
                 // so no path through here can wake a machine the user just slept.
                 if (action.hideScreensaver) hideScreensaver();
+
+                // Waking hides the overlay ahead of the machine's confirmation, so
+                // tell app.js to ignore the 'sleeping' frames still in flight (they
+                // are stale by our own doing) rather than flashing the overlay back
+                // up. Sleeping must CLEAR any pending wake instead: a wake followed
+                // within the grace window by a sleep would otherwise suppress the
+                // screensaver the sleep is supposed to raise.
+                if (action.command === 'idle') noteWakeRequested();
+                else clearWakeRequest();
+
                 await setMachineState(action.command);
                 logger.info(`Sleep button: machine reported "${currentMachineState}" -> requested "${action.command}".`);
             } catch (err) {
                 logger.error(`Sleep button: failed to set machine state to "${action.command}":`, err);
+                clearWakeRequest(); // the wake never landed — let the overlay come back
             } finally {
                 sleepRequestInFlight = false;
             }
