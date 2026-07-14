@@ -450,18 +450,9 @@ let pendingUpdates = {
 // DE1 streams faster than the browser can repaint a growing SVG; calling
 // Plotly.relayout/react on every WebSocket frame backs the redraw queue up and
 // the chart lags behind the real shot. rAF caps work to the display refresh.
-let pendingX, pendingY;
 let pendingReact = false;
 let pendingTime = 0;
 let rafHandle = 0;
-
-function resetPendingChartWrites() {
-    // 6 buffers map to trace indices [0..5] — same mapping the old extendTraces used.
-    pendingX = [[], [], [], [], [], []];
-    pendingY = [[], [], [], [], [], []];
-    pendingReact = false;
-}
-resetPendingChartWrites();
 
 function dtickForTime(time) {
     if (time < 15) return 1;
@@ -480,15 +471,15 @@ let appliedRangeMax = null; // last applied range end — overlay geometry fallb
 function flushChart() {
     rafHandle = 0;
     const element = getChartElement();
-    if (!element) { resetPendingChartWrites(); return; }
+    if (!element) { pendingReact = false; return; }
 
     const theme = localStorage.getItem('theme') || 'light';
     const dtickValue = dtickForTime(pendingTime);
     const rangeMax = rangeMaxForLabels(pendingTime);
 
-    // A step marker changed shapes → full react (also redraws all buffered
-    // points, since they're already in chartData). Then pin the x-range.
+    // A step marker changed shapes → full react. Then pin the x-range.
     if (pendingReact) {
+        pendingReact = false;
         overlayActive = true; // live from here on — applyLabelLayout gives Plotly no annotations
         const layout = theme === 'dark' ? darkLayout : lightLayout;
         applyLabelLayout(layout);
@@ -500,22 +491,27 @@ function flushChart() {
         });
         appliedRangeMax = rangeMax;
         updateLiveLabels(element);
-        resetPendingChartWrites();
         return;
     }
 
-    if (pendingX[0].length > 0) {
-        Plotly.extendTraces(element, { x: pendingX, y: pendingY }, [0, 1, 2, 3, 4, 5]);
-    }
-    Plotly.relayout(element, {
-        'xaxis.range': [0, rangeMax],
-        'xaxis.autorange': false,
-        'xaxis.dtick': dtickValue
-    });
+    // Data + x-range in ONE Plotly.update → one SVG redraw per flush.
+    // (extendTraces + relayout was two full redraws; relayout replots
+    // everything anyway, so incremental append bought nothing.)
+    // chartData holds the full arrays, so restyle from it directly — this
+    // also keeps every trace on its own index (7 traces incl. targetTemperature).
+    const traces = Object.values(chartData);
+    Plotly.update(element,
+        { x: traces.map((t) => t.x), y: traces.map((t) => t.y) },
+        {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        },
+        traces.map((_, i) => i)
+    );
     appliedRangeMax = rangeMax;
     // HTML overlay labels track the line ends every flush — no Plotly cost.
     updateLiveLabels(element);
-    resetPendingChartWrites();
 }
 
 function scheduleChartFlush() {
@@ -642,7 +638,7 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     // new value is pushed below. That makes a pump-mode swap (pressure 8→0 / flow
     // 0→8) draw as a vertical step. Only fires on step changes, so smooth in-step
     // target ramps keep their diagonal. Step frames take the full-react flush path,
-    // so writing to chartData here is enough (the buffered extendTraces path is skipped).
+    // so writing to chartData here is enough — every flush draws from chartData.
     if (stepMarkerAdded && lastTargetPressureY !== null) {
         chartData.targetPressure.x.push(time);
         chartData.targetPressure.y.push(lastTargetPressureY);
@@ -666,19 +662,10 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     lastTargetPressureY = targetPressureY;
     lastTargetFlowY = targetFlowY;
 
-    // Buffer this frame; the actual Plotly draw happens once per animation
-    // frame in flushChart(). A step marker forces a full react on flush.
+    // Points live in chartData; the actual Plotly draw happens once per
+    // animation frame in flushChart(). A step marker forces a full react.
     pendingTime = time;
-    if (stepMarkerAdded) {
-        pendingReact = true;
-    } else if (!pendingReact) {
-        pendingX[0].push(time);            pendingY[0].push(pressureY);
-        pendingX[1].push(time);            pendingY[1].push(flowY);
-        pendingX[2].push(time);            pendingY[2].push(targetPressureY);
-        pendingX[3].push(time);            pendingY[3].push(targetFlowY);
-        pendingX[4].push(time);            pendingY[4].push(groupTemperatureY);
-        pendingX[5].push(time);            pendingY[5].push(weightY);
-    }
+    if (stepMarkerAdded) pendingReact = true;
     scheduleChartFlush();
 }
 
@@ -699,10 +686,10 @@ export function clearChart() {
     liveProfileFrame = -1;  // FIX: Reset profile frame tracking
     currentSubstate = 'idle';  // FIX: Reset substate
 
-    // Drop any buffered live points + cancel a queued flush so stale data from
-    // the previous shot can't land on the freshly cleared chart.
+    // Cancel a queued flush so a stale draw from the previous shot can't land
+    // on the freshly cleared chart.
     if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0; }
-    resetPendingChartWrites();
+    pendingReact = false;
     appliedRangeMax = null;
     // Back to non-live rendering: Plotly annotations own the labels again.
     hideLiveLabels();
