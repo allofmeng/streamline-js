@@ -1285,8 +1285,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.info('App DOMContentLoaded: Chart initialized.');
 
         await initI18n();
-        ui.initUI({ onWeightClick: handleWeightClick });
-        ui.initScreensaver(); // Initialize screensaver functionality
+        ui.initUI({ onWeightClick: handleWeightClick }); // also inits the screensaver
         initScaling();
         initNumpadModal();
         initMobileValueInputs();

@@ -862,6 +862,18 @@ function isInWebView() {
 }
 
 export async function initScreensaver() {
+    // Idempotent. This used to be called twice — once from initUI() and again
+    // straight from app.js's DOMContentLoaded — and each call built ANOTHER
+    // <div id="screensaver">, appended it to <body>, and bound another
+    // click -> wakeFromScreensaver listener. The module only remembers the last
+    // one, so the earlier node was orphaned: a duplicate id, a live listener on an
+    // element nothing can ever show, and a second IndexedDB read of the image list.
+    //
+    // It was harmless only by luck (the orphan stays display:none, so it cannot be
+    // clicked). A duplicate id is still a landmine — the first
+    // getElementById('screensaver') anyone writes gets the dead one.
+    if (screensaverElement) return;
+
     screensaverElement = document.createElement('div');
     screensaverElement.id = 'screensaver';
     screensaverElement.style.position = 'fixed';
