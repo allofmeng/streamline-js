@@ -10,6 +10,7 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
+import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
@@ -253,12 +254,71 @@ function renderScaleDisconnectedText() {
     fitTelemetry();
 }
 
+// ---------------------------------------------------------------------------
+// Machine link: surviving the machine's power-cycle
+//
+// reaprime binds /ws/v1/machine/snapshot (and shotSettings, and waterLevels) to a
+// De1 *instance*. On a power-cycle it builds a NEW machine object and neither
+// re-binds those sockets nor CLOSES them — so they go open-but-silent, forever.
+// ReconnectingWebSocket only retries on *close*, so it never notices, and the 5 s
+// data timeout below used to latch isDe1Connected = false with nothing left alive
+// to ever set it true again: "disconnected" until the app was reloaded.
+//
+// The /ws/v1/devices socket is bound to reaprime's DevicesStateAggregator, not to
+// a machine instance, so it SURVIVES the power-cycle and keeps telling us the
+// truth. We were already holding it open and reading only `scanning` from it.
+// It is now the authority on link state, and a link-up re-opens the machine-bound
+// sockets so the server re-binds them to the live machine.
+//
+// Belt and braces: this must be correct whether or not reaprime's server-side
+// re-bind fix is present. Both fixes are safe together — the worst case is that
+// the server closes the socket first and ReconnectingWebSocket heals it before we
+// get here.
+// ---------------------------------------------------------------------------
+
+// Re-open every socket reaprime binds to a De1 instance, forcing it to re-run
+// `_withDe1Ws` against the CURRENT machine. Proven on the bench: a fresh snapshot
+// socket streams 97 frames in 6 s while the pre-existing one sits silent.
+//
+// All three factories close-before-open, so this does not leak a socket per
+// power-cycle (the tell would be a doubled snapshot frame rate).
+function resyncMachineSockets(reason) {
+    logger.info(`Re-binding machine WebSockets to the live machine (${reason}).`);
+    connectWebSocket(handleData, onMachineSnapshotSocketOpen);
+    connectShotSettingsWebSocket(handleShotSettingsData);
+    initWaterTankSocket();
+    resetDataTimeout(); // fresh socket: give it the full window before judging it
+}
+
+const machineLink = createMachineLinkWatcher({
+    onLinkUp: (deviceId) => {
+        logger.info(`Machine link up (${deviceId}). Snapshot socket may be bound to a dead machine — resyncing.`);
+        if (deviceId) de1DeviceId = deviceId;
+        // Also un-sticks the Bluetooth-banner suppression in
+        // handleDeviceConnectionError, which is gated on this same flag.
+        isDe1Connected = true;
+        resyncMachineSockets('machine link up');
+        // The machine may come back ASLEEP, in which case handleData's reconnect
+        // branch deliberately skips the reload — so do it here.
+        loadInitialData();
+    },
+    onLinkDown: () => {
+        logger.warn('Machine link down (devices feed).');
+        isDe1Connected = false;
+        ui.updateMachineStatus({ status: "Disconnected" });
+    },
+});
+
 function handleDeviceWsData(data) {
     const next = !!data?.scanning;
     if (next !== isScaleScanning) {
         isScaleScanning = next;
         renderScaleDisconnectedText();
     }
+    // Edge-triggered, NOT id-diffed: the USB device id is byte-identical across a
+    // power-cycle (it comes from the SAMD21 factory unique id), so watching for an
+    // id change would silently never fire.
+    machineLink.update(data);
 }
 
 function onScaleReconnect() {
@@ -291,13 +351,59 @@ function handleDeviceConnectionError(err) {
     ui.showToast(msg, 5000, 'error');
 }
 
-// Sets a timer. If no data is received within 5 seconds, it assumes a stale connection.
+// The snapshot socket's onopen fires on every (re)connect — boot, a
+// ReconnectingWebSocket auto-retry, and our own resync. Boot and resync share this
+// handler so the two call sites cannot drift apart.
+function onMachineSnapshotSocketOpen() {
+    logger.info('Machine snapshot WebSocket (re)opened. Awaiting a frame to confirm the machine.');
+    isDe1Connected = false; // the first frame re-confirms it (handleData)
+}
+
+// A silent snapshot socket is NOT proof of a disconnected machine — it is exactly
+// what a stale, open-but-silent socket looks like after a power-cycle . Ask
+// REA who is actually connected before painting a lie. Rate-limited so a genuinely
+// absent machine is not hammered.
+const DEVICES_PROBE_MIN_INTERVAL_MS = 10000;
+let lastDevicesProbeAt = 0;
+let devicesProbeInFlight = false;
+
+function markMachineDisconnected() {
+    ui.updateMachineStatus({ status: "disconnected" });
+    isDe1Connected = false;
+}
+
+async function probeMachineOnSilentSocket() {
+    const now = Date.now();
+    if (devicesProbeInFlight || (now - lastDevicesProbeAt) < DEVICES_PROBE_MIN_INTERVAL_MS) {
+        markMachineDisconnected(); // rate-limited: fall back to believing the silence
+        return;
+    }
+    devicesProbeInFlight = true;
+    lastDevicesProbeAt = now;
+    try {
+        const link = machineFromDevicesPayload(await getDevices());
+        if (link.known && link.connected) {
+            logger.warn('Snapshot socket silent for 5 s but REA reports the machine connected — stale socket. Resyncing.');
+            if (link.deviceId) de1DeviceId = link.deviceId;
+            isDe1Connected = true;
+            resyncMachineSockets('stale snapshot socket');
+            return;
+        }
+    } catch (err) {
+        logger.warn('Devices probe failed while checking a silent machine socket:', err);
+    } finally {
+        devicesProbeInFlight = false;
+    }
+    markMachineDisconnected();
+}
+
+// Sets a timer. If no data is received within 5 seconds, the connection is stale —
+// but "stale" may mean a dead socket rather than a dead machine, so check first.
 function resetDataTimeout() {
     clearTimeout(dataTimeout);
     dataTimeout = setTimeout(() => {
-        logger.warn('No WebSocket data received for 5 seconds. Assuming REA or WebSocket disconnection.');
-        ui.updateMachineStatus({ status: "disconnected" });
-        isDe1Connected = false;
+        logger.warn('No WebSocket data received for 5 seconds. Checking whether the machine or the socket is gone.');
+        probeMachineOnSilentSocket();
     }, 5000); // 5-second timeout
 }
 
@@ -1126,10 +1232,7 @@ async function initMainPageOnce() {
         await loadInitialData();
         await initializeDe1Connection();
         await initVisualizer();
-        connectWebSocket(handleData, () => {
-            logger.info('WebSocket reconnected. Resetting DE1 connection status.');
-            isDe1Connected = false;
-        });
+        connectWebSocket(handleData, onMachineSnapshotSocketOpen);
         connectScaleWebSocket(handleScaleData, onScaleReconnect, onScaleDisconnect);
         connectDeviceWebSocket(handleDeviceWsData, () => {}, () => {}, handleDeviceConnectionError);
         initWaterTankSocket();

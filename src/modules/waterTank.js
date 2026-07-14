@@ -1,5 +1,6 @@
 import { REA_PORT, WS_PROTOCOL, API_BASE_URL } from './api.js';
 import { logger } from './logger.js';
+import { createSocketSlot } from './socket-slot.js';
 // Note: This assumes ReconnectingWebSocket is globally available as it is in other files.
 
 // mm → mL lookup. Index = tank level in mm (0..69). Out-of-range falls back
@@ -67,6 +68,12 @@ export async function setWaterLevelWarning(percentage) {
     }
 }
 
+// The waterLevels socket is one of the sockets reaprime binds to a De1 *instance*
+// (de1handler.dart `_withDe1Ws`), so app.js re-opens it after a machine
+// power-cycle to force a re-bind (resyncMachineSockets). It kept no handle at
+// all, so a re-open would have leaked the old socket and double-delivered levels.
+const waterLevelSocketSlot = createSocketSlot('water level');
+
 export function initWaterTankSocket() {
     const tankVolElement = document.getElementById('data-tank-vol');
     if (!tankVolElement) {
@@ -75,10 +82,10 @@ export function initWaterTankSocket() {
     }
     tankVolElementRef = tankVolElement;
 
-    const socket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${window.location.hostname}:${REA_PORT}/ws/v1/machine/waterLevels`, [], {
+    const socket = waterLevelSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${window.location.hostname}:${REA_PORT}/ws/v1/machine/waterLevels`, [], {
         debug: true,
         reconnectInterval: 3000,
-    });
+    }));
 
     socket.onopen = function() {
         logger.info('Water tank WebSocket connection established.');
