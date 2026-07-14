@@ -615,7 +615,13 @@ function handleData(data) {
                     historyLabelEl.textContent = 'CURRENT';
                 }
             }
-            chart.updateChart(shotStartTime, data, latestScaleWeight, latestScaleWeightFlow);
+            // Bengle: use the machine's true gravimetric flow (GFlow) straight from
+            // the snapshot — no local delta+EMA smoothing. Non-Bengle keeps the
+            // external-scale path (ScaleSnapshot server-smoothed g/s → EMA fallback).
+            // `?? null` (not || 0): 0 is a real GFlow value; only an ABSENT field
+            // may fall through to the chart's local EMA.
+            const chartWeightFlow = isBengleMachine() ? (data.weightFlow ?? null) : latestScaleWeightFlow;
+            chart.updateChart(shotStartTime, data, latestScaleWeight, chartWeightFlow);
             shotData.updateShotData(data, latestScaleWeight);
         }
     } else {
@@ -1353,12 +1359,33 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// Tap the main chart (or its expand button) to open the full-screen live charts;
+// Back button / Escape closes it. Bound once at startup.
+function wireExpandedChart() {
+    const open = () => { try { chart.openExpandedChart(); } catch (e) { console.error('openExpandedChart', e); } };
+    const close = () => { try { chart.closeExpandedChart(); } catch (e) { console.error('closeExpandedChart', e); } };
+
+    const expandBtn = document.getElementById('chart-expand-btn');
+    if (expandBtn) expandBtn.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+
+    const chartEl = document.getElementById('plotly-chart');
+    if (chartEl) chartEl.addEventListener('click', open);
+
+    const backBtn = document.getElementById('expanded-chart-back');
+    if (backBtn) backBtn.addEventListener('click', close);
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && chart.isExpandedChartOpen && chart.isExpandedChartOpen()) close();
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         setDebug(true);
         logger.info('App DOMContentLoaded: Starting initialization.');
 
         chart.initChart();
+        wireExpandedChart();
         logger.info('App DOMContentLoaded: Chart initialized.');
 
         await initI18n();

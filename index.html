@@ -244,8 +244,17 @@
                         </div>
                     </div>
 
-                    <!-- Plotly Chart -->
-                    <div id="plotly-chart" class="w-full h-[650px] border border-l-0 border-r-0 border-[var(--border-color)]" role="img" aria-label="Shot extraction graph"></div>
+                    <!-- Plotly Chart (tap to open full-screen expanded charts) -->
+                    <div class="relative w-full">
+                        <div id="plotly-chart" class="w-full h-[650px] border border-l-0 border-r-0 border-[var(--border-color)]" role="img" aria-label="Shot extraction graph"></div>
+                        <button id="chart-expand-btn" aria-label="Expand charts to full screen"
+                            class="absolute top-[10px] right-[16px] w-[52px] h-[52px] rounded-[14px] flex items-center justify-center"
+                            style="background:var(--box-color); border:1px solid var(--border-color); opacity:0.9;">
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--mimoja-blue)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- GHC column: h = 116 (header) + 675 (chart) = 791px -->
@@ -343,6 +352,20 @@
     </div>
         </div><!-- #main-page -->
         <div id="subpage-host" style="display:none;"></div>
+
+        <!-- Full-screen expanded live charts (opened by tapping the main chart) -->
+        <div id="expanded-chart-overlay" style="display:none; position:absolute; top:0; left:0; width:1920px; height:1200px; z-index:60; background:var(--bgmain-color); flex-direction:column;" role="dialog" aria-modal="true" aria-label="Expanded live charts">
+            <div style="height:96px; flex:0 0 96px; display:flex; align-items:center; justify-content:space-between; padding:0 44px; border-bottom:1px solid var(--border-color);">
+                <button id="expanded-chart-back" aria-label="Back to main screen" style="display:flex; align-items:center; gap:16px; background:transparent; border:none; cursor:pointer; padding:10px 14px; margin-left:-14px; border-radius:14px;">
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--mimoja-blue)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+                    <span style="color:var(--mimoja-blue); font-size:30px; font-weight:600; font-family:'Inter',sans-serif;" data-i18n-key="Back">Back</span>
+                </button>
+                <div style="color:var(--text-primary); font-size:30px; font-weight:600; font-family:'Inter',sans-serif;">Live Charts</div>
+                <div style="width:140px;" aria-hidden="true"></div>
+            </div>
+            <div id="expanded-flow-chart" style="width:100%; height:657px;" role="img" aria-label="Pressure, flow and GFlow"></div>
+            <div id="expanded-temp-chart" style="width:100%; height:447px;" role="img" aria-label="Temperature versus target"></div>
+        </div>
         </div>
     </div>
 
