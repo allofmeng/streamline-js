@@ -1089,6 +1089,16 @@ export async function getMachineInfo() {
     return response.json();
 }
 
+// Current machine state as a MachineSnapshot (same shape as the snapshot WS).
+// Lets callers sync status without waiting on a snapshot frame.
+export async function getMachineState() {
+    const response = await fetch(`${API_BASE_URL}/machine/state`);
+    if (!response.ok) {
+        throw new Error(`Failed to get machine state: ${response.statusText}`);
+    }
+    return response.json();
+}
+
 export async function getAppInfo() {
     const response = await fetch(`${API_BASE_URL}/info`);
     if (!response.ok) {

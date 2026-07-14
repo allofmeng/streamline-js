@@ -1,4 +1,4 @@
-import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, connectShotStateWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings, getAppInfo } from './api.js';
+import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, connectShotStateWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, getMachineState, setMachineState, getReaSettings, getAppInfo } from './api.js';
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
@@ -261,14 +261,21 @@ function handleDeviceWsData(data) {
         renderScaleDisconnectedText();
     }
 
-    // The machine/snapshot socket only streams while a DE1 is connected, so a
-    // DE1 that connects later (e.g. from the settings page) never wakes
-    // handleData and the main-page status goes stale. The devices WS *does*
-    // report the connect reliably — on its rising edge, refresh the snapshot
-    // socket so real state frames flow and handleData sets the exact status.
+    // The machine/snapshot socket only streams while a DE1 is connected, and it
+    // does not reliably start streaming for a DE1 that connects later (e.g. from
+    // the settings page), so handleData never wakes and the main-page status
+    // goes stale. The devices WS *does* report the connect reliably — on its
+    // rising edge, pull the current state over REST and feed it to handleData,
+    // which sets the exact status, flips isDe1Connected, and loads data.
     const machineConnected = !!data?.devices?.some(d => d.type === 'machine' && d.state === 'connected');
     if (machineConnected && !prevMachineDeviceConnected && !isDe1Connected) {
-        logger.info('Devices WS reports DE1 connected; refreshing snapshot socket.');
+        logger.info('Devices WS reports DE1 connected; syncing state via REST.');
+        // REST gives the correct status immediately; refresh restarts the
+        // snapshot socket so live frames resume (otherwise handleData's 5s
+        // stale-timeout would flip back to disconnected).
+        getMachineState()
+            .then(snapshot => handleData(snapshot))
+            .catch(e => logger.warn('Could not sync machine state after connect:', e));
         reconnectingWebSocket?.refresh();
     } else if (!machineConnected && prevMachineDeviceConnected) {
         isDe1Connected = false;

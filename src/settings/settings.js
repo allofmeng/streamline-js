@@ -5962,7 +5962,19 @@ export function initDisplayWebSocket() {
  */
 window.renderDeviceListFromCache = function() { renderDeviceListFromCache(); };
 
+// The devices WS pushes many frames/sec during a scan; coalesce them into one
+// render per frame so we don't rebuild both containers' innerHTML on every push.
+let _deviceRenderScheduled = false;
 function renderDeviceListFromCache() {
+    if (_deviceRenderScheduled) return;
+    _deviceRenderScheduled = true;
+    requestAnimationFrame(() => {
+        _deviceRenderScheduled = false;
+        renderDeviceListNow();
+    });
+}
+
+function renderDeviceListNow() {
     const machines = deviceStateCache.devices.filter(device =>
         device.type === 'machine' ||
         (device.name && (device.name.toLowerCase().includes('de1') ||
@@ -6502,8 +6514,13 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
             </div>`;
     }
     // The device list is injected via WebSocket updates, after the page's initial
-    // translatePage() pass — so re-translate or its data-i18n-key text stays English.
-    translatePage();
+    // translatePage() pass — so re-translate or its data-i18n-key text stays
+    // English. Only walk THIS container: translatePage() re-translates + re-fits
+    // the whole settings DOM, and it ran twice per WS frame (once per container)
+    // during scans, which is the jank in the device list / status pills.
+    container.querySelectorAll('[data-i18n-key]').forEach(el => {
+        el.textContent = getTranslation(el.getAttribute('data-i18n-key'));
+    });
 }
 
 // Helper function to render a single list of devices with connection controls
