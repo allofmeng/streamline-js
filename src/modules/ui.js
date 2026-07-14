@@ -1,5 +1,6 @@
 import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
+import { deriveSleepButtonAction } from './screensaver-policy.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
@@ -872,8 +873,11 @@ export async function initScreensaver() {
     screensaverDimOverlay.style.display = 'none';
     screensaverElement.appendChild(screensaverDimOverlay);
 
-    screensaverElement.addEventListener('click', deactivateScreensaver);
-    screensaverElement.addEventListener('touchstart', deactivateScreensaver);
+    // Tapping the overlay is the one place a screensaver interaction may wake the
+    // machine. Bind ONCE: a WebView synthesises `click` from a tap, so binding
+    // `touchstart` as well (as this did) sent 'idle' twice per tap. The
+    // !screensaverActive guard inside wakeFromScreensaver() is the backstop.
+    screensaverElement.addEventListener('click', wakeFromScreensaver);
 
     document.body.appendChild(screensaverElement);
 
@@ -940,17 +944,40 @@ export function activateScreensaver() {
     }
 }
 
-export function deactivateScreensaver() {
-    if (!screensaverElement) {
-        console.error('Screensaver element not initialized');
-        return;
-    }
+/**
+ * PURE UI: take the overlay down. Sends NOTHING. Idempotent.
+ *
+ * This was deactivateScreensaver(), which hid the overlay AND sent
+ * setMachineState('idle') — so tearing the overlay down WOKE THE MACHINE. Three
+ * of its four callers did not want a wake, and one of them (app.js's snapshot
+ * handler, on a branch whose precondition is "the machine is awake") turned a
+ * stale frame into the command that cancelled the user's sleep press.
+ *
+ * A UI teardown must never command the machine. Everything that merely hides the
+ * overlay calls this; only wakeFromScreensaver() below may command.
+ */
+export function hideScreensaver() {
+    if (!screensaverActive) return; // idempotent — also kills the click/touchstart double-fire
     if (screensaverCycleInterval) {
         clearInterval(screensaverCycleInterval);
         screensaverCycleInterval = null;
     }
-    screensaverElement.style.display = 'none';
+    if (screensaverElement) {
+        screensaverElement.style.display = 'none';
+    }
     screensaverActive = false;
+}
+
+/**
+ * The user tapped the screensaver to wake the machine.
+ *
+ * The ONLY screensaver path allowed to emit a machine command, and it is bound to
+ * exactly one thing: a tap on the overlay itself. The hide is a paint; the wake is
+ * this explicit, user-initiated command sitting next to it — never inside it.
+ */
+export function wakeFromScreensaver() {
+    if (!screensaverActive) return; // a tap that lands twice only wakes once
+    hideScreensaver();
     setMachineState('idle');
 }
 
@@ -1337,27 +1364,40 @@ export function initUI(callbacks) {
     }
 
     if (sleepButton) {
+        // One tap used to send 'sleeping' and then 'idle' 46 ms later, so the
+        // machine slept and instantly woke. Two defects, both closed here:
+        //
+        //  1. The button raised the screensaver OPTIMISTICALLY, before the machine
+        //     had confirmed the sleep. The next snapshot still said 'idle', so
+        //     app.js's "machine is awake, tidy the overlay away" branch tore the
+        //     overlay down — and the teardown used to wake the machine. There is no
+        //     optimistic activation any more: app.js raises the screensaver when the
+        //     machine CONFIRMS 'sleeping', which is the only source of truth.
+        //  2. A fast double-tap could read a stale currentMachineState (it lags the
+        //     machine by a snapshot) and derive the OPPOSITE action, undoing the
+        //     first press. The in-flight guard makes the second tap a no-op.
+        let sleepRequestInFlight = false;
+
         sleepButton.addEventListener('click', async () => {
-            if (currentMachineState === 'sleeping') {
-                // Wake machine up
-                await setMachineState('idle');
-                logger.info("current machine state in sleep button:", currentMachineState);
-                logger.info('Machine state set to idle.');
+            if (sleepRequestInFlight) return;
+            sleepRequestInFlight = true;
 
-                // Deactivate screensaver if it's active
-                if (isScreensaverActive()) {
-                    deactivateScreensaver();
-                }
-            } else {
-                // Put machine to sleep
-                await setMachineState('sleeping');
-                logger.info("current machine state in sleep button:", currentMachineState);
-                logger.info('Machine state set to sleeping.');
+            const action = deriveSleepButtonAction({
+                machineState: currentMachineState,
+                screensaverActive: isScreensaverActive(),
+            });
 
-                // Activate screensaver (unless disabled by user)
-                if (!isScreensaverActive() && localStorage.getItem('screensaverEnabled') !== 'false') {
-                    activateScreensaver();
-                }
+            try {
+                // The hide is a paint. The command below is the only command — and
+                // when the machine is already awake, `action.command` is 'sleeping',
+                // so no path through here can wake a machine the user just slept.
+                if (action.hideScreensaver) hideScreensaver();
+                await setMachineState(action.command);
+                logger.info(`Sleep button: machine reported "${currentMachineState}" -> requested "${action.command}".`);
+            } catch (err) {
+                logger.error(`Sleep button: failed to set machine state to "${action.command}":`, err);
+            } finally {
+                sleepRequestInFlight = false;
             }
         });
     }

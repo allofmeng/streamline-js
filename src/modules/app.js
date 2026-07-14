@@ -10,6 +10,7 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
+import { deriveScreensaverAction } from './screensaver-policy.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
@@ -378,6 +379,29 @@ function handleTimeToReadyData(data) {
     }
 }
 
+// The screensaver is a pure function of the machine's CONFIRMED state.
+//
+// The derived action is paint-only -- 'show' | 'hide' | 'none' -- so a snapshot
+// frame is structurally incapable of commanding the machine. That is the whole
+// bug: 'hide' used to be spelled ui.deactivateScreensaver(), which sent
+// setMachineState('idle'), so this branch -- whose precondition is "the machine is
+// awake" -- WOKE the machine. In the 46 ms after a sleep press, with the overlay
+// optimistically up and the snapshot still reporting 'idle', that is the command
+// that cancelled the user's sleep.
+function applyScreensaverAction(state) {
+    const action = deriveScreensaverAction({
+        machineState: state,
+        screensaverActive: ui.isScreensaverActive(),
+        screensaverEnabled: localStorage.getItem('screensaverEnabled') !== 'false',
+    });
+    if (action === 'show') {
+        logger.info('Machine confirmed sleeping. Activating screensaver.');
+        ui.activateScreensaver();
+    } else if (action === 'hide') {
+        ui.hideScreensaver(); // PURE UI -- never a machine command
+    }
+}
+
 function handleData(data) {
     if (!data?.state) {
         logger.warn('Received WebSocket message with missing state:', data);
@@ -401,17 +425,10 @@ function handleData(data) {
     if (state === MachineState.ERROR) {
         statusString = "Error";
     } else if (state === MachineState.SLEEPING) {
-        // Activate screensaver when machine enters sleep state (if not disabled by user)
-        if (!ui.isScreensaverActive() && localStorage.getItem('screensaverEnabled') !== 'false') {
-            logger.info('Machine entered sleep state. Activating screensaver.');
-            ui.activateScreensaver();
-        }
+        applyScreensaverAction(state);
         statusString = "Sleeping";
     } else {
-        // Deactivate screensaver when machine wakes up from sleep (if it was active)
-        if (ui.isScreensaverActive()) {
-            ui.deactivateScreensaver();
-        }
+        applyScreensaverAction(state);
         if (isHeating && isHeatingFromTimeToReady) {
             // When heating and we're in a heating phase from time-to-ready,
             // rely solely on timeToReadyMessage from the time-to-ready WebSocket

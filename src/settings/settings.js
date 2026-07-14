@@ -4624,8 +4624,12 @@ export async function initializeSettings() {
         // If turning OFF while currently shown, hide immediately — the gate in
         // app.js only checks on state transition, so without this the overlay
         // would persist until next wake.
+        //
+        // hideScreensaver(), NOT the old deactivateScreensaver(): that one sent
+        // setMachineState('idle'), so turning a DISPLAY PREFERENCE off woke the
+        // machine. Changing a setting is not a wake.
         if (!enabled && ui.isScreensaverActive()) {
-            ui.deactivateScreensaver();
+            ui.hideScreensaver();
         }
         ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
     };
