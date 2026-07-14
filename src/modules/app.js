@@ -166,6 +166,7 @@ const SHOT_RESTART_COOLDOWN_MS = 5000;
 let dataTimeout;
 let de1DeviceId = null;
 let isDe1Connected = false;
+let prevMachineDeviceConnected = false; // rising-edge tracking for the devices WS
 let isNonGhcMachine = false;
 let isScaleConnected = false; // New variable to track Scale connection status
 let previousState = {}; // Track previous machine state object {state, substate}
@@ -259,6 +260,21 @@ function handleDeviceWsData(data) {
         isScaleScanning = next;
         renderScaleDisconnectedText();
     }
+
+    // The machine/snapshot socket only streams while a DE1 is connected, so a
+    // DE1 that connects later (e.g. from the settings page) never wakes
+    // handleData and the main-page status goes stale. The devices WS *does*
+    // report the connect reliably — on its rising edge, refresh the snapshot
+    // socket so real state frames flow and handleData sets the exact status.
+    const machineConnected = !!data?.devices?.some(d => d.type === 'machine' && d.state === 'connected');
+    if (machineConnected && !prevMachineDeviceConnected && !isDe1Connected) {
+        logger.info('Devices WS reports DE1 connected; refreshing snapshot socket.');
+        reconnectingWebSocket?.refresh();
+    } else if (!machineConnected && prevMachineDeviceConnected) {
+        isDe1Connected = false;
+        ui.updateMachineStatus({ status: 'Disconnected' });
+    }
+    prevMachineDeviceConnected = machineConnected;
 }
 
 function onScaleReconnect() {
