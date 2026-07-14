@@ -7,7 +7,7 @@ import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
-import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
+import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, cupWarmerViewMode, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
 import { clampCalWeight, calActionState, CAL_WEIGHT_DEFAULT_G, CAL_WEIGHT_MIN_G, CAL_WEIGHT_MAX_G } from '../modules/loadcell-cal.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
@@ -2867,6 +2867,11 @@ let cupWarmerSchedules = null;
 // clobber a stepper the user is mid-edit in.
 let cupWarmerRenderedSig = null;
 let cupWarmerRenderedWarnings = null;
+// A revalidate failed with NOTHING in the store: we hold no machine state at
+// all. Distinct from "not fetched yet" (also a null store) — the page renders
+// the error state rather than a made-up machine (see cupWarmerViewMode). Reset
+// on page entry and by the next successful fetch.
+let cupWarmerLoadFailed = false;
 
 // One store subscription paints the open page: a missing enable-toggle
 // (loading/error placeholder on screen) or an on/off flip (header toggle,
@@ -2936,20 +2941,34 @@ function patchCupWarmerCurrentTemp(currentTemperature) {
 
 // Fetch fresh machine state and fold it into the shared store; the store
 // subscription above paints the page (and app.js's header button). A failed
-// fetch keeps the last snapshot on screen — the next tick retries — unless
-// nothing is loaded yet, in which case fall to "off" so the render can leave
-// its loading placeholder (same fallback the old fetch-once path used).
+// fetch keeps the last snapshot on screen — the next tick retries — and with
+// nothing loaded at all it paints the error state.
+//
+// What it must NOT do is invent a snapshot. It used to fall back to a synthetic
+// `{ temperature: 0 }`, which reads as a fully-loaded machine with the warmer
+// off — so the render skipped its loading guard and resolvePrewarm(), unable to
+// tell a field absent because the FETCH failed from one absent because the
+// FIRMWARE lacks the register, reported the pre-warm unsupported: a network blip
+// told the user to go update their firmware. See cupWarmerViewMode().
 async function revalidateCupWarmer() {
     try {
         const data = await getCupWarmer();
+        cupWarmerLoadFailed = false;
         setCupWarmerState(data || { temperature: 0 });
     } catch (e) {
-        if (getCupWarmerState() === null) setCupWarmerState({ temperature: 0 });
+        if (getCupWarmerState() !== null) return;   // last good snapshot stands; next tick retries
+        if (cupWarmerLoadFailed) return;            // already saying so — don't repaint over it
+        cupWarmerLoadFailed = true;
+        // Nothing in the store changed, so the store subscription cannot repaint
+        // for us: swap the loading placeholder for the error state ourselves. A
+        // later tick that succeeds clears the flag and the subscription repaints.
+        if (activeSettingsCategory === 'cupwarmer') updateSettingsContentArea('cupwarmer');
     }
 }
 
 function startCupWarmerPoll() {
     if (cupWarmerPollTimer !== null) return; // already armed — a re-render, not a page entry
+    cupWarmerLoadFailed = false; // fresh page entry: a stale error must not pre-empt the retry
     cupWarmerPollTimer = setInterval(() => {
         // Self-guard: an exit path that misses stopCupWarmerPoll() (e.g. a
         // history/back page swap) lands here at most one tick later.
@@ -2974,7 +2993,18 @@ function stopCupWarmerPoll() {
 export function renderCupWarmerSettings() {
     startCupWarmerPoll(); // idempotent: page entry kicks a revalidate + arms the ~5 s poll
     const cupWarmer = getCupWarmerState();
-    if (cupWarmer === null) return renderLoadingState(getTranslation('Cup Warmer'));
+    // A fetch that never landed is an error, not a machine with everything
+    // switched off: with no snapshot we know NOTHING about this machine — least
+    // of all whether its firmware has the pre-warm registers. Say so, and let
+    // the ~5 s poll heal it. (Same loading → error split as the Lighting page.)
+    const mode = cupWarmerViewMode(cupWarmer, cupWarmerLoadFailed);
+    if (mode === 'loading') return renderLoadingState(getTranslation('Cup Warmer'));
+    if (mode === 'error') {
+        return renderErrorState(
+            getTranslation('Cup Warmer'),
+            getTranslation('Failed to load cup warmer settings'),
+        );
+    }
 
     const machineTemp = Math.round(cupWarmer.temperature ?? 0);
     const enabled = machineTemp > 0;

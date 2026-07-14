@@ -10,6 +10,7 @@ import {
     hasEnabledWakeSchedule,
     prewarmWarnings,
     prewarmShapeSignature,
+    cupWarmerViewMode,
     formatCurrentMatTemp,
     getCupWarmerState,
     setCupWarmerState,
@@ -119,6 +120,26 @@ test('resolvePrewarm: active is only ever TRUE when the firmware says so', () =>
     assert.equal(resolvePrewarm({ prewarmEnabled: true, prewarmActive: false }).active, false);
     // null (no register) must never be fabricated into a "pre-warming" label.
     assert.equal(resolvePrewarm({ prewarmEnabled: null, prewarmActive: null }).active, false);
+});
+
+test('cupWarmerViewMode: a failed fetch is an ERROR, never a machine that says "no such firmware"', () => {
+    // Loaded — even a warmer that is off is machine truth, so render it.
+    assert.equal(cupWarmerViewMode({ temperature: 0 }), 'ready');
+    assert.equal(cupWarmerViewMode({ temperature: 70 }, true), 'ready'); // a stale snapshot beats an error
+    // Nothing fetched yet: the loading placeholder, not a verdict.
+    assert.equal(cupWarmerViewMode(null), 'loading');
+    assert.equal(cupWarmerViewMode(undefined, false), 'loading');
+    // Fetch failed with nothing in the store: say the fetch failed.
+    assert.equal(cupWarmerViewMode(null, true), 'error');
+
+    // WHY this is not cosmetic. The failure path used to synthesise a
+    // { temperature: 0 } snapshot, which is indistinguishable from a real,
+    // switched-off machine — so the page rendered as fully loaded and asked
+    // resolvePrewarm() a question it cannot answer:
+    assert.equal(resolvePrewarm({ temperature: 0 }).supported, false);
+    // …i.e. "this machine's firmware doesn't support pre-warm — update the
+    // firmware to use it", printed at a user whose machine we never reached.
+    // A capability verdict must come from an answer, not from silence.
 });
 
 test('hasEnabledWakeSchedule: an UNKNOWN list is not an empty one', () => {
