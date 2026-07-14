@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -8,6 +8,7 @@ import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from '../modules/cup-warmer.js';
+import { clampCalWeight, calActionState, CAL_WEIGHT_DEFAULT_G, CAL_WEIGHT_MIN_G, CAL_WEIGHT_MAX_G } from '../modules/loadcell-cal.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
@@ -20,6 +21,7 @@ const SETTINGS_NUMPAD_CONFIGS = {
     tankTempInput:           { title: 'TANK TEMPERATURE',    unit: '°C',   min: 10,  max: 40,   fieldType: 'settings-tank-temp' },
     waterAlertInput:         { title: 'WATER ALERT LEVEL',   unit: 'mm',   min: 0,   max: 30,   fieldType: 'settings-water-alert' },
     calibFanInput:           { title: 'FAN THRESHOLD',       unit: '%',    min: 0,   max: 100,  fieldType: 'settings-calib-fan' },
+    calibWeightInput:        { title: 'CALIBRATION WEIGHT',  unit: 'g',    min: 1,   max: 10000,fieldType: 'settings-calib-weight' },
     steamCalibTempInput:     { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 135, max: 170,  fieldType: 'settings-steam-calib-temp' },
     steamTempInput:          { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 0,   max: 170,  fieldType: 'settings-steam-temp' },
     steamDurationInput:      { title: 'STEAM DURATION',      unit: 'sec',  min: 10,  max: 120,  fieldType: 'settings-steam-duration' },
@@ -239,6 +241,8 @@ function updateSettingsContentArea(category) {
     // THEN stop previewing (flush-before-clear: one strip transition, and the
     // edit persists exactly as the old always-PUT behaviour did).
     if (category !== 'ledstrip') { ledFlushDirty(); ledClearPreview(); }
+    // Leaving the Load Cells page → hand the scale WS back to the main page.
+    if (category !== 'calib_loadcell' && calWsClaimed) calReleaseScaleWs();
     // Leaving the Cup Warmer page → stop its ~5 s revalidate poll.
     if (category !== 'cupwarmer' && cupWarmerPollTimer !== null) stopCupWarmerPoll();
     const contentArea = document.getElementById('settings-content-area');
@@ -271,6 +275,10 @@ function updateSettingsContentArea(category) {
         if (category === 'ledstrip') {
             setTimeout(initLedPicker, 0);
         }
+        // Step 4's live readout needs the scale WS — claim it on every render
+        // of the page at step 4 (idempotent), so returning to a resumed wizard
+        // re-wires it after a reclaim.
+        if (category === 'calib_loadcell' && calStep === 4) calEnsureScaleWs();
         setTimeout(attachSettingsNumpad, 0);
     }
 }
@@ -303,7 +311,8 @@ const settingsTree = {
             { id: 'refillkit',           name: 'Refill Kit',            settingsCategory: 'calib_refillkit' },
             { id: 'voltage',             name: 'Voltage',               settingsCategory: 'calib_voltage' },
             { id: 'fan',                 name: 'Fan',                   settingsCategory: 'calib_fan' },
-            { id: 'steam',               name: 'Steam',                 settingsCategory: 'calib_steam' }
+            { id: 'steam',               name: 'Steam',                 settingsCategory: 'calib_steam' },
+            { id: 'loadcell',            name: 'Load Cells',            settingsCategory: 'calib_loadcell', i18nKey: 'Load Cells', bengleOnly: true }
         ]
     },
     'machine': {
@@ -709,6 +718,8 @@ export function renderSettingsContent(category) {
             return renderCalibVoltageSettings();
         case 'calib_steam':
             return renderCalibSteamSettings();
+        case 'calib_loadcell':
+            return renderLoadCellCalibration();
         case 'maint_descaling':
             return renderMainDescalingSettings();
         case 'maint_airpurge':
@@ -3909,6 +3920,199 @@ export function renderQuickAdjustmentsSettings() {
     `;
 }
 
+// --- Load-cell calibration wizard (Bengle two-point) -----------------------
+// Firmware two-point cal: precision-zero on an empty platform, then latch the
+// same known mass on the LEFT half (point 1) and the RIGHT half (point 2); the
+// firmware solves both per-cell gains. Each cal REST call blocks ~15 s (10 s
+// settle + 5 s average). State is module-level; the 4-step flow re-renders the
+// settings content area on each transition (the app's "swap innerHTML" idiom).
+let calStep = 1;                 // 1=zero 2=left 3=right 4=verify
+let calWeightG = CAL_WEIGHT_DEFAULT_G; // reference mass (g)
+let calBusy = false;             // a cal/tare call is in flight
+let calError = '';               // last error message
+let calDone = { 1: false, 2: false, 3: false };
+let calWsClaimed = false;        // the step-4 readout owns the scale WS
+
+function calResetWizard() {
+    calStep = 1;
+    calBusy = false;
+    calError = '';
+    calDone = { 1: false, 2: false, 3: false };
+    calReleaseScaleWs();
+}
+
+function calRerender() {
+    updateSettingsContentArea('calib_loadcell');
+}
+
+// The scale WebSocket is a process-wide singleton (connectScaleWebSocket
+// closes any existing socket before opening a new one), so claiming it for
+// the step-4 readout steals it from app.js's main-page weight display — and
+// nothing over there re-registers it (initMainPageOnce is once-guarded).
+// Claim whenever step 4 renders; hand it back via calReleaseScaleWs() when
+// the wizard is left (page switch, settings exit, retry/finish).
+function calEnsureScaleWs() {
+    if (calWsClaimed) return;
+    calWsClaimed = true;
+    connectScaleWebSocket((data) => {
+        const el = document.getElementById('calib-live-weight');
+        if (el && data && typeof data.weight === 'number') {
+            el.textContent = `${data.weight.toFixed(1)} g`;
+        }
+    });
+}
+
+function calReleaseScaleWs() {
+    if (!calWsClaimed) return;
+    calWsClaimed = false;
+    if (typeof window.handleScaleData === 'function') {
+        connectScaleWebSocket(window.handleScaleData, window.onScaleReconnect, window.onScaleDisconnect);
+    }
+}
+
+function calStepIndicator() {
+    const labels = ['Zero', 'Left cell', 'Right cell', 'Verify'];
+    let dots = '';
+    for (let i = 1; i <= 4; i++) {
+        const isDone = calDone[i] || i < calStep;
+        const isActive = i === calStep;
+        const dotBg = isDone ? '#0ca581' : (isActive ? '#385a92' : 'var(--button-grey)');
+        const dotColor = (isDone || isActive) ? '#ffffff' : '#959595';
+        dots += `<div class="rounded-full flex items-center justify-center text-[22px] font-bold shrink-0" style="width:44px;height:44px;background:${dotBg};color:${dotColor}">${isDone ? '&#10003;' : i}</div>`;
+        if (i < 4) dots += `<div class="shrink-0" style="width:40px;height:3px;background:${i < calStep ? '#0ca581' : 'var(--button-grey)'}"></div>`;
+    }
+    return `
+        <div class="flex items-center justify-center w-full" style="gap:10px">${dots}</div>
+        <p class="text-center text-[24px] text-[#959595] w-full">Step ${calStep} of 4 &middot; ${labels[calStep - 1]}</p>`;
+}
+
+const CAL_PRIMARY_BTN = "bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold";
+const CAL_SECONDARY_BTN = "h-[72px] px-[48px] rounded-[72px] text-[24px] font-bold bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)]";
+const CAL_CARD = "border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 max-w-full";
+const CAL_HEADING = "font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] not-italic text-[var(--text-primary)] text-[30px] text-center";
+const CAL_BODY = "font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-[var(--text-primary)] text-[24px] w-full text-center";
+
+// Fixed-height status line + ONE button that swaps label/action with state
+// (see calActionState in loadcell-cal.js), so the card height stays constant
+// and the buttons never jump:
+//   idle  -> [status blank]          [Calibrate …]
+//   busy  -> [status "Calibrating…"] [Cancel] (aborts the in-flight step)
+//   error -> [status <error> (red)]  [Calibrate …]  (retry)
+//   done  -> [status "✓ Done"]       [Next]
+function calActionArea({ step, runLabel, runOnclick, nextStep, busyLabel }) {
+    const st = calActionState({ busy: calBusy, error: calError, done: calDone[step], runLabel, busyLabel });
+    let status = '&nbsp;';
+    if (st.status === 'busy') status = `<span style="color:#959595">${st.statusText}</span>`;
+    else if (st.status === 'error') status = `<span class="text-red-500">${escapeHtml(st.statusText)}</span>`;
+    else if (st.status === 'done') status = `<span style="color:#0ca581;font-weight:700">&#10003; Done</span>`;
+    const click = st.action === 'next' ? `window.calGoToStep(${nextStep})`
+        : st.action === 'cancel' ? 'window.calAbort()'
+        : runOnclick;
+    return `
+        <div class="text-center text-[22px] flex items-center justify-center px-[20px] w-full" style="min-height:36px">${status}</div>
+        <button class="${st.primary ? CAL_PRIMARY_BTN : CAL_SECONDARY_BTN}" onclick="${click}" data-i18n-key="${st.label}">${st.label}</button>`;
+}
+
+// Editable reference-mass entry (step 2): label on its own line, then a
+// minus / value / plus stepper (same component as the Fan Threshold setting).
+// Tapping the value opens the numpad (via SETTINGS_NUMPAD_CONFIGS.calibWeightInput).
+function calWeightInputBlock() {
+    return `
+        <div class="flex flex-col items-center" style="gap:12px">
+            <p class="text-[var(--text-primary)] text-[24px]" data-i18n-key="Calibration Weight Mass:">Calibration Weight Mass:</p>
+            <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0">
+                <button aria-label="Decrease weight"
+                        class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                        onclick="window.flashPlusMinusButton(this); window.calAdjustWeight(-1);">
+                    <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <div class="text-center text-[var(--text-primary)] text-[24px] font-bold flex items-center justify-center" style="width:150px;">
+                    <input type="text" inputmode="numeric" pattern="[0-9]*" id="calibWeightInput"
+                           class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                           value="${calWeightG}" step="1" min="${CAL_WEIGHT_MIN_G}" max="${CAL_WEIGHT_MAX_G}"
+                           onchange="window.calSetWeight(this.value)">
+                    <span class="ml-2 text-nowrap text-[24px] text-[#959595]">g</span>
+                </div>
+                <button aria-label="Increase weight"
+                        class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                        onclick="window.flashPlusMinusButton(this); window.calAdjustWeight(1);">
+                    <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>`;
+}
+
+// Read-only reference-mass display (step 3): the same mass, moved to the other
+// cell — not re-entered (both points must use the same known weight).
+function calWeightDisplayBlock() {
+    return `
+        <div class="flex flex-col items-center" style="gap:12px">
+            <p class="text-[var(--text-primary)] text-[24px]" data-i18n-key="Calibration Weight Mass:">Calibration Weight Mass:</p>
+            <p class="text-[var(--text-primary)] font-bold" style="font-size:30px">${calWeightG} g</p>
+        </div>`;
+}
+
+export function renderLoadCellCalibration() {
+    let body = '';
+    if (calStep === 1) {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Zero the load cells">Zero the load cells</p>
+                <p class="${CAL_BODY}" data-i18n-key="Remove the cup platform and the drip tray so the load cells are empty, then press Zero. This takes about 15 seconds (settle + average).">Remove the cup platform and the drip tray so the load cells are empty, then press Zero. This takes about 15 seconds (settle + average).</p>
+                ${calActionArea({ step: 1, runLabel: 'Zero', runOnclick: 'window.calRunZero()', nextStep: 2, busyLabel: 'Zeroing&hellip; (~15s)' })}
+            </div>`;
+    } else if (calStep === 2) {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the LEFT cell">Calibrate the LEFT cell</p>
+                ${calWeightInputBlock()}
+                <p class="${CAL_BODY}" data-i18n-key="Place weight on the left leg load cell.">Place weight on the left leg load cell.</p>
+                ${calActionArea({ step: 2, runLabel: 'Calibrate LEFT', runOnclick: "window.calRunPoint('left')", nextStep: 3, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(1)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
+            </div>`;
+    } else if (calStep === 3) {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the RIGHT cell">Calibrate the RIGHT cell</p>
+                ${calWeightDisplayBlock()}
+                <p class="${CAL_BODY}" data-i18n-key="Place weight on the right leg load cell.">Place weight on the right leg load cell.</p>
+                ${calActionArea({ step: 3, runLabel: 'Calibrate RIGHT', runOnclick: "window.calRunPoint('right')", nextStep: 4, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(2)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
+            </div>`;
+    } else {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Check the calibration">Check the calibration</p>
+                <p class="${CAL_BODY}" data-i18n-key="Put the drip tray and platform back on, press Tare, then place your weight and check the reading.">Put the drip tray and platform back on, press Tare, then place your weight and check the reading.</p>
+                <button class="${CAL_SECONDARY_BTN}" onclick="window.calTare()" data-i18n-key="Tare">Tare</button>
+                <div class="flex flex-col items-center" style="gap:6px">
+                    <span id="calib-live-weight" class="text-[var(--text-primary)] font-bold leading-none" style="font-size:64px">&ndash;</span>
+                    <span class="text-[#959595] text-[22px]">Expected: ${calWeightG} g</span>
+                </div>
+                <div class="flex gap-[20px] flex-wrap justify-center">
+                    <button class="${CAL_PRIMARY_BTN}" onclick="window.calFinish()" data-i18n-key="Looks good — Finish">Looks good &mdash; Finish</button>
+                    <button class="${CAL_SECONDARY_BTN}" onclick="window.calRetry()" data-i18n-key="Retry calibration">Retry calibration</button>
+                </div>
+            </div>`;
+    }
+
+    return `
+        <div class="content-stretch flex flex-col gap-[30px] items-center relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold text-[var(--text-primary)] text-[36px] text-center w-full">
+                <p class="leading-[1.2]" data-i18n-key="Load Cell Calibration">Load Cell Calibration</p>
+            </div>
+            ${calStepIndicator()}
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+            <div class="content-stretch flex flex-col items-center relative w-full">
+                ${body}
+            </div>
+        </div>`;
+}
+
 // Render calibration settings with additional subcategories
 export function renderCalibFanSettings(settings) {
     const fanValue = settings?.fan !== undefined ? settings.fan : 40;
@@ -5340,6 +5544,9 @@ export async function initializeSettings() {
             // palette PUT flushes first (flush → clear, one transition).
             ledFlushDirty();
             ledClearPreview();
+            // …and exiting from the Load Cells verify step must hand the
+            // scale WS back to the main page's live weight readout.
+            calReleaseScaleWs();
             // …and exiting from the Cup Warmer page must stop its revalidate poll.
             stopCupWarmerPoll();
             loadPage('index.html');
@@ -5366,6 +5573,9 @@ export async function initializeSettings() {
             // palette PUT flushes first (flush → clear, one transition).
             ledFlushDirty();
             ledClearPreview();
+            // …and exiting from the Load Cells verify step must hand the
+            // scale WS back to the main page's live weight readout.
+            calReleaseScaleWs();
             // …and exiting from the Cup Warmer page must stop its revalidate poll.
             stopCupWarmerPoll();
             loadPage('index.html');
@@ -5980,6 +6190,106 @@ export async function initializeSettings() {
             logger.error('Error starting descaling:', error);
             ui.showToast(`Failed to start descaling: ${error.message}`, 5000, 'error');
         }
+    };
+
+    // --- Load-cell calibration wizard handlers ---
+    window.calSetWeight = function(v) {
+        const w = clampCalWeight(v);
+        if (w !== null) calWeightG = w;
+    };
+
+    window.calAdjustWeight = function(delta) {
+        calWeightG = clampCalWeight(calWeightG + delta);
+        const el = document.getElementById('calibWeightInput');
+        if (el) el.value = calWeightG;
+    };
+
+    window.calGoToStep = function(n) {
+        if (calBusy) return;
+        calError = '';
+        calStep = n;
+        calRerender();
+    };
+
+    window.calRunZero = async function() {
+        if (calBusy) return;
+        calBusy = true; calError = ''; calRerender();
+        try {
+            const r = await calibrateScale('zero');
+            if (r && r.success) {
+                calDone[1] = true;
+                ui.showToast('Load cells zeroed', 3000, 'success');
+            } else {
+                calError = (r && r.message) ? r.message : 'Zero failed';
+                ui.showToast(`Zero failed: ${calError}`, 5000, 'error');
+            }
+        } catch (error) {
+            logger.error('Load-cell zero failed:', error);
+            calError = error.message;
+            ui.showToast(`Zero failed: ${error.message}`, 5000, 'error');
+        } finally {
+            calBusy = false; calRerender();
+        }
+    };
+
+    // side = 'left' (point 1) or 'right' (point 2)
+    window.calRunPoint = async function(side) {
+        if (calBusy) return;
+        const stepNo = side === 'left' ? 2 : 3;
+        calBusy = true; calError = ''; calRerender();
+        try {
+            const r = await calibrateScale(side, calWeightG);
+            if (r && r.success) {
+                calDone[stepNo] = true;
+                ui.showToast(`${side === 'left' ? 'Left' : 'Right'} cell calibrated`, 3000, 'success');
+            } else {
+                calError = (r && r.message) ? r.message : 'Calibration failed';
+                ui.showToast(`Calibration failed: ${calError}`, 5000, 'error');
+            }
+        } catch (error) {
+            logger.error('Load-cell point cal failed:', error);
+            calError = error.message;
+            ui.showToast(`Calibration failed: ${error.message}`, 5000, 'error');
+        } finally {
+            calBusy = false; calRerender();
+        }
+    };
+
+    // Cancel the in-flight zero/left/right step: abort → 202 no body. The
+    // blocked cal call then returns success:false message:'aborted', which
+    // the run handler surfaces in the status slot. Deliberately does not
+    // toast on success — the aborted step's own failure path reports it.
+    window.calAbort = async function() {
+        if (!calBusy) return;
+        try {
+            await calibrateScale('abort');
+        } catch (error) {
+            logger.error('Load-cell cal abort failed:', error);
+            ui.showToast(`Cancel failed: ${error.message}`, 4000, 'error');
+        }
+    };
+
+    // Deliberately does not set calBusy — tare is an instant trigger, unlike
+    // the ~15 s cal steps, and blocking the verify page for it is needless.
+    window.calTare = async function() {
+        try {
+            await tareScale();
+            ui.showToast('Scale tared', 2000, 'success');
+        } catch (error) {
+            logger.error('Tare failed:', error);
+            ui.showToast(`Tare failed: ${error.message}`, 4000, 'error');
+        }
+    };
+
+    window.calRetry = function() {
+        calResetWizard();
+        calRerender();
+    };
+
+    window.calFinish = function() {
+        ui.showToast('Load-cell calibration complete', 3000, 'success');
+        calResetWizard();
+        calRerender();
     };
 
     window.startAirPurge = async function() {

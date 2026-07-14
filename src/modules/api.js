@@ -1,5 +1,6 @@
 import * as ui from './ui.js';
 import { logger ,setDebug} from './logger.js';
+import { buildCalibrateBody, calResponseHasBody } from './loadcell-cal.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
 export const REA_PORT = 8080;
@@ -153,6 +154,36 @@ export async function tareScale() {
         logger.info('Successfully tared scale.');
     } catch (error) {
         logger.error('Error taring scale:', error);
+        throw error;
+    }
+}
+
+/**
+ * Drive one step of the Bengle integrated-scale two-point load-cell
+ * calibration (Bengle machines only; 404 elsewhere).
+ * @param {'zero'|'left'|'right'|'abort'} command
+ * @param {number} [grams] known reference mass — required for 'left'/'right'.
+ * @returns {Promise<object>} the ScaleCalResult (`{success, finalStep,
+ *   pointStatus, message?}`) for zero/left/right; `{success:true}` for abort.
+ * This call blocks while the firmware settles + averages (~15 s per step).
+ */
+export async function calibrateScale(command, grams) {
+    try {
+        logger.info(`Scale calibration: ${command}${grams != null ? ` @ ${grams}g` : ''}`);
+        const response = await fetch(`${API_BASE_URL}/machine/scale/calibrate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildCalibrateBody(command, grams)),
+        });
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Scale calibration (${command}) failed. Status: ${response.status}, Body: ${errorBody}`);
+        }
+        // zero/left/right -> 200 with a ScaleCalResult; abort -> 202 no body.
+        if (!calResponseHasBody(command)) return { success: true };
+        return await response.json();
+    } catch (error) {
+        logger.error('Error calibrating scale:', error);
         throw error;
     }
 }
