@@ -1,10 +1,11 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
+import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
@@ -232,6 +233,10 @@ function renderErrorState(title, message) {
 
 // Helper function to update the settings content area in the DOM
 function updateSettingsContentArea(category) {
+    // Leaving the Lighting page → flush any deferred cross-state palette PUT,
+    // THEN stop previewing (flush-before-clear: one strip transition, and the
+    // edit persists exactly as the old always-PUT behaviour did).
+    if (category !== 'ledstrip') { ledFlushDirty(); ledClearPreview(); }
     const contentArea = document.getElementById('settings-content-area');
     if (contentArea) {
         contentArea.innerHTML = renderSettingsContent(category);
@@ -258,6 +263,9 @@ function updateSettingsContentArea(category) {
         }
         if (category === 'quickstart') {
             setTimeout(initQuickstartGuideSettings, 0);
+        }
+        if (category === 'ledstrip') {
+            setTimeout(initLedPicker, 0);
         }
         setTimeout(attachSettingsNumpad, 0);
     }
@@ -298,6 +306,7 @@ const settingsTree = {
         name: 'Machine',
         subcategories: [
             { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' },
+            { id: 'ledstrip', name: 'Lighting', settingsCategory: 'ledstrip', i18nKey: 'Lighting', bengleOnly: true },
             { id: 'machineinfo', name: 'Machine Information', settingsCategory: 'machineinfo', i18nKey: 'Machine Info' }
         ]
     },
@@ -745,6 +754,8 @@ export function renderSettingsContent(category) {
             return renderFanThresholdSettings(settingsCache.de1);
         case 'usbchargermode':
             return renderUsbChargerModeSettings(settingsCache.de1);
+        case 'ledstrip':
+            return renderLedSettings();
         case 'machineinfo':
             return renderMachineInformationSettings();
         case 'de1advanced':
@@ -2642,6 +2653,448 @@ export function renderSteamSettings() {
     `;
 }
 
+// ── Lighting / LED strip (Bengle) ────────────────────────────────────────────
+// State = { frontStrip, backStrip, frontSwitch } × { awake, sleeping }, each a
+// 12-char 'RRRRGGGGBBBB' hex (16-bit/channel). PUT previews live on the machine;
+// commit persists to NVM; reset reloads NVM. Uses the vendored iro.js colour wheel.
+// Colour maps (8-bit↔16-bit) live in ../modules/led-color.js so node:test covers them.
+let ledState = null;           // working LedStripState, or null until loaded
+let ledCommitted = null;       // JSON snapshot at last load/commit
+let ledSelectedZone = 'front'; // 'front' | 'rear' | 'both' | 'switch'
+let ledSelectedState = 'awake';// 'awake' | 'sleeping'
+let ledPicker = null;          // iro.ColorPicker instance
+let ledPutTimer = null;        // debounce handle for the wheel-driven flush/preview
+let ledError = false;
+let ledPreviewActive = false;  // a live colour is being previewed on the strip
+let ledPaletteDirty = false;   // cross-state edits not yet PUT (deferred to a preview-end seam)
+let ledLastLit = {};           // last lit colour per 'zoneKey:state', restored on power-on
+const LED_DEFAULT_ON = 'FFFFAAAA5555'; // warm white — default colour when powering a zone on with no history
+
+const LED_PRESETS = [
+    ['Off', '#000000'], ['Warm White', '#FFAA55'], ['Soft White', '#FFD9A0'],
+    ['Daylight', '#EAF2FF'], ['Blue', '#385A92'], ['Amber', '#FF7A00'],
+    ['Red', '#FF2200'], ['Green', '#0CA581'], ['Cyan', '#00C2D1'], ['Purple', '#7A3FF2']
+];
+
+const ledZoneKeys = (zone) => zone === 'front' ? ['frontStrip']
+    : zone === 'rear' ? ['backStrip']
+    : zone === 'switch' ? ['frontSwitch']
+    : ['frontStrip', 'backStrip']; // both
+// The palette bank the machine is currently rendering on the strips: 'sleeping'
+// only when the machine is actually asleep; every other (or unknown) state runs
+// the awake palette.
+const ledMachinePaletteState = () =>
+    currentMachineState === MachineState.SLEEPING ? 'sleeping' : 'awake';
+function ledCellColor16(zoneKey, stateKey) { return ledState?.[zoneKey]?.[stateKey] || '000000000000'; }
+function ledCurrentColor16() { return ledCellColor16(ledZoneKeys(ledSelectedZone)[0], ledSelectedState); }
+function ledNormalize(data) {
+    const z = (o) => ({ awake: o?.awake || '000000000000', sleeping: o?.sleeping || '000000000000' });
+    return { frontStrip: z(data?.frontStrip), backStrip: z(data?.backStrip), frontSwitch: z(data?.frontSwitch) };
+}
+
+export function renderLedSettings() {
+    if (!window.iro) {
+        return renderErrorState(getTranslation('Lighting'), getTranslation('Colour picker failed to load'));
+    }
+    if (ledState === null && !ledError) {
+        getLedStrip()
+            .then((data) => { ledState = ledNormalize(data); ledCommitted = JSON.stringify(ledState); if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip'); })
+            .catch(() => { ledError = true; if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip'); });
+        return renderLoadingState(getTranslation('Lighting'));
+    }
+    if (ledError || !ledState) {
+        return renderErrorState(getTranslation('Lighting'), getTranslation('Failed to load lighting settings'));
+    }
+
+    const isOn = ledCurrentColor16() !== '000000000000';
+    const seg = (value, label, current, handler) => {
+        const active = current === value;
+        return `<button class="flex-1 h-[80px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200 ${active ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[var(--text-primary)]'}"
+                    aria-pressed="${active}" onclick="window.${handler}('${value}')" data-i18n-key="${label}">${getTranslation(label)}</button>`;
+    };
+    const cell = (zoneKey, zoneLabel, stateKey) => {
+        const isActive = ledZoneKeys(ledSelectedZone).includes(zoneKey) && ledSelectedState === stateKey;
+        return `<button aria-label="${zoneLabel} ${stateKey}" data-led-cell="${zoneKey}:${stateKey}" onclick="window.ledSelectCell('${zoneKey}','${stateKey}')"
+                    class="h-[64px] rounded-[10px] border-2 ${isActive ? 'border-[var(--mimoja-blue)]' : 'border-[var(--profile-button-outline-color)]'}"
+                    style="background-color: ${ledColor16ToHex8(ledCellColor16(zoneKey, stateKey))}"></button>`;
+    };
+    const presetSwatches = LED_PRESETS.map(([name, hex]) =>
+        `<button title="${name}" aria-label="${name}" onclick="window.ledApplyPreset('${hex}')"
+            class="w-[64px] h-[64px] rounded-full border-2 border-[var(--profile-button-outline-color)]" style="background-color: ${hex}"></button>`
+    ).join('');
+
+    return `
+        <div class="content-stretch flex flex-col gap-[40px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Lighting">Lighting</p>
+            </div>
+
+            <div class="flex flex-row gap-[48px] w-full items-start flex-wrap">
+                <div class="flex flex-col gap-[28px] flex-1 min-w-[420px]">
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Zone">Zone</p>
+                        <div class="flex gap-[12px] w-full">
+                            ${seg('front', 'Front', ledSelectedZone, 'ledSelectZone')}
+                            ${seg('rear', 'Rear', ledSelectedZone, 'ledSelectZone')}
+                            ${seg('both', 'Both', ledSelectedZone, 'ledSelectZone')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="State">State</p>
+                        <div class="flex gap-[12px] w-full">
+                            ${seg('awake', 'Awake', ledSelectedState, 'ledSelectState')}
+                            ${seg('sleeping', 'Asleep', ledSelectedState, 'ledSelectState')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Current Colours">Current Colours</p>
+                        <div class="grid w-full gap-[12px] items-center" style="grid-template-columns: 120px 1fr 1fr;">
+                            <div></div>
+                            <div class="text-center text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Awake">Awake</div>
+                            <div class="text-center text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Asleep">Asleep</div>
+                            <div class="text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Front">Front</div>
+                            ${cell('frontStrip', 'Front', 'awake')}
+                            ${cell('frontStrip', 'Front', 'sleeping')}
+                            <div class="text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Rear">Rear</div>
+                            ${cell('backStrip', 'Rear', 'awake')}
+                            ${cell('backStrip', 'Rear', 'sleeping')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Presets">Presets</p>
+                        <div class="flex flex-wrap gap-[14px]">${presetSwatches}</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-[20px] items-center">
+                    <div class="flex items-center justify-between gap-[20px] w-full">
+                        <span class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Power">Power</span>
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="ledPowerToggle" class="sr-only peer" ${isOn ? 'checked' : ''} onchange="window.ledSetPower(this.checked)">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+                    <div id="led-picker-slot" style="position:relative;"><div id="led-picker" style="${isOn ? '' : 'opacity:0.35;pointer-events:none;'}"></div></div>
+                    <p class="text-[var(--text-secondary)] text-[20px]" data-i18n-key="Wheel picks colour · slider sets brightness">Wheel picks colour · slider sets brightness</p>
+                    <div class="flex items-center gap-[16px]" style="${isOn ? '' : 'opacity:0.35;'}">
+                        <div id="led-current-swatch" class="w-[56px] h-[56px] rounded-[10px] border-2 border-[var(--profile-button-outline-color)]" style="background-color: ${ledColor16ToHex8(ledCurrentColor16())}"></div>
+                        <span id="led-hex-readout" class="font-['NotoSansMono'] text-[var(--text-primary)] text-[24px]">${isOn ? ledColor16ToHex8(ledCurrentColor16()) : 'Off'}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+            <div class="flex justify-end gap-[20px] w-full">
+                <button class="border-2 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[82px] px-[48px] rounded-[67.5px] text-[24px] font-bold" onclick="window.ledReset()" data-i18n-key="Reset">Reset</button>
+                <button class="bg-[var(--mimoja-blue)] text-white h-[82px] px-[48px] rounded-[67.5px] text-[24px] font-bold" onclick="window.ledSave()" data-i18n-key="Save">Save</button>
+            </div>
+        </div>
+    `;
+}
+
+function initLedPicker() {
+    const el = document.getElementById('led-picker');
+    if (!el || !window.iro || !ledState) return;
+    el.innerHTML = '';
+    el.style.transform = '';
+    el.style.width = '';
+    el.style.height = '';
+    ledPicker = new window.iro.ColorPicker(el, {
+        width: 300,
+        color: ledColor16ToHex8(ledCurrentColor16()),
+        borderWidth: 2,
+        borderColor: 'var(--box-color)',
+        handleRadius: 18,
+        padding: 8,
+        layout: [
+            { component: window.iro.ui.Wheel, options: { wheelLightness: false } },
+            { component: window.iro.ui.Slider, options: { sliderType: 'value' } }
+        ]
+    });
+    // The whole UI is CSS-scaled (transform: scale(S)). iro reads the *scaled*
+    // getBoundingClientRect for the touch position but its unscaled config `width`
+    // for the wheel geometry, so touches land off by S (worse toward the right).
+    // Counter-scale the picker by 1/S so its rendered size == its config size and
+    // the pointer math lines up; reserve the visual footprint so siblings don't overlap.
+    let s = 1;
+    try {
+        const sc = document.getElementById('scaled-content');
+        if (sc) { const m = new DOMMatrix(getComputedStyle(sc).transform); if (m && m.a) s = m.a; }
+    } catch (e) { /* ignore — no scale */ }
+    const slot = document.getElementById('led-picker-slot');
+    if (s && Math.abs(s - 1) > 0.02 && slot) {
+        // Counter-scaling makes the picker's *visual* size exceed its layout box,
+        // so pin the picker absolutely and give its wrapper slot the visual size —
+        // the slot reserves the flow space, the picker fills it, siblings don't overlap.
+        const nat = el.getBoundingClientRect(); // natural (in-flow) size
+        slot.style.width = `${nat.width / (s * s)}px`;
+        slot.style.height = `${nat.height / (s * s)}px`;
+        el.style.position = 'absolute';
+        el.style.top = '0';
+        el.style.left = '0';
+        el.style.transformOrigin = 'top left';
+        el.style.transform = `scale(${1 / s})`;
+    }
+    ledPicker.on('input:change', (color) => {
+        const c16 = ledRgbToColor16(color.rgb);
+        ledZoneKeys(ledSelectedZone).forEach((k) => { if (ledState[k]) ledState[k][ledSelectedState] = c16; });
+        ledUpdateSwatchesDom(color.hexString);
+        ledSchedulePut();
+    });
+    ledPicker.on('input:end', () => ledCommitEdit());
+}
+
+function ledUpdateSwatchesDom(hex8) {
+    const sw = document.getElementById('led-current-swatch');
+    const hx = document.getElementById('led-hex-readout');
+    if (sw) sw.style.backgroundColor = hex8;
+    if (hx) hx.textContent = hex8.toUpperCase();
+    ledZoneKeys(ledSelectedZone).forEach((k) => {
+        const c = document.querySelector(`[data-led-cell="${k}:${ledSelectedState}"]`);
+        if (c) c.style.backgroundColor = hex8;
+    });
+}
+
+// ── LED strip write sequencing ───────────────────────────────────────────────
+// Every write that changes what the strip SHOWS (palette PUT, preview POST,
+// preview clear) is funnelled through ONE promise chain, so writes land in
+// enqueue order and can never interleave. This is what keeps a cross-state
+// preview steady: the FW unconditionally re-applies the machine-state bank to
+// the live registers on EVERY palette-register write, so any PUT
+// that lands while a cross-state preview is up repaints the strip with the
+// awake palette until the next preview write — a visible flash. The rules
+// that make that flash impossible:
+//   1. While a cross-state edit is active, NO stored-palette PUT is issued —
+//      not per move (which alternated visibly) and not at gesture end (which
+//      left a residual flash). Moves and gesture ends are PREVIEW writes only,
+//      coalesced update-in-place (never a clear between two previews); the
+//      pending palette is only marked dirty (ledCommitEdit).
+//   2. The deferred PUT flushes at the seams where the preview ENDS — target
+//      switch, Save, Reset, settings Cancel/Save, leaving the Lighting page —
+//      enqueued immediately BEFORE that seam's preview-clear (ledFlushDirty →
+//      ledPutPalette, no preview chase). The cross-state edit never touched
+//      the bank the machine is rendering, so the FW re-apply this PUT
+//      triggers paints exactly the palette the clear then writes to the live
+//      registers: the strip makes ONE transition, picked colour → final.
+//   3. Same-state edits keep the immediate PUT (ledFlushPut) — there the FW
+//      re-apply repaints the very colour just edited, so nothing can flash.
+//   4. The chain serializes all of it: a queued PUT can never slip between a
+//      preview and the eye, and a seam's clear can never run before its flush.
+let ledOpChain = Promise.resolve(); // serialized LED I/O; tail never rejected
+let ledPreviewQueued = false;       // a preview op is queued but not yet started
+let ledFlushQueued = false;         // a PUT+preview flush op is queued but not yet started
+let ledFlushPromise = Promise.resolve(); // the queued flush, for coalesced awaiters (Save)
+
+function ledEnqueue(op) {
+    const p = ledOpChain.then(op);
+    ledOpChain = p.catch(() => {}); // keep the chain alive whatever op did
+    return p;
+}
+
+// A preview colour is on the strip, or a queued op is about to put one there —
+// the exit seams must clear in either case or a late op would latch the strip.
+const ledPreviewPending = () => ledPreviewActive || ledPreviewQueued || ledFlushQueued;
+
+// POST a live preview of what the user is looking at (edited zones show the
+// bank being edited, all other zones the bank the machine is rendering).
+// Coalesced: at most one op waits in the chain, and it reads the freshest
+// palette/target state only when it actually runs.
+function ledPushPreview() {
+    if (ledPreviewQueued) return;
+    ledPreviewQueued = true;
+    ledEnqueue(async () => {
+        ledPreviewQueued = false;
+        if (!ledState) return;
+        const { front, back } = ledPreviewComposite(
+            ledState, ledZoneKeys(ledSelectedZone), ledSelectedState, ledMachinePaletteState());
+        try { await previewLedStrip(front, back); ledPreviewActive = true; }
+        catch (e) { /* preview is a nicety — non-fatal */ }
+    });
+}
+
+function ledSchedulePut() {
+    if (ledPutTimer) clearTimeout(ledPutTimer);
+    ledPutTimer = setTimeout(() => {
+        ledPutTimer = null;
+        // The user may leave the page inside the debounce window; a late write
+        // would land after the exit seam's clear and latch a preview colour.
+        if (activeSettingsCategory !== 'ledstrip') return;
+        if (ledSelectedState === ledMachinePaletteState()) {
+            ledFlushPut(); // same-state: the PUT itself repaints the strip correctly
+        } else {
+            ledPushPreview(); // cross-state: preview only — no PUT between moves
+        }
+    }, 120);
+}
+
+// Commit an edit gesture (wheel release, preset tap, power toggle).
+// Same-state: PUT now — the FW re-apply repaints the colour just edited.
+// Cross-state: NO PUT (it would flash the awake palette over the preview) --
+// mark the palette dirty and land the final position as one more
+// coalesced preview write; the preview-end seams flush the PUT later.
+function ledCommitEdit() {
+    if (ledPutTimer) { clearTimeout(ledPutTimer); ledPutTimer = null; }
+    // Same late-write guard as ledSchedulePut: with multi-touch, input:end can
+    // fire AFTER an exit seam (one finger navigates while another still holds
+    // the wheel) — a late commit would re-post a preview after that seam's
+    // clear and latch it on the strip until the next navigation event.
+    if (activeSettingsCategory !== 'ledstrip') return;
+    if (ledSelectedState === ledMachinePaletteState()) {
+        ledFlushPut();
+    } else {
+        ledPaletteDirty = true;
+        ledPushPreview();
+    }
+}
+
+// PUT the stored palette, then immediately re-assert the preview in the same
+// chain link (the FW re-applies the machine's wake-state bank on every palette
+// write, so an unchased PUT would knock a cross-state preview off the strip).
+// Returns a promise that resolves once both writes have landed (Save awaits it).
+function ledFlushPut() {
+    if (ledPutTimer) { clearTimeout(ledPutTimer); ledPutTimer = null; }
+    if (!ledState) return Promise.resolve();
+    if (ledFlushQueued) return ledFlushPromise; // the queued op reads fresh state when it runs
+    ledFlushQueued = true;
+    ledFlushPromise = ledEnqueue(async () => {
+        ledFlushQueued = false;
+        if (!ledState) return;
+        ledPaletteDirty = false; // this PUT carries the full current palette
+        // The front-switch LED can't be set independently — it mirrors the front strip.
+        ledState.frontSwitch = { awake: ledState.frontStrip.awake, sleeping: ledState.frontStrip.sleeping };
+        try { await setLedStrip(ledState); } catch (e) { /* non-fatal */ }
+        const { front, back } = ledPreviewComposite(
+            ledState, ledZoneKeys(ledSelectedZone), ledSelectedState, ledMachinePaletteState());
+        try { await previewLedStrip(front, back); ledPreviewActive = true; }
+        catch (e) { /* preview is a nicety — non-fatal */ }
+    });
+    return ledFlushPromise;
+}
+
+// PUT the stored palette with NO preview chase. Exit-seam use only: enqueue it
+// immediately BEFORE that seam's ledClearPreview(). A cross-state edit never
+// touched the bank the machine is rendering, so the FW re-apply this PUT
+// triggers paints exactly the palette the following clear writes to the live
+// registers — the strip makes one transition (preview → final), and with no
+// chased preview left in flight there is nothing to flash back from. Also the
+// pre-commit flush for Save, which needs the registers current before
+// commitLedStrip persists them.
+function ledPutPalette() {
+    if (ledPutTimer) { clearTimeout(ledPutTimer); ledPutTimer = null; }
+    if (!ledState) { ledPaletteDirty = false; return Promise.resolve(); }
+    return ledEnqueue(() => {
+        if (!ledState) return;
+        ledPaletteDirty = false;
+        // The front-switch LED can't be set independently — it mirrors the front strip.
+        ledState.frontSwitch = { awake: ledState.frontStrip.awake, sleeping: ledState.frontStrip.sleeping };
+        return setLedStrip(ledState).catch(() => { /* non-fatal */ });
+    });
+}
+
+// Flush a deferred cross-state PUT (no-op when nothing was deferred). Call at
+// every seam where the preview ends, immediately before that seam's
+// ledClearPreview() — the shared chain guarantees the flush lands first.
+function ledFlushDirty() {
+    if (ledPaletteDirty) ledPutPalette();
+}
+
+// Restore the strip to its real (wake-state) palette after previewing. Chained,
+// so it lands after any queued preview/PUT (whose chase would otherwise win),
+// and it re-drops the active flag the moment it runs. Safe to call anytime.
+function ledClearPreview() {
+    if (!ledPreviewPending()) return;
+    ledPreviewActive = false;
+    ledEnqueue(() => { ledPreviewActive = false; return clearLedStripPreview().catch(() => {}); });
+}
+
+// Browser/OS back navigation exits settings through the router's popstate
+// handler, not the Cancel/Save buttons — without this seam a cross-state
+// preview stays latched on the strip and the deferred palette PUT is
+// postponed until the next settings visit (lost entirely on an app reload).
+// Flush → clear, exactly like the Cancel/Save seams; both calls are no-ops
+// when nothing is pending, so firing on every popstate is safe. The settings
+// DOM is being torn down, so no category is active any more — dropping
+// activeSettingsCategory also disarms the late-write guards (ledSchedulePut,
+// ledCommitEdit) and lets the cup-warmer poll self-stop on its next tick.
+// Module-level: registered once, not per initializeSettings call.
+window.addEventListener('popstate', () => {
+    ledFlushDirty();
+    ledClearPreview();
+    activeSettingsCategory = null;
+});
+
+// Switching the edit target (zone or state bank) ends the current preview —
+// the strip returns to the machine's real palette until the user picks again.
+// A deferred cross-state PUT flushes first (flush → clear, one transition).
+window.ledSelectZone = function(zone) {
+    if (ledSelectedZone !== zone) { ledFlushDirty(); ledClearPreview(); }
+    ledSelectedZone = zone;
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+};
+window.ledSelectState = function(state) {
+    if (ledSelectedState !== state) { ledFlushDirty(); ledClearPreview(); }
+    ledSelectedState = state;
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+};
+window.ledSelectCell = function(zoneKey, stateKey) {
+    const zone = zoneKey === 'frontStrip' ? 'front' : zoneKey === 'backStrip' ? 'rear' : 'switch';
+    if (ledSelectedZone !== zone || ledSelectedState !== stateKey) { ledFlushDirty(); ledClearPreview(); }
+    ledSelectedZone = zone;
+    ledSelectedState = stateKey;
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+};
+window.ledApplyPreset = function(hex8) {
+    if (!ledState) return;
+    const c16 = ledRgbToColor16(ledHexToRgb(hex8));
+    ledZoneKeys(ledSelectedZone).forEach((k) => {
+        if (!ledState[k]) return;
+        const cur = ledState[k][ledSelectedState];
+        if (c16 === '000000000000' && cur && cur !== '000000000000') ledLastLit[k + ':' + ledSelectedState] = cur;
+        ledState[k][ledSelectedState] = c16;
+    });
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+    ledCommitEdit();
+};
+// Power toggle (Hue-style): Off = black (0,0,0), remembers the last lit colour;
+// On = restore that colour (or a warm-white default). Note the value slider CAN
+// reach black on its own — power is derived from the colour (never stored), so
+// a slider dragged to zero reads as Off on the next full render.
+window.ledSetPower = function(on) {
+    if (!ledState) return;
+    ledZoneKeys(ledSelectedZone).forEach((k) => {
+        if (!ledState[k]) return;
+        const key = k + ':' + ledSelectedState;
+        const cur = ledState[k][ledSelectedState];
+        if (!on) {
+            if (cur && cur !== '000000000000') ledLastLit[key] = cur;
+            ledState[k][ledSelectedState] = '000000000000';
+        } else {
+            ledState[k][ledSelectedState] = ledLastLit[key] || LED_DEFAULT_ON;
+        }
+    });
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+    ledCommitEdit();
+};
+window.ledSave = async function() {
+    // Chaseless PUT, then commit, then clear — the PUT's FW re-apply and the
+    // clear paint the same (machine-state) palette: one strip transition.
+    try { await ledPutPalette(); await commitLedStrip(); ledClearPreview(); ledCommitted = JSON.stringify(ledState); ui.showToast(getTranslation('Lighting saved'), 2000, 'success'); }
+    catch (e) { ui.showToast(getTranslation('Failed to save lighting'), 3000, 'error'); }
+};
+window.ledReset = async function() {
+    try {
+        const data = await resetLedStrip();
+        ledState = ledNormalize(data);
+        ledCommitted = JSON.stringify(ledState);
+        ledPaletteDirty = false; // deferred edits are discarded with the rest
+        await ledEnqueue(() => setLedStrip(ledState)); // push reloaded NVM values back to the live registers (the seam flush, pre-clear)
+        ledClearPreview();
+        if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+        ui.showToast(getTranslation('Lighting reset'), 2000, 'success');
+    } catch (e) { ui.showToast(getTranslation('Failed to reset lighting'), 3000, 'error'); }
+};
+
 // Render Hot Water settings
 export function renderHotWaterSettings() {
     if (!settingsCache.de1 && !settingsCache.workflow) {
@@ -4485,6 +4938,7 @@ function getCategoryTitle(category) {
         case 'de1': return 'DE1 Settings';
         case 'fanthreshold': return 'Fan Threshold Settings';
         case 'usbchargermode': return 'USB Charger Settings';
+        case 'ledstrip': return 'Lighting';
         case 'machineinfo': return 'Machine Info';
         case 'de1advanced': return 'Machine Advanced Settings';
         default: return 'Settings';
@@ -4511,6 +4965,11 @@ export async function initializeSettings() {
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
             resetPendingChanges();
+            // Exiting settings straight from the Lighting page must not leave a
+            // preview colour latched on the strip — and a deferred cross-state
+            // palette PUT flushes first (flush → clear, one transition).
+            ledFlushDirty();
+            ledClearPreview();
             loadPage('index.html');
         });
     }
@@ -4530,6 +4989,11 @@ export async function initializeSettings() {
                 return;
             }
             ui.showToast('decent.app settings updated', 3000, 'success');
+            // Exiting settings straight from the Lighting page must not leave a
+            // preview colour latched on the strip — and a deferred cross-state
+            // palette PUT flushes first (flush → clear, one transition).
+            ledFlushDirty();
+            ledClearPreview();
             loadPage('index.html');
         });
     }
@@ -5242,6 +5706,9 @@ export async function initializeSettings() {
     window.updateHotWaterSetting = updateHotWaterSetting;
     window.flashPlusMinusButton = ui.flashPlusMinusButton;
     window.retryLoadSettings = () => {
+        // One failed GET /ledStrip must not brick the Lighting page for the
+        // module's lifetime — clear the error so the re-render refetches.
+        ledError = false;
         preloadSettings().then(() => {
             if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
         });

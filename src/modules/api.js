@@ -1059,6 +1059,56 @@ export async function getMachineInfo() {
     return response.json();
 }
 
+// ── Bengle: LED strip ───────────────────────────────────────────────────────
+// State = { frontStrip, backStrip, frontSwitch }, each { awake, sleeping } as a
+// 12-char hex 'RRRRGGGGBBBB'. PUT pushes live (no NVM); commit persists to NVM;
+// reset reloads NVM and returns the refreshed state. 404 on a non-Bengle.
+export async function getLedStrip() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip`);
+    if (!response.ok) throw new Error(`Failed to get LED strip (status ${response.status})`);
+    return response.json();
+}
+
+export async function setLedStrip(state) {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+    });
+    if (!response.ok) throw new Error(`Failed to set LED strip (status ${response.status})`);
+    return true;
+}
+
+export async function commitLedStrip() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/commit`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Failed to commit LED strip (status ${response.status})`);
+    return true;
+}
+
+export async function resetLedStrip() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/reset`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Failed to reset LED strip (status ${response.status})`);
+    return response.json();
+}
+
+// Live preview: show `front`/`back` (12-char hex) on the strip now, regardless
+// of awake/sleep, without changing the stored palette. clear -> restore awake.
+export async function previewLedStrip(front, back) {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ front, back }),
+    });
+    if (!response.ok) throw new Error(`Failed to preview LED (status ${response.status})`);
+    return true;
+}
+
+export async function clearLedStripPreview() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/preview/clear`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Failed to clear LED preview (status ${response.status})`);
+    return true;
+}
+
 export async function getAppInfo() {
     const response = await fetch(`${API_BASE_URL}/info`);
     if (!response.ok) {
