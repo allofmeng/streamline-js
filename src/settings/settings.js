@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -7,7 +7,7 @@ import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
-import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from '../modules/cup-warmer.js';
+import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
 import { clampCalWeight, calActionState, CAL_WEIGHT_DEFAULT_G, CAL_WEIGHT_MIN_G, CAL_WEIGHT_MAX_G } from '../modules/loadcell-cal.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
@@ -2854,6 +2854,20 @@ export function renderSteamSettings() {
 let cupWarmerPollTimer = null;      // interval handle; non-null only while this page owns the poll
 const CUP_WARMER_POLL_MS = 5000;    // revalidate cadence while the page is open
 
+// Wake-schedule list, for the "pre-warm will do nothing" warning. The cup-warmer
+// page has no other reason to know about schedules, so it fetches the list on
+// entry and caches it here.
+//   null = UNKNOWN (not fetched yet, or the fetch failed) — we do NOT warn
+//   []   = genuinely no wake windows — we DO warn
+// Conflating those two is how a UI ends up crying wolf at a user whose schedule
+// simply hasn't loaded.
+let cupWarmerSchedules = null;
+// Pre-warm shape + warnings as last RENDERED, so a poll tick can tell a repaint
+// that is needed (a block appeared/disappeared) from one that would merely
+// clobber a stepper the user is mid-edit in.
+let cupWarmerRenderedSig = null;
+let cupWarmerRenderedWarnings = null;
+
 // One store subscription paints the open page: a missing enable-toggle
 // (loading/error placeholder on screen) or an on/off flip (header toggle,
 // reconnect invalidation, machine-side change) re-renders the section; a
@@ -2866,8 +2880,39 @@ onCupWarmerStateChange((state) => {
         updateSettingsContentArea('cupwarmer');
         return;
     }
+    // Same flip-vs-tick split for the pre-warm: a change of SHAPE (support
+    // appearing, the toggle flipping, the firmware starting or stopping a
+    // scheduled pre-warm) adds or removes whole blocks and must repaint. The
+    // lead value is deliberately not in the signature — a tick must never
+    // rewrite an input under the user's fingers.
+    if (prewarmShapeSignature(resolvePrewarm(state)) !== cupWarmerRenderedSig) {
+        updateSettingsContentArea('cupwarmer');
+        return;
+    }
     patchCupWarmerCurrentTemp(state?.currentTemperature);
 });
+
+// Refresh the wake-schedule list for the empty-schedule warning. Repaints only
+// when the warning set actually changed, so the fetch landing cannot clobber a
+// stepper the user is already editing.
+async function refreshCupWarmerSchedules() {
+    let schedules = null;
+    try {
+        const list = await getPresenceSchedules();
+        schedules = Array.isArray(list) ? list : null;
+    } catch (e) {
+        schedules = null; // unknown, not empty — stay quiet rather than warn wrongly
+    }
+    cupWarmerSchedules = schedules;
+    if (activeSettingsCategory !== 'cupwarmer') return;
+    const state = getCupWarmerState();
+    const warnings = prewarmWarnings({
+        prewarm: resolvePrewarm(state),
+        temperature: state?.temperature,
+        schedules: cupWarmerSchedules,
+    }).join(',');
+    if (warnings !== cupWarmerRenderedWarnings) updateSettingsContentArea('cupwarmer');
+}
 
 // Patch just the current-temperature line (bold reading vs dimmed "No
 // reading"), leaving the rest of the rendered page — and any focused input —
@@ -2915,6 +2960,9 @@ function startCupWarmerPoll() {
         revalidateCupWarmer();
     }, CUP_WARMER_POLL_MS);
     revalidateCupWarmer(); // stale-while-revalidate: refresh immediately on entry
+    // Schedules can be edited on the Presence page between visits, so re-fetch
+    // on entry rather than caching for the session. Once per entry, not per tick.
+    refreshCupWarmerSchedules();
 }
 
 function stopCupWarmerPoll() {
@@ -2934,6 +2982,21 @@ export function renderCupWarmerSettings() {
     // desired target. Either way the display stays within the 30–80 UI range.
     let target = enabled ? machineTemp : readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
     if (!(target >= 30 && target <= 80)) target = 70;
+    // Pre-warm is seeded from the MACHINE, never from localStorage: the firmware
+    // owns the schedule-driven pre-warm and persists these two settings in flash,
+    // so a local mirror could only ever disagree with it. `supported === false`
+    // means the firmware has no such registers (the bench build 95) — the
+    // controls render disabled and say so rather than faking a state.
+    const prewarm = resolvePrewarm(cupWarmer);
+    const prewarmWarns = prewarmWarnings({
+        prewarm,
+        temperature: cupWarmer.temperature,
+        schedules: cupWarmerSchedules,
+    });
+    // Remember what this paint is showing, so a 5 s poll tick can tell a needed
+    // repaint from one that would clobber a focused input.
+    cupWarmerRenderedSig = prewarmShapeSignature(prewarm);
+    cupWarmerRenderedWarnings = prewarmWarns.join(',');
     // Live mat temperature: shown when
     // the app reports a non-null `currentTemperature`; "No reading" when it is
     // null OR when the field is absent (older reaprime). Never fake data.
@@ -2941,9 +3004,11 @@ export function renderCupWarmerSettings() {
 
     const minusSvg = `<svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     const plusSvg = `<svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    const toggle = (id, checked, onchange) => `
-        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
-            <input type="checkbox" id="${id}" class="sr-only peer" ${checked ? 'checked' : ''} onchange="${onchange}">
+    // `disabled` renders the toggle inert AND visibly so — used when the firmware
+    // does not support pre-warm, where a live-looking switch would be a lie.
+    const toggle = (id, checked, onchange, disabled = false) => `
+        <label class="relative flex items-center flex-shrink-0 w-[100px] h-[50px] ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}">
+            <input type="checkbox" id="${id}" class="sr-only peer" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="${onchange}">
             <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
             <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
         </label>`;
@@ -2990,6 +3055,48 @@ export function renderCupWarmerSettings() {
                     : `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-normal opacity-60 leading-[1.2] whitespace-nowrap" data-i18n-key="No reading">No reading</p>`}
             </div>
 
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <!-- Pre-warm — the FIRMWARE owns the timing; we write two settings
+                 and read one status flag. Disabled + explained on firmware that
+                 does not have the registers: never a switch that pretends. -->
+            <div class="flex flex-col gap-[24px] w-full">
+                <div class="flex items-center justify-between gap-[24px] w-full">
+                    <div class="flex flex-col gap-[4px]">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]" data-i18n-key="Pre-warm before wake-up">Pre-warm before wake-up</p>
+                        <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Warm the cups automatically ahead of a scheduled wake time">Warm the cups automatically ahead of a scheduled wake time</p>
+                    </div>
+                    ${toggle('cupWarmerPrewarmToggle', prewarm.enabled, "window.toggleCupWarmerPrewarm(this.checked)", !prewarm.supported)}
+                </div>
+                ${!prewarm.supported ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-amber-600 text-[22px] w-full" data-i18n-key="This machine's firmware doesn't support pre-warm — update the firmware to use it.">This machine's firmware doesn't support pre-warm — update the firmware to use it.</p>
+                ` : ''}
+                ${prewarm.supported && prewarm.active ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-[#385a92] text-[22px] w-full" data-i18n-key="Pre-warming now for a scheduled wake.">Pre-warming now for a scheduled wake.</p>
+                ` : ''}
+                ${prewarm.supported && prewarm.enabled ? `
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Minutes before wake">Minutes before wake</p>
+                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${PREWARM_MIN_MINUTES} – ${PREWARM_MAX_MINUTES} min</span>
+                    </div>
+                    <div class="flex gap-[20px] h-[72px] items-center">
+                        <button aria-label="Decrease pre-warm minutes" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerPrewarmMinutes(-5);">${minusSvg}</button>
+                        <div class="flex items-center justify-center" style="width: 130px;">
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" id="cupWarmerPrewarmInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full" value="${prewarm.leadMinutes}" step="5" min="${PREWARM_MIN_MINUTES}" max="${PREWARM_MAX_MINUTES}" onchange="window.setCupWarmerPrewarmMinutes(parseFloat(this.value))">
+                            <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">min</span>
+                        </div>
+                        <button aria-label="Increase pre-warm minutes" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerPrewarmMinutes(5);">${plusSvg}</button>
+                    </div>
+                </div>
+                ` : ''}
+                ${prewarmWarns.includes('noSchedule') ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-amber-600 text-[22px] w-full" data-i18n-key="No wake schedule set — add one in Presence Detection.">No wake schedule set — add one in Presence Detection.</p>
+                ` : ''}
+                ${prewarmWarns.includes('noSetpoint') ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-amber-600 text-[22px] w-full" data-i18n-key="Cup warmer is off — pre-warm needs it on to heat the plate.">Cup warmer is off — pre-warm needs it on to heat the plate.</p>
+                ` : ''}
+            </div>
         </div>
     `;
 }
@@ -3031,6 +3138,67 @@ window.setCupWarmerTarget = async function(value) {
         try { await setCupWarmer(v); patchCupWarmerState({ temperature: v }); }
         catch (e) { ui.showToast(getTranslation('Failed to set cup warmer'), 3000, 'error'); }
     }
+};
+
+// Pre-warm writes go to the MACHINE (the firmware owns the timing and persists
+// the settings in flash) — there is no localStorage mirror to keep.
+//
+// `MatPreheatEnable` and `MatPreheatLeadMin` are one register PAIR written
+// together, so each write sends both; the untouched half is re-sent as the
+// machine currently holds it. The PUT echoes the pair back READ FROM THE
+// MACHINE, and on firmware without the registers the write landed in unmapped
+// space and did nothing — so the echo comes back null. Folding that echo into
+// the store is what turns the block into an honest "unavailable" instead of a
+// toggle that silently springs back.
+async function applyCupWarmerPrewarm(enabled, leadMinutes, okToast) {
+    try {
+        const applied = await setCupWarmerPrewarm(enabled, leadMinutes);
+        patchCupWarmerState({
+            prewarmEnabled: applied?.prewarmEnabled ?? null,
+            prewarmLeadMinutes: applied?.prewarmLeadMinutes ?? null,
+        });
+        if (applied?.prewarmEnabled == null) {
+            // A 200 is not proof the setting took: this firmware has no pre-warm.
+            ui.showToast(getTranslation("This machine's firmware doesn't support pre-warm"), 3000, 'error');
+            return false;
+        }
+        ui.showToast(okToast, 2000, 'success');
+        return true;
+    } catch (e) {
+        ui.showToast(getTranslation('Failed to set pre-warm'), 3000, 'error');
+        return false;
+    }
+}
+
+window.toggleCupWarmerPrewarm = async function(on) {
+    const prewarm = resolvePrewarm(getCupWarmerState());
+    await applyCupWarmerPrewarm(
+        on,
+        prewarm.leadMinutes,
+        getTranslation(on ? 'Pre-warm on' : 'Pre-warm off'),
+    );
+    // Re-check the schedule: switching pre-warm ON with no wake window silently
+    // does nothing, and that warning is the only thing that would tell the user.
+    if (on) refreshCupWarmerSchedules();
+    if (activeSettingsCategory === 'cupwarmer') updateSettingsContentArea('cupwarmer');
+};
+
+window.adjustCupWarmerPrewarmMinutes = function(change) {
+    const input = document.getElementById('cupWarmerPrewarmInput');
+    if (input) {
+        let v = parseInt(input.value, 10) + change;
+        v = Math.max(PREWARM_MIN_MINUTES, Math.min(PREWARM_MAX_MINUTES, v));
+        input.value = v;
+        input.dispatchEvent(new Event('change'));
+    }
+};
+
+window.setCupWarmerPrewarmMinutes = async function(value) {
+    const v = clampPrewarmMinutes(value);
+    const prewarm = resolvePrewarm(getCupWarmerState());
+    // No re-render on success: the store patch notifies, and the lead is not in
+    // the shape signature, so a focused stepper survives its own edit.
+    await applyCupWarmerPrewarm(prewarm.enabled, v, getTranslation('Pre-warm lead updated'));
 };
 
 // ── Lighting / LED strip (Bengle) ────────────────────────────────────────────

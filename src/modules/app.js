@@ -2,7 +2,7 @@ import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayMode
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
-import { initI18n, getTranslation, fitTelemetry } from './i18n.js';
+import { initI18n, getTranslation, fitTelemetry, fitTextToWidth } from './i18n.js';
 import * as history from './history.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
@@ -12,7 +12,7 @@ import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
 import { setMachineModel, isBengleMachine } from './machine.js';
 import { resolveMilkProbePresence } from './steam-mode.js';
-import { isCupWarmerOn, readCupWarmerTarget, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
+import { isCupWarmerOn, readCupWarmerTarget, resolvePrewarm, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
@@ -1061,12 +1061,60 @@ async function initCupWarmerToggle() {
         btn.dataset.wired = '1';
         btn.addEventListener('click', toggleCupWarmerFromHeader);
     }
+    startCupWarmerHeaderPoll();
+}
+
+// The whole point of a scheduled pre-warm is that the FIRMWARE starts the mat on
+// its own — typically at 06:30, with the tablet sitting on the main page and
+// nobody touching it. Nothing else on that page ever refetches the cup warmer
+// (the ~5 s poll belongs to the Settings page), so without this the button would
+// only ever learn about a pre-warm on a reconnect: the "Pre-warming" label would
+// essentially never appear in the one scenario it exists for.
+//
+// A minute is the right cadence — the firmware's lead time is minute-granular —
+// and it costs one GET/min. On firmware without the registers the app latches the
+// failed register read per connection, so this does not re-enter a read-timeout
+// ladder every tick. The revalidate folds into the SHARED store, so when the
+// Settings page is open its faster poll simply supersedes this one.
+let cupWarmerHeaderPollTimer = null;
+const CUP_WARMER_HEADER_POLL_MS = 60_000;
+function startCupWarmerHeaderPoll() {
+    if (cupWarmerHeaderPollTimer !== null) return; // idempotent across reconnects
+    cupWarmerHeaderPollTimer = setInterval(async () => {
+        try {
+            const data = await api.getCupWarmer();
+            if (data) setCupWarmerState(data);
+        } catch (e) {
+            // Transient/disconnected: keep the last snapshot rather than
+            // inventing an "off". A reconnect re-seeds it via initCupWarmerToggle.
+        }
+    }, CUP_WARMER_HEADER_POLL_MS);
 }
 onCupWarmerStateChange(() => updateCupWarmerButton());
 function updateCupWarmerButton() {
     const btn = document.getElementById('cupwarmer-toggle-btn');
     if (!btn) return;
-    const on = isCupWarmerOn(getCupWarmerState()?.temperature);
+    const state = getCupWarmerState();
+    const on = isCupWarmerOn(state?.temperature);
+    // A scheduled pre-warm runs the mat BY ITSELF — at 06:30, with the machine
+    // still asleep and the boilers cold. The button would just light up with no
+    // explanation, which reads as a bug. MatPreheatActive is the firmware saying
+    // "that was me", so we say so on the button. It is null on firmware without
+    // the register, and a null is never fabricated into a `true` — old firmware
+    // simply keeps the plain "Warmer" label.
+    const prewarming = resolvePrewarm(state).active;
+    const labelKey = prewarming ? 'Pre-warming' : 'Warmer';
+    if (btn.dataset.i18nKey !== labelKey) {
+        // Swap the i18n KEY too, not just the text: translatePage() rewrites
+        // textContent from the key on every language change, and would otherwise
+        // silently revert the label (the #sleep-button precedent in ui.js).
+        btn.setAttribute('data-i18n-key', labelKey);
+        btn.textContent = getTranslation(labelKey);
+        fitTextToWidth(btn); // "Pre-warming" is much longer than "Warmer" in a fixed box
+    }
+    btn.setAttribute('aria-label', getTranslation(
+        prewarming ? 'Cup warmer pre-warming for a scheduled wake' : 'Toggle Cup Warmer',
+    ));
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     btn.style.backgroundColor = on ? 'var(--mimoja-blue)' : '';
     btn.style.color = on ? '#ffffff' : '';

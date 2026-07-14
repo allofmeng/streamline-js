@@ -1101,13 +1101,18 @@ export async function getMachineInfo() {
 }
 
 // ── Bengle: cup warmer ──────────────────────────────────────────────────────
-// GET returns { temperature, currentTemperature? }. `temperature` is the
-// SETPOINT in °C (0 = off) — the field name reads like a measurement but it is
-// a MatSetPoint read-back. `currentTemperature` is the live mat temperature in
-// °C, null when the firmware has no valid reading, and ABSENT entirely on
-// older reaprime builds. PUT accepts { temperature } (0–80). 404 on a
-// non-Bengle. There is no separate enable field (firmware CupWarmerMode is not
-// exposed), so temperature 0 is the "off" signal.
+// GET returns { temperature, currentTemperature?, prewarmEnabled?,
+// prewarmLeadMinutes?, prewarmActive? }. `temperature` is the SETPOINT in °C
+// (0 = off) — the field name reads like a measurement but it is a MatSetPoint
+// read-back. `currentTemperature` is the live mat temperature in °C, null when
+// the firmware has no valid reading, and ABSENT entirely on older reaprime
+// builds. PUT accepts { temperature } (0–80). 404 on a non-Bengle. There is no
+// separate enable field (firmware CupWarmerMode is not exposed), so temperature
+// 0 is the "off" signal.
+//
+// The three `prewarm*` fields are the FIRMWARE-owned scheduled pre-warm; all
+// three are null on firmware without the registers ("unavailable" — see
+// cup-warmer.js). `prewarmActive` is read-only status and is ignored in a PUT.
 export async function getCupWarmer() {
     const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`);
     if (!response.ok) throw new Error(`Failed to get cup warmer (status ${response.status})`);
@@ -1122,6 +1127,30 @@ export async function setCupWarmer(temperature) {
     });
     if (!response.ok) throw new Error(`Failed to set cup warmer (status ${response.status})`);
     return true;
+}
+
+/**
+ * Write the scheduled pre-warm pair (MatPreheatEnable + MatPreheatLeadMin).
+ * They are ONE firmware register pair and the API writes them together, so both
+ * are always sent — passing only one would leave the other at whatever the
+ * machine happens to hold.
+ *
+ * `leadMinutes` must be 0–120 (the caller clamps; out of range is a 400).
+ *
+ * Returns the machine's ECHO — { prewarmEnabled, prewarmLeadMinutes } read back
+ * AFTER the write — because a write to firmware that lacks these registers lands
+ * in unmapped space and is silently inert. Both come back `null` there, which is
+ * how the caller learns the write did nothing. Never treat a 200 alone as proof
+ * the setting took.
+ */
+export async function setCupWarmerPrewarm(enabled, leadMinutes) {
+    const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prewarmEnabled: enabled, prewarmLeadMinutes: leadMinutes }),
+    });
+    if (!response.ok) throw new Error(`Failed to set cup warmer pre-warm (status ${response.status})`);
+    return response.json();
 }
 
 // ── Bengle: LED strip ───────────────────────────────────────────────────────
