@@ -88,7 +88,7 @@ async function displayShot(index) {
         } else if (index === shots.length - 1 && shots.length >= totalAvailable) {
             historyLabelEl.textContent = getTranslation('OLDEST');
         } else {
-            historyLabelEl.textContent = getTranslation('SHOT HISTORY');
+            historyLabelEl.textContent = getTranslation('HISTORY');
         }
     }
 
@@ -225,9 +225,12 @@ function setupHistoryLongPress() {
     const panel = document.getElementById('shot-history-panel');
     if (!panel) return;
 
+    // Stop BOTH press and release from reaching the panel. Release matters on
+    // touch: the panel's press-and-hold endPress preventDefaults touchend,
+    // which suppresses the button's synthetic click — arrows dead on tablets.
     ['history-prev-btn', 'history-next-btn'].forEach((id) => {
         const btn = document.getElementById(id);
-        ['mousedown', 'touchstart', 'pointerdown'].forEach((ev) =>
+        ['mousedown', 'touchstart', 'pointerdown', 'mouseup', 'touchend', 'pointerup'].forEach((ev) =>
             btn?.addEventListener(ev, (e) => e.stopPropagation()));
     });
 
@@ -292,7 +295,11 @@ export async function refreshToNewestShot(knownNewestId, tries = 6, intervalMs =
     for (let i = 0; i < tries; i++) {
         await loadShotHistory();
         if (shots.length > 0 && shots[0].id !== knownNewestId) {
-            displayShot(0);
+            await displayShot(0);
+            // The shot that just landed IS the current shot — keep the label the
+            // live chart used instead of flipping to NEWEST.
+            const labelEl = document.getElementById('shot-history-label');
+            if (labelEl) labelEl.textContent = getTranslation('CURRENT');
             return;
         }
         await new Promise(r => setTimeout(r, intervalMs));

@@ -473,14 +473,20 @@ function dtickForTime(time) {
     return 30;
 }
 
-// The x-range grows in chunks so the steady-state flush is ONE Plotly draw
+// The x-range grows on demand so the steady-state flush is ONE Plotly draw
 // (extendTraces). Plotly.relayout is a second full redraw of the whole SVG —
 // on slow devices (webview tablets) paying it every tick for a ~100ms range
-// nudge is what makes the live chart lag. Relayout now fires only when the
-// range crosses a chunk boundary, tick density changes, or labels move.
-const RANGE_CHUNK_S = 5;
+// nudge is what makes the live chart lag. The range holds until the line end
+// (plus its label room) reaches it, then extends by a small headroom —
+// max(1s, 10%) — so the trace always fills most of the axis.
+const RANGE_HEADROOM_MIN_S = 1;
 let appliedRangeMax = null;
 let appliedDtick = null;
+
+function computeRangeMax(required) {
+    if (appliedRangeMax !== null && required <= appliedRangeMax) return appliedRangeMax;
+    return Math.ceil(Math.max(required + RANGE_HEADROOM_MIN_S, required * 1.1));
+}
 
 function flushChart() {
     rafHandle = 0;
@@ -489,7 +495,7 @@ function flushChart() {
 
     const theme = localStorage.getItem('theme') || 'light';
     const dtickValue = dtickForTime(pendingTime);
-    const rangeMax = Math.ceil(rangeMaxForLabels(pendingTime) / RANGE_CHUNK_S) * RANGE_CHUNK_S;
+    const rangeMax = computeRangeMax(rangeMaxForLabels(pendingTime));
 
     // A step marker changed shapes → full react (also redraws all buffered
     // points, since they're already in chartData). Then pin the x-range.
