@@ -22,6 +22,10 @@ import { logger } from './logger.js';
 const AF_KEY = 'autoFavourites';
 const RECIPES_KEY = 'recipes';
 const MODE_KEY = 'streamline.dyeStripMode';
+// Master on/off for the whole DYE2 header UI (set in Extensions settings).
+// DEFAULT OFF: when this is not 'true' the header is byte-identical to stock
+// Streamline (profile favourites only, no toggle / DYE button / strip).
+const ENABLED_KEY = 'streamline.dye2Enabled';
 const PLUGIN_BASE = `${API_BASE_URL}/plugins/dye2.reaplugin`; // …/api/v1/plugins/dye2.reaplugin
 const MAX_FAV_CELLS = 4; // + a trailing "VIEW ALL AUTO FAV" cell
 
@@ -347,42 +351,86 @@ export function setStripMode(mode) {
         pill.classList.toggle('bg-[var(--box-color)]', !active);
     });
 
+    // Visibility via inline display (a Tailwind `flex` utility overrides [hidden]).
     const profileNav = document.getElementById('profile-fav-nav');
     const dyeStrip = document.getElementById('dye-strip');
     if (mode === 'P') {
-        if (profileNav) profileNav.hidden = false;
-        if (dyeStrip) dyeStrip.hidden = true;
+        if (profileNav) profileNav.style.display = '';
+        if (dyeStrip) dyeStrip.style.display = 'none';
     } else {
-        if (profileNav) profileNav.hidden = true;
-        if (dyeStrip) dyeStrip.hidden = false;
+        if (profileNav) profileNav.style.display = 'none';
+        if (dyeStrip) dyeStrip.style.display = '';
         renderStrip(mode);
     }
 }
 
-export async function initDyeStrip() {
-    // Wire the three toggle pills.
+// ─── Master enable/disable (gates the whole DYE2 header UI) ─────────────────────
+
+export function isDye2Enabled() {
+    try { return localStorage.getItem(ENABLED_KEY) === 'true'; } catch (e) { return false; }
+}
+
+let wired = false; // one-time listener wiring, so re-enabling doesn't double-bind
+
+function wireOnce() {
+    if (wired) return;
+    wired = true;
     ['P', 'F', 'R'].forEach(m => {
         const pill = document.getElementById(`dye-toggle-${m}`);
         if (pill) pill.addEventListener('click', () => setStripMode(m));
     });
-
-    // Wire the DYE button in the right control group.
     const dyeBtn = document.getElementById('dye-open-btn');
     if (dyeBtn) dyeBtn.addEventListener('click', () => openPluginOverlay('dashboard'));
-
-    // Load DYE2 data (never throws → [] on missing keys), then restore the saved mode.
-    try { await loadDyeStripData(); } catch (e) { logger.error('dyeStrip load failed', e); }
-
-    let saved = 'P';
-    try { saved = localStorage.getItem(MODE_KEY) || 'P'; } catch (e) { /* private mode */ }
-    setStripMode(saved);
 
     // No push channel for the KV store — re-poll on focus / tab visibility so edits
     // DYE2 made while Streamline was idle appear (KV_CONTRACT "Freshness").
     const repoll = () => {
-        if (document.hidden) return;
+        if (document.hidden || !isDye2Enabled()) return;
         loadDyeStripData().then(() => { if (currentMode !== 'P') renderStrip(currentMode); }).catch(() => {});
     };
     window.addEventListener('focus', repoll);
     document.addEventListener('visibilitychange', repoll);
+}
+
+// Reveal the DYE2 UI: shift the profile nav right to make room, show the toggle +
+// DYE button, wire listeners, load KV data, restore the saved P/F/R mode.
+export async function enableDye2Ui() {
+    const profileNav = document.getElementById('profile-fav-nav');
+    const toggle = document.getElementById('dye-strip-toggle');
+    const dyeBtn = document.getElementById('dye-open-btn');
+    if (profileNav) { profileNav.classList.remove('left-[30px]'); profileNav.classList.add('left-[80px]'); }
+    if (toggle) toggle.style.display = '';   // revert to class-defined flex
+    if (dyeBtn) dyeBtn.style.display = '';
+    wireOnce();
+    try { await loadDyeStripData(); } catch (e) { logger.error('dyeStrip load failed', e); }
+    let saved = 'P';
+    try { saved = localStorage.getItem(MODE_KEY) || 'P'; } catch (e) { /* private mode */ }
+    setStripMode(saved);
+}
+
+// Restore the stock header: hide the toggle + DYE button + strip and move the
+// profile nav back to its original position (byte-identical to stock Streamline).
+export function disableDye2Ui() {
+    const profileNav = document.getElementById('profile-fav-nav');
+    const toggle = document.getElementById('dye-strip-toggle');
+    const dyeBtn = document.getElementById('dye-open-btn');
+    const dyeStrip = document.getElementById('dye-strip');
+    if (toggle) toggle.style.display = 'none';
+    if (dyeBtn) dyeBtn.style.display = 'none';
+    if (dyeStrip) { dyeStrip.style.display = 'none'; dyeStrip.innerHTML = ''; }
+    if (profileNav) {
+        profileNav.style.display = '';
+        profileNav.classList.remove('left-[80px]');
+        profileNav.classList.add('left-[30px]');
+    }
+}
+
+export async function initDyeStrip() {
+    // Bridge for the Extensions-settings toggle to flip the header live (the header
+    // stays in the DOM behind the settings overlay); if it isn't present the flag
+    // still applies on the next dashboard load.
+    window.applyDye2Enabled = (on) => { on ? enableDye2Ui() : disableDye2Ui(); };
+
+    if (isDye2Enabled()) await enableDye2Ui();
+    else disableDye2Ui();
 }

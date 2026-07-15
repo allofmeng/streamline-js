@@ -1412,9 +1412,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isAndroidWebView = /Android/.test(ua) && /wv/.test(ua);
         const isIOSWebView = isIOS && !isStandalone && !/Safari\//.test(ua);
         const isDecentWebView = ua.includes('Decent');
-        const isWebView = isAndroidWebView || isIOSWebView || isDecentWebView;
+        // Canonical signal: the reaprime/Decent host injects window.__DECENT_HOST__
+        // into the tablet webview. It's the most reliable tablet/kiosk indicator
+        // (the UA-sniffing above misses hosts that don't brand their UA), and it's
+        // absent in a normal desktop browser — so this only ever hides the
+        // fullscreen control on-device, never for a desktop user. Ceiling: a host
+        // that neither brands its UA nor injects the global is still treated as a
+        // browser (acceptable — the button is harmless there).
+        const isDecentHost = !!window.__DECENT_HOST__;
+        const isWebView = isAndroidWebView || isIOSWebView || isDecentWebView || isDecentHost;
 
         if (isWebView) {
+            // Hide the header fullscreen toggle on tablet / in-app webview (the host
+            // already runs fullscreen; the OS, not the page, owns that chrome).
             const fsBtn = document.getElementById('fullscreen-toggle-btn');
             if (fsBtn) fsBtn.style.display = 'none';
         }
