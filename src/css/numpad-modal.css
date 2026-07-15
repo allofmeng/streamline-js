@@ -1,552 +1,179 @@
+/* Numpad -- a centred popup card, rendered as a top-layer <dialog> so it stacks
+   above any showModal() dialog and is not affected by the app's #scaled-content
+   transform (natural viewport pixels). Palette matches the original Figma dark
+   numpad: #101217 base, #1F2234 keys, #385A92 accent, #DA515E delete. */
+
 .numpad-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(6px);
-    display: none;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    opacity: 0;
-    transition: opacity 0.3s ease;
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: #E8E8E8;
+    max-width: 96vw;
+    max-height: 96vh;
+    overflow: visible;
 }
 
-.numpad-modal-overlay.active {
-    display: flex;
-    opacity: 1;
+.numpad-modal-overlay::backdrop {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
 }
 
 .numpad-modal-container {
-    width: 100%;
-    height: 100%;
-    background-color: white;
-    border-radius: 0;
-    padding: 24px;
-    padding-bottom: max(24px, env(safe-area-inset-bottom));
-    transform: translateY(100%);
-    transition: transform 0.3s ease;
-    
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    width: min(94vw, 460px);
     box-sizing: border-box;
+    background: #101217;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-.numpad-modal-overlay.active .numpad-modal-container {
-    transform: translateY(0);
-}
-
-.numpad-modal-scaled-inner {
-    width: 100%;
-    height: 100%;
-}
-
+/* header */
 .numpad-modal-header {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0;
-    flex-shrink: 0;
-    padding-bottom: 24px;
+    gap: 16px;
+    margin-bottom: 18px;
 }
-
-.numpad-modal-header-divider {
-    width: 100%;
-    height: 1px;
-    background-color: #121212;
-    flex-shrink: 0;
-    position: relative;
-    z-index: 1;
-}
-
 .numpad-modal-title {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 700;
-    font-size: 58.5px;
-    color: #121212;
-}
-
-.numpad-modal-close {
-    background: none;
-    border: none;
-    font-size: 28px;
-    color: #121212;
-    cursor: pointer;
-    padding: 4px;
-    line-height: 1;
-}
-
-.numpad-modal-content {
-    display: flex;
-    gap: 0;
-    flex: 1;
-    height: 100%;
-}
-
-.numpad-modal-left {
-    display: flex;
-    flex-direction: column;
     flex: 1;
     min-width: 0;
-    align-items: center;
-    padding-bottom: 350px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    line-height: 1.15;
+    color: #fff;
+    overflow: hidden;
+    /* Wraps to up to two lines. fitNumpadTitle() (numpad-modal.js) shrinks the
+       font ONLY if a line still overflows the available width -- keeping the text
+       as large as possible while staying clear of the Cancel/Confirm buttons. */
 }
-
-.numpad-modal-right {
+.numpad-modal-actions {
     display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-    padding-bottom: 350px;
-}
-
-.numpad-modal-divider {
-    width: 1px;
-    background-color: #121212;
+    gap: 8px;
     flex-shrink: 0;
-    position: relative;
-    z-index: 1;
-    margin-bottom: -24px;
+}
+.numpad-modal-cancel,
+.numpad-modal-confirm {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+}
+.numpad-modal-cancel {
+    background: transparent;
+    color: #c7ccdb;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.numpad-modal-confirm {
+    background: #385A92;
+    color: #fff;
 }
 
-.numpad-modal-input-section {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 24px;
-    justify-content: center;
-}
-
-.numpad-modal-input-label {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 400;
-    font-size: 30px;    
-    color: #666;
-    padding-top: 130px;
-}
-
+/* value display */
 .numpad-modal-input-box {
-    position: relative;
-    width: 440px;
-    height: 110px;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
+    height: 96px;
+    border: 2px solid #385A92;
+    border-radius: 16px;
+    background: #0c0e13;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
 }
-
-.numpad-modal-input-box * {
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    pointer-events: none;
+.numpad-modal-input-value {
+    font-size: 64px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
 }
-
-.numpad-modal-input-border {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border: 2.5px solid #1867d6;
-    border-radius: 14px;
-    box-sizing: border-box;
-}
-
 .numpad-modal-input-cursor {
     display: inline-block;
     width: 3px;
-    height: 0.75em;
-    background-color: #1867d6;
-    border-radius: 2px;
-    vertical-align: middle;
-    margin: 0 3px;
-    animation: blink 1s infinite;
+    height: 58px;
+    background: #385A92;
+    margin: 0 1px;
+    animation: numpad-blink 1s step-end infinite;
 }
-
-@keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
-}
-
-.numpad-modal-input-value {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+@keyframes numpad-blink { 50% { opacity: 0; } }
+.numpad-unit-text {
+    font-size: 30px;
     font-weight: 700;
-    font-size: 48px;
-    line-height: 1;
-    white-space: nowrap;
-    color: #121212;
-    display: flex;
-    align-items: center;
+    color: #8b90a3;
+    margin-left: 6px;
+}
+.numpad-modal-input-label {
+    text-align: center;
+    font-size: 15px;
+    color: #959595;
+    margin: 6px 0 16px;
 }
 
+/* previous values */
 .numpad-modal-previous-values {
     margin-bottom: 16px;
 }
-
-.numpad-previous-divider {
-    width: 100%;
-    height: 1px;
-    background-color: #121212;
-    margin-top: auto;
-    margin-bottom: 90px;
-    flex-shrink: 0;
-}
-
-.numpad-modal-previous-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 45px;
-}
-
 .numpad-modal-previous-title {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 400;
-    font-size: 30px;
-    color: #666;
-    text-align: center;
-    margin-bottom: 0;
-    transform: translateY(-30px);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #8b90a3;
+    margin-bottom: 8px;
 }
-
 .numpad-modal-previous-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 45px;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
 }
-
-.numpad-previous-row {
-    display: flex;
-    gap: 60px;
-    justify-content: center;
-}
-
 .numpad-modal-previous-btn {
-    min-width: 240px;
-    padding: 32px 80px;
-    border-radius: 60px;
-    background: transparent;
-    border: 1px solid #121212;
+    height: 46px;
+    background: #1F2234;
+    border: 1px solid #2b3048;
+    border-radius: 12px;
+    color: #c7ccdb;
+    font-size: 20px;
+    font-weight: 700;
     cursor: pointer;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 36px;
-    font-weight: 400;
-    color: #121212;
-    transition: background-color 0.2s;
 }
-
 .numpad-modal-previous-btn:active {
-    background-color: #f3f4f6;
+    background: #2b3048;
 }
 
+/* keypad */
 .numpad-modal-numpad {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 52px;
-    flex: 1;
-    align-content: end;
+    gap: 12px;
 }
-
 .numpad-modal-numpad-btn {
-    background-color: #c9c9c9;
+    height: 66px;
+    background: #1F2234;
     border: none;
-    border-radius: 200px;
-    padding: 37.5px 75px;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: 36px;
-    font-weight: 500;
-    color: #121212;
+    border-radius: 14px;
+    color: #fff;
+    font-size: 32px;
+    font-weight: 800;
     cursor: pointer;
-    transition: all 0.15s;
-    
     display: flex;
     align-items: center;
     justify-content: center;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
 }
-
-.numpad-modal-numpad-btn:active {
-    background-color: #d0d0d0;
-    transform: scale(0.96);
+.numpad-modal-numpad-btn:hover { background: #2b3048; }
+.numpad-modal-numpad-btn:active { background: #3c4671; }
+.numpad-modal-numpad-btn.numpad-decimal { font-size: 34px; }
+.numpad-modal-numpad-btn.numpad-delete .delete-icon-small {
+    width: 34px;
+    height: 26px;
 }
-
-.numpad-modal-numpad-btn.numpad-decimal {
-    font-weight: 700;
-}
-
-.numpad-modal-numpad-btn.numpad-delete {
-}
-
-.numpad-modal-numpad-btn.numpad-delete:active {
-}
-
-.numpad-modal-numpad-btn .delete-icon-small {
-    width: 48px;
-    height: 40px;
-}
-
-.numpad-modal-actions {
-    display: flex;
-    gap: 16px;
-    flex-shrink: 0;
-    align-items: center;
-}
-
-.numpad-modal-cancel {
-    width: 240px;
-    height: 82px;
-    padding: 26px 67.5px;
-    border-radius: 67.5px;
-    background: transparent;
-    border: 1.5px solid var(--mimoja-blue);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 700;
-    font-size: 24px;
-    color: var(--mimoja-blue);
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: background-color 0.2s;
-}
-
-.numpad-modal-cancel:active {
-    background-color: rgba(56, 90, 146, 0.08);
-}
-
-.numpad-modal-confirm {
-    width: 240px;
-    height: 82px;
-    padding: 26px 67.5px;
-    border-radius: 67.5px;
-    background-color: var(--mimoja-blue);
-    border: none;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 700;
-    font-size: 24px;
-    color: white;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: background-color 0.2s;
-}
-
-.numpad-modal-confirm:active {
-    background-color: #2d4a72;
-}
-
-/* Dark Theme Styles */
-[data-theme='dark'] .numpad-modal-overlay {
-    background-color: rgba(0, 0, 0, 0.75);
-}
-
-[data-theme='dark'] .numpad-modal-container {
-    background-color: #101217;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-[data-theme='dark'] .numpad-modal-title {
-    color: #ffffff;
-}
-
-[data-theme='dark'] .numpad-modal-close {
-    color: #ffffff;
-}
-
-[data-theme='dark'] .numpad-modal-divider,
-[data-theme='dark'] .numpad-modal-header-divider {
-    background-color: rgba(255, 255, 255, 0.12);
-}
-
-[data-theme='dark'] .numpad-modal-input-label {
-    color: var(--low-contrast-white, #959595);
-}
-
-[data-theme='dark'] .numpad-modal-input-border {
-    border-color: #385A92;
-}
-
-[data-theme='dark'] .numpad-modal-input-cursor {
-    background-color: #385A92;
-}
-
-[data-theme='dark'] .numpad-modal-input-value {
-    color: #ffffff;
-}
-
-[data-theme='dark'] .numpad-modal-previous-title {
-    color: var(--low-contrast-white, #959595);
-}
-
-[data-theme='dark'] .numpad-previous-divider {
-    background-color: rgba(255, 255, 255, 0.12);
-}
-
-[data-theme='dark'] .numpad-modal-previous-btn {
-    background-color: #1F2234;
-    border-color: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
-}
-
-[data-theme='dark'] .numpad-modal-previous-btn:active {
-    background-color: #2b3048;
-}
-
-[data-theme='dark'] .numpad-modal-numpad-btn {
-    background-color: #1F2234;
-    color: #ffffff;
-}
-
-[data-theme='dark'] .numpad-modal-numpad-btn:active {
-    background-color: #3c4671;
-}
-
-[data-theme='dark'] .numpad-modal-numpad-btn:hover {
-    background-color: #2b3048;
-}
-
-[data-theme='dark'] .numpad-modal-numpad-btn.numpad-delete {
-}
-
-[data-theme='dark'] .numpad-modal-numpad-btn.numpad-delete:active {
-}
-
-[data-theme='dark'] .numpad-modal-cancel {
-    background: transparent;
-    border-color: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
-}
-
-[data-theme='dark'] .numpad-modal-cancel:active {
-    background-color: #1F2234;
-}
-
-[data-theme='dark'] .numpad-modal-confirm {
-    background-color: #385A92;
-}
-
-[data-theme='dark'] .numpad-modal-confirm:active {
-    background-color: #2d4a72;
-}
-
-@media (max-width: 400px) {
-    .numpad-modal-numpad-btn {
-        padding: 14px;
-        font-size: 22px;
-        min-height: 52px;
-    }
-
-    .numpad-modal-input-value {
-        font-size: 28px;
-    }
-
-    .numpad-modal-input-box {
-        height: 72px;
-    }
-
-    .numpad-modal-content {
-        flex-direction: column;
-    }
-
-    .numpad-modal-divider {
-        display: none;
-    }
-
-    .numpad-modal-left,
-    .numpad-modal-right {
-        width: 100%;
-    }
-}
-
-@media (min-width: 400px) {
-    .numpad-modal-numpad-btn {
-        padding: 16px;
-        font-size: 26px;
-        min-height: 56px;
-    }
-}
-
-@media (min-width: 768px) and (max-width: 1200px) {
-    .numpad-modal-numpad {
-        gap: 32px;
-    }
-    
-    .numpad-modal-numpad-btn {
-        padding: 28px 56px;
-        font-size: 28px;
-    }
-    
-    .numpad-modal-input-label {
-        font-size: 24px;
-        padding-top: 80px;
-    }
-    
-    .numpad-modal-input-value {
-        font-size: 36px;
-    }
-    
-    .numpad-modal-input-box {
-        width: 450px;
-        height: 96px;
-    }
-}
-
-@media (min-width: 1201px) and (max-width: 1600px) {
-    .numpad-modal-numpad {
-        gap: 40px;
-    }
-    
-    .numpad-modal-numpad-btn {
-        padding: 32px 64px;
-        font-size: 32px;
-    }
-    
-    .numpad-modal-input-label {
-        font-size: 26px;
-        padding-top: 100px;
-    }
-    
-    .numpad-modal-input-value {
-        font-size: 42px;
-    }
-}
-
-@media (min-width: 768px) {
-    .numpad-modal-overlay {
-align-items: center;
-    }
-
-    .numpad-modal-container {
-        width: 100%;
-        max-width: 100%;
-        height: 100%;
-        border-radius: 0;
-        padding: 32px;
-    }
-
-    .numpad-modal-numpad-btn {
-        padding: 37.5px 75px;
-        font-size: 36px;
-    }
-
-    .numpad-modal-input-value {
-        font-size: 48px;
-    }
-
-    .numpad-modal-content {
-        gap: 32px;
-    }
+.numpad-modal-numpad-btn.numpad-delete .delete-icon-small path {
+    fill: #DA515E;
 }
