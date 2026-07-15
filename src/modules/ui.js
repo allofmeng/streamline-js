@@ -2239,6 +2239,10 @@ export function updateMilkTelemetry(present, tempC) {
     if (!container) return;
     const text = milkTelemetryText(present, tempC);
     container.style.display = text === null ? 'none' : '';
+    // On Bengle the live Milk reading replaces Mix in the telemetry row; when the
+    // probe reading drops out -- or on a DE1, which never shows Milk -- Mix returns.
+    const mixEl = document.getElementById('mix-info-container');
+    if (mixEl) mixEl.style.display = text === null ? '' : 'none';
     if (text !== null) {
         const el = document.getElementById('data-milk-temp');
         if (el) el.textContent = text;
