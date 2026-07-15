@@ -41,6 +41,7 @@ const SETTINGS_NUMPAD_CONFIGS = {
     // tablet like every other settings number, instead of the OS keyboard.
     cupWarmerTempInput:      { title: 'CUP WARMER TEMP',   unit: '°C',   min: 30,  max: 80,   fieldType: 'settings-cupwarmer-temp' },
     cupWarmerPrewarmInput:   { title: 'PRE-WARM LEAD',     unit: 'min',  min: PREWARM_MIN_MINUTES, max: PREWARM_MAX_MINUTES, fieldType: 'settings-cupwarmer-prewarm' },
+    steamMilkStopInput:      { title: 'STOP AT MILK TEMP', unit: '°C',   min: 30,  max: 85,   fieldType: 'settings-steam-milk-stop' },
 };
 
 let _settingsNumpadSelected = null;
