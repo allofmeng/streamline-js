@@ -736,6 +736,26 @@ export async function deleteKVValue(namespace, key) {
     if (!response.ok) throw new Error(`KV deleteValue failed: ${response.status}`);
 }
 
+// ─── DYE2 KV bridge (read-only) ──────────────────────────────────────────────
+// DYE2 (a separate flutter_js plugin) persists auto-favourites and recipes as a
+// single JSON array per key under this namespace. Streamline is a read-only
+// consumer — never write these keys (see dye2-plugin/KV_CONTRACT.md).
+export const DYE2_KV_NAMESPACE = 'dye2.reaplugin';
+
+// Read one DYE2 collection key as an array. A never-written key makes the bridge
+// return 200 with a non-array body (a known quirk), so coerce anything that
+// isn't an array — and any transport error — to [] so the header degrades to
+// "no DYE2 data" rather than throwing.
+export async function getDye2KvArray(key) {
+    try {
+        const val = await getKVValue(DYE2_KV_NAMESPACE, key);
+        return Array.isArray(val) ? val : [];
+    } catch (e) {
+        logger.info(`getDye2KvArray(${key}) → [] (${e.message})`);
+        return [];
+    }
+}
+
 // ─── Profile API ─────────────────────────────────────────────────────────────
 
 // Adapt an internal DE1 v2 profile to REA's stricter Profile model before any
