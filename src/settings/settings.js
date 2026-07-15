@@ -4270,19 +4270,19 @@ export function renderLoadCellCalibration() {
     } else if (calStep === 2) {
         body = `
             <div class="${CAL_CARD}" style="width:760px">
-                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the LEFT cell">Calibrate the LEFT cell</p>
+                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the RIGHT cell">Calibrate the RIGHT cell</p>
                 ${calWeightInputBlock()}
-                <p class="${CAL_BODY}" data-i18n-key="Place weight on the left leg load cell.">Place weight on the left leg load cell.</p>
-                ${calActionArea({ step: 2, runLabel: 'Calibrate LEFT', runOnclick: "window.calRunPoint('left')", nextStep: 3, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                <p class="${CAL_BODY}" data-i18n-key="Place weight on the right leg load cell.">Place weight on the right leg load cell.</p>
+                ${calActionArea({ step: 2, runLabel: 'Calibrate RIGHT', runOnclick: "window.calRunPoint('right')", nextStep: 3, busyLabel: 'Calibrating&hellip; (~15s)' })}
                 <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(1)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
             </div>`;
     } else if (calStep === 3) {
         body = `
             <div class="${CAL_CARD}" style="width:760px">
-                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the RIGHT cell">Calibrate the RIGHT cell</p>
+                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the LEFT cell">Calibrate the LEFT cell</p>
                 ${calWeightDisplayBlock()}
-                <p class="${CAL_BODY}" data-i18n-key="Place weight on the right leg load cell.">Place weight on the right leg load cell.</p>
-                ${calActionArea({ step: 3, runLabel: 'Calibrate RIGHT', runOnclick: "window.calRunPoint('right')", nextStep: 4, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                <p class="${CAL_BODY}" data-i18n-key="Place weight on the left leg load cell.">Place weight on the left leg load cell.</p>
+                ${calActionArea({ step: 3, runLabel: 'Calibrate LEFT', runOnclick: "window.calRunPoint('left')", nextStep: 4, busyLabel: 'Calibrating&hellip; (~15s)' })}
                 <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(2)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
             </div>`;
     } else {
