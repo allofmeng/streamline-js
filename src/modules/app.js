@@ -11,6 +11,7 @@ import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
+import { initTimePicker } from './time-picker-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
 
@@ -1258,6 +1259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ui.initScreensaver(); // Initialize screensaver functionality
         initScaling();
         initNumpadModal();
+        initTimePicker();
         initMobileValueInputs();
         logger.info('App DOMContentLoaded: UI initialized.');
 

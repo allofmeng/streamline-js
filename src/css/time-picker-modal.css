@@ -1,0 +1,189 @@
+/* Clock-face time picker (see src/modules/time-picker-modal.js).
+   Rendered as a native <dialog> in the top layer, so it is NOT affected by the
+   app's #scaled-content transform -- sizes are real viewport pixels. Palette is
+   matched to the numpad card: #101217 base, #1F2234 boxes, #385A92 accent. */
+
+.tpm-dialog {
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: #E8E8E8;
+    max-width: 96vw;
+    max-height: 96vh;
+    overflow: visible;
+}
+
+.tpm-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+}
+
+.tpm-card {
+    width: min(94vw, 360px);
+    box-sizing: border-box;
+    background: #101217;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Header: title on the left, Cancel/OK on the right -- same as the numpad card. */
+.tpm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+.tpm-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: #fff;
+}
+
+/* Display: the whole HH : MM + AM/PM group is centred as one unit. */
+.tpm-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.tpm-seg {
+    width: 88px;
+    height: 68px;
+    border: none;
+    border-radius: 12px;
+    background: #1F2234;
+    color: #E8E8E8;
+    font-size: 42px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.tpm-seg-active {
+    background: rgba(56, 90, 146, 0.22);
+    color: #fff;
+    box-shadow: inset 0 0 0 2px #5f8ad6;
+}
+
+.tpm-colon {
+    font-size: 38px;
+    font-weight: 700;
+    color: #8b90a3;
+}
+
+.tpm-ampm {
+    display: flex;
+    flex-direction: column;
+    height: 68px;
+    margin-left: 4px;
+    border: 1px solid #385A92;
+    border-radius: 11px;
+    overflow: hidden;
+}
+
+.tpm-ampm-btn {
+    flex: 1;
+    width: 54px;
+    border: none;
+    background: transparent;
+    color: #c7ccdb;
+    font-size: 15px;
+    font-weight: 700;
+    opacity: 0.65;
+    cursor: pointer;
+}
+
+.tpm-ampm-btn + .tpm-ampm-btn {
+    border-top: 1px solid #385A92;
+}
+
+.tpm-ampm-on {
+    background: #385A92;
+    color: #fff;
+    opacity: 1;
+}
+
+.tpm-clock {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0;
+}
+
+.tpm-svg {
+    width: 264px;
+    max-width: 78vw;
+    height: auto;
+}
+
+.tpm-face {
+    fill: rgba(120, 140, 180, 0.12);
+}
+
+.tpm-hand {
+    stroke: #5f8ad6;
+    stroke-width: 2.5;
+}
+
+.tpm-knob {
+    fill: #385A92;
+}
+
+.tpm-hub {
+    fill: #5f8ad6;
+}
+
+.tpm-num {
+    font-size: 17px;
+    font-weight: 700;
+    fill: #E8E8E8;
+    text-anchor: middle;
+    dominant-baseline: central;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tpm-num-sel {
+    fill: #fff;
+}
+
+.tpm-hit {
+    fill: transparent;
+    cursor: pointer;
+}
+
+.tpm-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.tpm-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+}
+
+.tpm-cancel {
+    background: transparent;
+    color: #c7ccdb;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.tpm-ok {
+    background: #385A92;
+    color: #fff;
+}
