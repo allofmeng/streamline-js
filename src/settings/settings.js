@@ -4841,6 +4841,21 @@ export function renderExtensionsSettings() {
 
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <!-- DYE2 master switch — gates the whole DYE2 dashboard header UI. Default OFF. -->
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="DYE2">DYE2</p>
+                            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Show DYE auto-favourites and recipes on the dashboard header.">
+                                Show DYE auto-favourites and recipes on the dashboard header.
+                            </p>
+                        </div>
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="dye2-enabled" class="sr-only peer">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Visualizer">Visualizer</p>
@@ -4898,8 +4913,28 @@ export function renderExtensionsSettings() {
 
     // After returning the template, set up the event listeners
     setTimeout(setupVisualizerEventListeners, 0);
+    setTimeout(setupDye2SettingsListeners, 0);
 
     return template;
+}
+
+// DYE2 master on/off. Persists streamline.dye2Enabled (default OFF). Flipping it
+// live-updates the dashboard header via the window.applyDye2Enabled bridge that
+// dyeStrip.js installs on the main page; if the header isn't mounted (e.g. deep in
+// settings on some flows) the flag still takes effect on the next dashboard load.
+function setupDye2SettingsListeners() {
+    const toggle = document.getElementById('dye2-enabled');
+    if (!toggle) return;
+    const KEY = 'streamline.dye2Enabled';
+    let enabled = false;
+    try { enabled = localStorage.getItem(KEY) === 'true'; } catch (e) { /* private mode */ }
+    toggle.checked = enabled;
+    toggle.addEventListener('change', function () {
+        const on = this.checked;
+        try { localStorage.setItem(KEY, on ? 'true' : 'false'); } catch (e) { /* private mode */ }
+        if (typeof window.applyDye2Enabled === 'function') window.applyDye2Enabled(on);
+        try { ui.showToast(`DYE2 ${on ? 'enabled' : 'disabled'}`, 1500, 'success'); } catch (e) { /* ui not ready */ }
+    });
 }
 
 // Function to set up event listeners for the Visualizer settings
