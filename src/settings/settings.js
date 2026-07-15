@@ -4312,6 +4312,7 @@ export function renderLoadCellCalibration() {
             <div class="content-stretch flex flex-col items-center relative w-full">
                 ${body}
             </div>
+            ${calStep < 4 ? `<button class="${CAL_SECONDARY_BTN}" onclick="window.calStartOver()" ${calBusy ? 'disabled' : ''} data-i18n-key="Start over">Start over</button>` : ''}
         </div>`;
 }
 
@@ -6469,6 +6470,21 @@ export async function initializeSettings() {
             logger.error('Load-cell cal abort failed:', error);
             ui.showToast(`Cancel failed: ${error.message}`, 4000, 'error');
         }
+    };
+
+    // Abort the cal and reset the wizard to a fresh Zero. Available on steps 1-3
+    // so a completed Zero, or a failed/stuck weight point, can always be
+    // restarted without leaving the page. The abort clears the firmware's
+    // partial latch, so the re-zero starts from a clean slate. Works whether or
+    // not a step is in flight (a not-busy abort is a harmless no-op firmware-side).
+    window.calStartOver = async function() {
+        try {
+            await calibrateScale('abort');
+        } catch (error) {
+            logger.error('Load-cell cal start-over abort failed:', error);
+        }
+        calResetWizard();
+        calRerender();
     };
 
     // Deliberately does not set calBusy — tare is an instant trigger, unlike
