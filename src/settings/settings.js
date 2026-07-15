@@ -37,6 +37,10 @@ const SETTINGS_NUMPAD_CONFIGS = {
     weightFlowMultiplierInput: { title: 'WEIGHT FLOW MULT',  unit: '',     min: 0,              fieldType: 'settings-weight-mult' },
     volumeFlowMultiplierInput: { title: 'VOLUME FLOW MULT',  unit: '',     min: 0,              fieldType: 'settings-volume-mult' },
     hotWaterFlowMultiplierInput: { title: 'HW FLOW MULT',    unit: 's',    min: 0,              fieldType: 'settings-hw-flow-mult' },
+    // Bengle cup-warmer fields -- register so they open the in-app numpad on the
+    // tablet like every other settings number, instead of the OS keyboard.
+    cupWarmerTempInput:      { title: 'CUP WARMER TEMP',   unit: '°C',   min: 30,  max: 80,   fieldType: 'settings-cupwarmer-temp' },
+    cupWarmerPrewarmInput:   { title: 'PRE-WARM LEAD',     unit: 'min',  min: PREWARM_MIN_MINUTES, max: PREWARM_MAX_MINUTES, fieldType: 'settings-cupwarmer-prewarm' },
 };
 
 let _settingsNumpadSelected = null;
@@ -2146,8 +2150,7 @@ async function loadPresenceSettingsAsync() {
                                value="${settings.sleepTimeoutMinutes ?? 30}"
                                min="1"
                                max="120"
-                               oninput="this.value = Math.max(1, Math.min(120, this.value))"
-                               onchange="handleSleepTimeoutChange(this.value)">
+                               onchange="this.value = Math.max(1, Math.min(120, this.value)); handleSleepTimeoutChange(this.value)">
                         <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-2" data-i18n-key="Minutes of inactivity before auto-sleep">
                             Minutes of inactivity before auto-sleep
                         </p>
@@ -2196,13 +2199,13 @@ async function loadPresenceSettingsAsync() {
                                     <div class="flex items-center gap-2">
                                         <input type="number" id="keep-awake-hours-input" class="input input-bordered w-20 text-[20px] bg-[var(--presence-input-bg)] text-[var(--presence-input-text)] border-[var(--presence-input-border)]"
                                                min="0" max="12" placeholder="0" value="0"
-                                               oninput="this.value = Math.max(0, Math.min(12, this.value)); if (this.value == 12) { document.getElementById('keep-awake-mins-input').value = 0; } if (this.value > 12) { ui.showToast('Maximum 12 hours', 3000, 'error'); }">
+                                               onchange="this.value = Math.max(0, Math.min(12, this.value)); if (this.value == 12) { document.getElementById('keep-awake-mins-input').value = 0; } if (this.value > 12) { ui.showToast('Maximum 12 hours', 3000, 'error'); }">
                                         <span class="text-[var(--presence-card-text)]">hr</span>
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <input type="number" id="keep-awake-mins-input" class="input input-bordered w-20 text-[20px] bg-[var(--presence-input-bg)] text-[var(--presence-input-text)] border-[var(--presence-input-border)]"
                                                min="0" max="59" placeholder="0" value="0"
-                                               oninput="this.value = Math.max(0, Math.min(59, this.value))">
+                                               onchange="this.value = Math.max(0, Math.min(59, this.value))">
                                         <span class="text-[var(--presence-card-text)]">min</span>
                                     </div>
                                 </div>
