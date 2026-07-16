@@ -390,6 +390,11 @@ function wireOnce() {
     };
     window.addEventListener('focus', repoll);
     document.addEventListener('visibilitychange', repoll);
+    // The DYE button is a same-frame top-level nav away to the DYE2 plugin (see
+    // openPluginOverlay); returning via the browser Back button restores this page
+    // from bfcache — a frozen pre-edit snapshot that fires `pageshow` (persisted),
+    // not focus/visibilitychange. Mirrors profile_selector.js's plugin-return guard.
+    window.addEventListener('pageshow', repoll);
 }
 
 // Reveal the DYE2 UI: shift the profile nav right to make room, show the toggle +
