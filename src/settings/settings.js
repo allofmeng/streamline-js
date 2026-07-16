@@ -4273,7 +4273,7 @@ export function renderLoadCellCalibration() {
                 <p class="${CAL_HEADING}" data-i18n-key="Calibrate the RIGHT cell">Calibrate the RIGHT cell</p>
                 ${calWeightInputBlock()}
                 <p class="${CAL_BODY}" data-i18n-key="Place weight on the right leg load cell.">Place weight on the right leg load cell.</p>
-                ${calActionArea({ step: 2, runLabel: 'Calibrate RIGHT', runOnclick: "window.calRunPoint('right')", nextStep: 3, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                ${calActionArea({ step: 2, runLabel: 'Calibrate RIGHT', runOnclick: "window.calRunPoint('first')", nextStep: 3, busyLabel: 'Calibrating&hellip; (~15s)' })}
                 <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(1)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
             </div>`;
     } else if (calStep === 3) {
@@ -4282,7 +4282,7 @@ export function renderLoadCellCalibration() {
                 <p class="${CAL_HEADING}" data-i18n-key="Calibrate the LEFT cell">Calibrate the LEFT cell</p>
                 ${calWeightDisplayBlock()}
                 <p class="${CAL_BODY}" data-i18n-key="Place weight on the left leg load cell.">Place weight on the left leg load cell.</p>
-                ${calActionArea({ step: 3, runLabel: 'Calibrate LEFT', runOnclick: "window.calRunPoint('left')", nextStep: 4, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                ${calActionArea({ step: 3, runLabel: 'Calibrate LEFT', runOnclick: "window.calRunPoint('second')", nextStep: 4, busyLabel: 'Calibrating&hellip; (~15s)' })}
                 <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(2)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
             </div>`;
     } else {
@@ -6436,15 +6436,23 @@ export async function initializeSettings() {
     };
 
     // side = 'left' (point 1) or 'right' (point 2)
-    window.calRunPoint = async function(side) {
+    // The firmware auto-detects which bare cell holds the reference mass, so the
+    // two weight latches are an ORDERED pair, not left-vs-right: the FIRST latch
+    // reports 'incomplete' (one cell solved, awaiting the other); the SECOND
+    // reports 'ok' (both solved + persisted). reaprime's 'left' command accepts
+    // that first (incomplete) latch; 'right' requires the completing 'ok'. The
+    // leg shown to the user (RIGHT first, then LEFT) is only which leg to load —
+    // independent of these commands, since the firmware auto-detects the cell.
+    window.calRunPoint = async function(order) { // order: 'first' | 'second'
         if (calBusy) return;
-        const stepNo = side === 'left' ? 2 : 3;
+        const stepNo = order === 'first' ? 2 : 3;
+        const cmd = order === 'first' ? 'left' : 'right';
         calBusy = true; calError = ''; calRerender();
         try {
-            const r = await calibrateScale(side, calWeightG);
+            const r = await calibrateScale(cmd, calWeightG);
             if (r && r.success) {
                 calDone[stepNo] = true;
-                ui.showToast(`${side === 'left' ? 'Left' : 'Right'} cell calibrated`, 3000, 'success');
+                ui.showToast('Cell calibrated', 3000, 'success');
             } else {
                 calError = (r && r.message) ? r.message : 'Calibration failed';
                 ui.showToast(`Calibration failed: ${calError}`, 5000, 'error');
