@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, persistLastValue, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -154,6 +154,18 @@ async function flushPendingChanges() {
     if (pendingChanges.workflow.steamSettings) tasks.push(updateWorkflow({ steamSettings: pendingChanges.workflow.steamSettings }));
     if (pendingChanges.workflow.hotWaterData) tasks.push(updateWorkflow({ hotWaterData: pendingChanges.workflow.hotWaterData }));
     if (tasks.length) await Promise.all(tasks);
+
+    // Keep the dashboard's "last value the user set" cache in sync even when
+    // the edit came from here instead of the main page — otherwise the next
+    // boot's resyncIfDrifted compares against a stale cache and reverts this
+    // edit right back.
+    const steam = pendingChanges.workflow.steamSettings;
+    if (steam?.duration !== undefined) persistLastValue(STEAM_DURATION_LAST_VALUE_KEY, steam.duration);
+    if (steam?.flow !== undefined) persistLastValue(STEAM_FLOW_LAST_VALUE_KEY, steam.flow);
+    const hotWater = pendingChanges.workflow.hotWaterData;
+    if (hotWater?.volume !== undefined) persistLastValue(HOT_WATER_VOLUME_LAST_VALUE_KEY, hotWater.volume);
+    if (hotWater?.targetTemperature !== undefined) persistLastValue(HOT_WATER_TEMP_LAST_VALUE_KEY, hotWater.targetTemperature);
+
     saveSettingsBackup();
     resetPendingChanges();
 }
@@ -462,6 +474,7 @@ export async function reconcileSettingsWithBackup() {
                 await setReaSettings(diff);
                 Object.assign(settingsCache.rea, diff);
                 restored.push('app settings');
+                logger.info('reconcileSettingsWithBackup: restored app settings from backup', diff);
             }
         }
         if (backup.de1 && settingsCache.de1) {
@@ -470,6 +483,7 @@ export async function reconcileSettingsWithBackup() {
                 await setDe1Settings(diff);
                 Object.assign(settingsCache.de1, diff);
                 restored.push('DE1 settings');
+                logger.info('reconcileSettingsWithBackup: restored DE1 settings from backup', diff);
             }
         }
         if (backup.de1Advanced && settingsCache.de1Advanced) {
@@ -478,10 +492,13 @@ export async function reconcileSettingsWithBackup() {
                 await setDe1AdvancedSettings(diff);
                 Object.assign(settingsCache.de1Advanced, diff);
                 restored.push('advanced settings');
+                logger.info('reconcileSettingsWithBackup: restored advanced settings from backup', diff);
             }
         }
         if (restored.length) {
-            ui.showToast(`Settings restored from backup: ${restored.join(', ')}`, 6000, 'info');
+            // Dev-console only — this is a silent self-healing background check,
+            // not something the user needs to see or act on.
+            logger.info(`Settings restored from backup: ${restored.join(', ')}`);
         }
     } catch (e) {
         console.warn('reconcileSettingsWithBackup failed:', e);
