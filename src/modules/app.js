@@ -624,7 +624,10 @@ function handleData(data) {
             shotData.updateShotData(data, latestScaleWeight);
         }
     } else {
-        if (shotStartTime) shotEndedAt = Date.now();
+        if (shotStartTime) {
+            shotEndedAt = Date.now();
+            chart.finalizeLiveChart();
+        }
         shotStartTime = null;
     }
 }
@@ -1035,7 +1038,8 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         if (flushtimeout !== undefined) {
             logger.debug('Received flush timeout data:', flushtimeout);
             ui.updateFlushDisplay(flushtimeout.duration);
-
+            api.resyncIfDrifted(api.FLUSH_DURATION_LAST_VALUE_KEY, flushtimeout.duration, (v) => ui.updateFlushValue(v))
+                .catch(e => logger.warn('Flush duration resync failed:', e));
         }
 
         // Update grind display - prefer context.grinderSetting over legacy grinderData.setting
@@ -1058,8 +1062,25 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
 
         const hotwatersettings = workflow?.hotWaterData;
         const steamsettings = workflow?.steamSettings;
-        if (hotwatersettings) ui.updateHotWaterDisplay(hotwatersettings);
-        if (steamsettings) ui.updateSteamDisplay(steamsettings);
+        if (hotwatersettings) {
+            ui.updateHotWaterDisplay(hotwatersettings);
+            // Re-push only if the DE1 disagrees with what we last set — a plain GET
+            // can't tell us the device itself stayed in sync (BLE reconnect / Rea
+            // restart can leave it stale), but blindly re-pushing every boot would
+            // be wasteful and could clobber a legitimate reading if our cache were
+            // ever the stale one. See api.resyncIfDrifted.
+            api.resyncIfDrifted(api.HOT_WATER_VOLUME_LAST_VALUE_KEY, hotwatersettings.volume, api.setTargetHotWaterVolume)
+                .catch(e => logger.warn('Hot water volume resync failed:', e));
+            api.resyncIfDrifted(api.HOT_WATER_TEMP_LAST_VALUE_KEY, hotwatersettings.targetTemperature, api.setTargetHotWaterTemp)
+                .catch(e => logger.warn('Hot water temp resync failed:', e));
+        }
+        if (steamsettings) {
+            ui.updateSteamDisplay(steamsettings);
+            api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings.duration, api.setTargetSteamDuration)
+                .catch(e => logger.warn('Steam duration resync failed:', e));
+            api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings.flow, api.setTargetSteamFlow)
+                .catch(e => logger.warn('Steam flow resync failed:', e));
+        }
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
         // presets based on machine model (group-head size).

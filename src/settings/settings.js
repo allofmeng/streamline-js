@@ -354,83 +354,6 @@ const settingsTree = {
     }
 };
 
-// Cache for loading promise to prevent multiple simultaneous requests
-let settingsLoadingPromise = null;
-
-// Load all settings data
-export async function loadSettings() {
-    // If we're already loading, return the same promise
-    if (settingsLoadingPromise) {
-        return settingsLoadingPromise;
-    }
-
-    settingsLoadingPromise = _loadSettingsInternal();
-    return settingsLoadingPromise;
-}
-
-// Internal function to actually load settings
-async function _loadSettingsInternal() {
-    try {
-        await openDB();
-    } catch (e) { /* non-fatal — IDB unavailable, fallback skipped */ }
-
-    try {
-        const [reaResult, de1Result, de1AdvancedResult, appInfoResult, workflowResult] = await Promise.allSettled([
-            getReaSettings(),
-            getDe1Settings(),
-            getDe1AdvancedSettings(),
-            getAppInfo(),
-            getWorkflow()
-        ]);
-
-        const idbKeys = ['settings-rea', 'settings-de1', 'settings-de1Advanced', 'settings-appInfo', 'settings-workflow'];
-        const results = [reaResult, de1Result, de1AdvancedResult, appInfoResult, workflowResult];
-        const resolved = [];
-        let usedCache = false;
-
-        for (let i = 0; i < results.length; i++) {
-            if (results[i].status === 'fulfilled') {
-                resolved.push(results[i].value);
-                try { await setSetting(idbKeys[i], results[i].value); } catch (e) { /* non-fatal */ }
-            } else {
-                console.warn(`Settings fetch failed for ${idbKeys[i]}:`, results[i].reason);
-                let cached = null;
-                try { cached = await getSetting(idbKeys[i]); } catch (e) { /* non-fatal */ }
-                resolved.push(cached);
-                if (cached !== null) usedCache = true;
-            }
-        }
-
-        const [reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData] = resolved;
-
-        settingsCache.rea = reaSettings;
-        settingsCache.de1 = de1Settings;
-        settingsCache.de1Advanced = de1AdvancedSettings;
-        settingsCache.appInfo = appInfoData;
-        settingsCache.workflow = workflowData;
-
-        if (usedCache) {
-            ui.showToast('Some settings loaded from cache — connection issue', 4000, 'warning');
-        }
-
-        try {
-            const stored = await getSetting('screensaverImages');
-            if (Array.isArray(stored) && stored.length > 0) screensaverImagesCache = stored;
-        } catch (e) { /* non-fatal */ }
-
-        // Silently re-push any settings Rea may have lost (e.g. after a reset/reinstall)
-        reconcileSettingsWithBackup();
-
-        return { reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData };
-    } catch (error) {
-        console.error('Error loading settings:', error);
-        ui.showToast('Failed to load settings', 5000, 'error');
-        return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, workflowData: null };
-    } finally {
-        settingsLoadingPromise = null;
-    }
-}
-
 // Helper function to check if settings are loaded
 function areSettingsLoaded() {
     return settingsCache.rea !== null &&
@@ -491,11 +414,6 @@ async function preSeedFromIDB() {
         if (backup.rea)         { settingsCache.rea         = backup.rea;         settingsCache.reaLoading         = false; }
         if (backup.de1)         { settingsCache.de1         = backup.de1;         settingsCache.de1Loading         = false; }
         if (backup.de1Advanced) { settingsCache.de1Advanced = backup.de1Advanced; settingsCache.de1AdvancedLoading = false; }
-        if (backup.steamSettings || backup.hotWaterData) {
-            settingsCache.workflow = settingsCache.workflow || {};
-            if (backup.steamSettings) settingsCache.workflow.steamSettings = backup.steamSettings;
-            if (backup.hotWaterData)  settingsCache.workflow.hotWaterData  = backup.hotWaterData;
-        }
         return true;
     } catch (e) {
         console.warn('preSeedFromIDB failed:', e);
@@ -511,10 +429,6 @@ async function saveSettingsBackup() {
             rea:         settingsCache.rea         ? { ...settingsCache.rea }         : null,
             de1:         settingsCache.de1         ? { ...settingsCache.de1 }         : null,
             de1Advanced: settingsCache.de1Advanced ? { ...settingsCache.de1Advanced } : null,
-            steamSettings: settingsCache.workflow?.steamSettings
-                ? { ...settingsCache.workflow.steamSettings } : null,
-            hotWaterData:  settingsCache.workflow?.hotWaterData
-                ? { ...settingsCache.workflow.hotWaterData }  : null,
         });
     } catch (e) {
         console.warn('saveSettingsBackup failed:', e);
@@ -566,25 +480,6 @@ export async function reconcileSettingsWithBackup() {
                 restored.push('advanced settings');
             }
         }
-        if (backup.steamSettings && settingsCache.workflow?.steamSettings) {
-            const diff = diffSettings(backup.steamSettings, settingsCache.workflow.steamSettings);
-            if (Object.keys(diff).length) {
-                const merged = { ...settingsCache.workflow.steamSettings, ...diff };
-                await updateWorkflow({ steamSettings: merged });
-                settingsCache.workflow.steamSettings = merged;
-                restored.push('steam settings');
-            }
-        }
-        if (backup.hotWaterData && settingsCache.workflow?.hotWaterData) {
-            const diff = diffSettings(backup.hotWaterData, settingsCache.workflow.hotWaterData);
-            if (Object.keys(diff).length) {
-                const merged = { ...settingsCache.workflow.hotWaterData, ...diff };
-                await updateWorkflow({ hotWaterData: merged });
-                settingsCache.workflow.hotWaterData = merged;
-                restored.push('hot water settings');
-            }
-        }
-
         if (restored.length) {
             ui.showToast(`Settings restored from backup: ${restored.join(', ')}`, 6000, 'info');
         }
@@ -1268,24 +1163,6 @@ export function renderUsbChargerModeSettings(settings) {
 
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
                 <p class="leading-[1.2]">USB Charger</p>
-            </div>
-
-            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
-
-            <div class="flex items-center justify-between gap-[24px] w-full">
-                <div class="flex flex-col gap-[4px]">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power ${(settings.usb === true || settings.usb === 'enable') ? 'off' : 'on'}</p>
-                    </div>
-                </div>
-                <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
-                    <input type="checkbox" id="usbChargerModeToggle"
-                           class="sr-only peer"
-                           ${(settings.usb === true || settings.usb === 'enable') ? 'checked' : ''}
-                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable'); document.getElementById('usbChargerModeLabel').textContent = 'USB Power ' + (this.checked ? 'off' : 'on')">
-                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
-                </label>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -4458,6 +4335,14 @@ async function _preloadSettingsInternal() {
         settingsCache.appInfoLoading = false;
         settingsCache.machineInfoLoading = false;
         settingsCache.skinInfoLoading = false;
+
+        try {
+            const stored = await getSetting('screensaverImages');
+            if (Array.isArray(stored) && stored.length > 0) screensaverImagesCache = stored;
+        } catch (e) { /* non-fatal */ }
+
+        // Silently re-push any settings Rea may have lost (e.g. after a reset/reinstall)
+        reconcileSettingsWithBackup();
 
         return { reaSettings, de1Settings, de1AdvancedSettings, appInfo, machineInfo };
     } catch (error) {
