@@ -32,8 +32,6 @@ function getChartElement() {
 }
 let currentSubstate = 'idle';
 let previousSubstateForShape = 'idle'; // To track step changes for vertical lines
-let annotationUpdateCounter = 0;
-const ANNOTATION_UPDATE_THROTTLE = 10; // Update every 10 data points
 let lastWeight = 0;
 let lastTime = 0;
 const SMOOTHING_FACTOR = 0.1;
@@ -297,10 +295,24 @@ function getAnnotations() {
 }
 
 // Apply current labels + restore default right margin. Use before
-// Plotly.newPlot / Plotly.react.
+// Plotly.newPlot / Plotly.react. No labels while a shot is live — only once
+// it's done (see isLiveShot below).
 function applyLabelLayout(layout) {
-    layout.annotations = getAnnotations();
+    layout.annotations = isLiveShot ? [] : getAnnotations();
     layout.margin = { ...(layout.margin || {}), r: 50 };
+}
+
+// True from shot start until finalizeLiveChart() runs at shot end — labels
+// are suppressed entirely while true so a live shot shows no trace-end text.
+let isLiveShot = false;
+
+// Call when a shot finishes to reveal the trace-end labels on the chart that
+// was just live.
+export function finalizeLiveChart() {
+    isLiveShot = false;
+    const element = getChartElement();
+    if (!element) return;
+    Plotly.relayout(element, { annotations: getAnnotations() });
 }
 
 // Re-measure labels and refresh annotations + x-range so labels stay inside
@@ -321,7 +333,7 @@ export function refreshLabelMargin() {
     if (dataMax === 0) {
         // idle / cleared chart — let Plotly autoscale, don't pin a max.
         Plotly.relayout(element, {
-            annotations: getAnnotations(),
+            annotations: isLiveShot ? [] : getAnnotations(),
             'xaxis.autorange': true
         });
         return;
@@ -329,10 +341,11 @@ export function refreshLabelMargin() {
 
     const rangeMax = rangeMaxForLabels(dataMax);
     Plotly.relayout(element, {
-        annotations: getAnnotations(),
+        annotations: isLiveShot ? [] : getAnnotations(),
         'xaxis.range': [0, rangeMax],
         'xaxis.autorange': false
     });
+    appliedRangeMax = rangeMax;
 }
 
 // Helper function to add vertical lines for substate changes and annotations
@@ -373,20 +386,9 @@ let pendingUpdates = {
 // DE1 streams faster than the browser can repaint a growing SVG; calling
 // Plotly.relayout/react on every WebSocket frame backs the redraw queue up and
 // the chart lags behind the real shot. rAF caps work to the display refresh.
-let pendingX, pendingY;
 let pendingReact = false;
-let pendingNeedAnnotations = false;
 let pendingTime = 0;
 let rafHandle = 0;
-
-function resetPendingChartWrites() {
-    // 6 buffers map to trace indices [0..5] — same mapping the old extendTraces used.
-    pendingX = [[], [], [], [], [], []];
-    pendingY = [[], [], [], [], [], []];
-    pendingReact = false;
-    pendingNeedAnnotations = false;
-}
-resetPendingChartWrites();
 
 function dtickForTime(time) {
     if (time < 15) return 1;
@@ -395,18 +397,24 @@ function dtickForTime(time) {
     return 30;
 }
 
+// The x-range grows continuously — exact label-inflated max, relayouted every
+// flush (v0.1.65 behavior): the right edge glides with the line instead of
+// jumping in steps. Discrete on-demand growth was tried and read as jumpy.
+let appliedRangeMax = null; // last applied range end
+
 function flushChart() {
     rafHandle = 0;
     const element = getChartElement();
-    if (!element) { resetPendingChartWrites(); return; }
+    if (!element) { pendingReact = false; return; }
 
     const theme = localStorage.getItem('theme') || 'light';
     const dtickValue = dtickForTime(pendingTime);
     const rangeMax = rangeMaxForLabels(pendingTime);
 
-    // A step marker changed shapes → full react (also redraws all buffered
-    // points, since they're already in chartData). Then pin the x-range.
+    // A step marker changed shapes → full react. Then pin the x-range.
     if (pendingReact) {
+        pendingReact = false;
+        isLiveShot = true; // live from here on — applyLabelLayout gives Plotly no annotations
         const layout = theme === 'dark' ? darkLayout : lightLayout;
         applyLabelLayout(layout);
         Plotly.react(element, Object.values(chartData), layout);
@@ -415,21 +423,26 @@ function flushChart() {
             'xaxis.autorange': false,
             'xaxis.dtick': dtickValue
         });
-        resetPendingChartWrites();
+        appliedRangeMax = rangeMax;
         return;
     }
 
-    if (pendingX[0].length > 0) {
-        Plotly.extendTraces(element, { x: pendingX, y: pendingY }, [0, 1, 2, 3, 4, 5]);
-    }
-    const relayoutPayload = {
-        'xaxis.range': [0, rangeMax],
-        'xaxis.autorange': false,
-        'xaxis.dtick': dtickValue
-    };
-    if (pendingNeedAnnotations) relayoutPayload.annotations = getAnnotations();
-    Plotly.relayout(element, relayoutPayload);
-    resetPendingChartWrites();
+    // Data + x-range in ONE Plotly.update → one SVG redraw per flush.
+    // (extendTraces + relayout was two full redraws; relayout replots
+    // everything anyway, so incremental append bought nothing.)
+    // chartData holds the full arrays, so restyle from it directly — this
+    // also keeps every trace on its own index (7 traces incl. targetTemperature).
+    const traces = Object.values(chartData);
+    Plotly.update(element,
+        { x: traces.map((t) => t.x), y: traces.map((t) => t.y) },
+        {
+            'xaxis.range': [0, rangeMax],
+            'xaxis.autorange': false,
+            'xaxis.dtick': dtickValue
+        },
+        traces.map((_, i) => i)
+    );
+    appliedRangeMax = rangeMax;
 }
 
 function scheduleChartFlush() {
@@ -552,13 +565,11 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     lastWeight = weight;
     lastTime = time;
 
-    const isFirstDataPoint = chartData.pressure.x.length === 0;
-
     // At a step boundary, anchor each target's PREVIOUS value at this x before the
     // new value is pushed below. That makes a pump-mode swap (pressure 8→0 / flow
     // 0→8) draw as a vertical step. Only fires on step changes, so smooth in-step
     // target ramps keep their diagonal. Step frames take the full-react flush path,
-    // so writing to chartData here is enough (the buffered extendTraces path is skipped).
+    // so writing to chartData here is enough — every flush draws from chartData.
     if (stepMarkerAdded && lastTargetPressureY !== null) {
         chartData.targetPressure.x.push(time);
         chartData.targetPressure.y.push(lastTargetPressureY);
@@ -582,34 +593,23 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     lastTargetPressureY = targetPressureY;
     lastTargetFlowY = targetFlowY;
 
-    // Buffer this frame; the actual Plotly draw happens once per animation
-    // frame in flushChart(). A step marker forces a full react on flush.
+    // Points live in chartData; the actual Plotly draw happens once per
+    // animation frame in flushChart(). A step marker forces a full react.
     pendingTime = time;
-    if (stepMarkerAdded) {
-        pendingReact = true;
-    } else if (!pendingReact) {
-        pendingX[0].push(time);            pendingY[0].push(pressureY);
-        pendingX[1].push(time);            pendingY[1].push(flowY);
-        pendingX[2].push(time);            pendingY[2].push(targetPressureY);
-        pendingX[3].push(time);            pendingY[3].push(targetFlowY);
-        pendingX[4].push(time);            pendingY[4].push(groupTemperatureY);
-        pendingX[5].push(time);            pendingY[5].push(weightY);
-        // Throttle annotation refresh so we don't recompute label layout every tick.
-        annotationUpdateCounter++;
-        if (isFirstDataPoint || annotationUpdateCounter % 10 === 0) {
-            pendingNeedAnnotations = true;
-        }
-    }
+    if (stepMarkerAdded) pendingReact = true;
     scheduleChartFlush();
 }
 
-export function clearChart() {
+// Reset all chart data/tracking/layout state WITHOUT touching Plotly. Callers
+// that redraw themselves right after (plotHistoricalShot) use this to avoid
+// painting an empty chart just to overwrite it.
+function resetChartState() {
     // Clear all chart data arrays
     for (const trace in chartData) {
         chartData[trace].x = [];
         chartData[trace].y = [];
     }
-    
+
     // Reset all tracking variables
     lastWeight = 0;
     lastTime = 0;
@@ -619,12 +619,13 @@ export function clearChart() {
     previousSubstateForShape = 'idle';
     liveProfileFrame = -1;  // FIX: Reset profile frame tracking
     currentSubstate = 'idle';  // FIX: Reset substate
-    annotationUpdateCounter = 0;  // FIX: Reset counter
 
-    // Drop any buffered live points + cancel a queued flush so stale data from
-    // the previous shot can't land on the freshly cleared chart.
+    // Cancel a queued flush so a stale draw from the previous shot can't land
+    // on the freshly cleared chart.
     if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0; }
-    resetPendingChartWrites();
+    pendingReact = false;
+    appliedRangeMax = null;
+    isLiveShot = false;
 
     // Clear shapes and annotations from BOTH layouts
     // This prevents issues when theme is switched between shots
@@ -632,7 +633,11 @@ export function clearChart() {
     lightLayout.shapes = [];
     darkLayout.annotations = [];
     lightLayout.annotations = [];
-    
+}
+
+export function clearChart() {
+    resetChartState();
+
     const theme = localStorage.getItem('theme') || 'light';
     const layout = theme === 'dark' ? darkLayout : lightLayout;
 
@@ -651,7 +656,9 @@ export function plotHistoricalShot(measurements, workflow = null) {
         return;
     }
 
-    clearChart();
+    // Reset state only — we render once at the end, so skip clearChart's two
+    // throwaway Plotly redraws of an empty chart.
+    resetChartState();
 
     let shotStartTime = null;
 
@@ -848,14 +855,13 @@ export function plotHistoricalShot(measurements, workflow = null) {
             chartData[key].y = tempChartData[key].y;
         }
     });
+    // x arrays are built in time order, so the last element is the max — no
+    // need to spread the whole array through Math.max.
     let maxTime = 0;
     for (const traceName in tempChartData) {
-        const trace = tempChartData[traceName];
-        if (trace.x && trace.x.length > 0) {
-            const traceMaxTime = Math.max(...trace.x);
-            if (traceMaxTime > maxTime) {
-                maxTime = traceMaxTime;
-            }
+        const x = tempChartData[traceName].x;
+        if (x.length > 0 && x[x.length - 1] > maxTime) {
+            maxTime = x[x.length - 1];
         }
     }
     let dtickValue;

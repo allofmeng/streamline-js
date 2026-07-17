@@ -1,4 +1,4 @@
-import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials } from './api.js';
+import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
@@ -62,6 +62,7 @@ let steamMode = 'time'; // 'time' or 'flow'
 let steamTimePresets = [15, 30, 45, 60];
 let steamFlowPresets = [0.5, 1.0, 1.5, 2.0];
 const DEFAULT_STEAM_TIME_PRESETS = [15, 30, 45, 60];
+const STEAM_TIME_PRESETS_KEY = 'steam-time-presets-user';
 // Machine-model-specific defaults for steam flow (ml/s). Resolved at boot via setSteamFlowPresetsFromMachineModel().
 const STEAM_FLOW_PRESETS_BY_MODEL = {
     standard: [0.4, 0.5, 0.6, 0.8],  // DE1Pro, DE1XL, Bengle (default)
@@ -220,6 +221,7 @@ export function updateFlushValue(newValue) {
 
     updateWorkflow(workflowUpdate).then(() => {
         logger.debug('Rinse value updated successfully:', workflowUpdate.rinseData);
+        persistLastValue(FLUSH_DURATION_LAST_VALUE_KEY, workflowUpdate.rinseData.duration);
     }).catch(error => {
         logger.error('Failed to update rinse value:', error);
     });
@@ -693,6 +695,137 @@ async function persistSteamFlowSelectedIndex(index) {
     }
 }
 
+async function persistSteamTimePresets() {
+    try {
+        await setSetting(STEAM_TIME_PRESETS_KEY, [...steamTimePresets]);
+    } catch (e) {
+        logger.warn('Failed to persist steam time presets:', e);
+    }
+}
+
+// Restore user-edited steam time presets at boot. No machine-model dependency,
+// unlike steam flow, so this just loads once — no per-model reset logic needed.
+async function loadSteamTimePresets() {
+    try {
+        await openDB();
+        const stored = await getSetting(STEAM_TIME_PRESETS_KEY);
+        if (Array.isArray(stored) && stored.length === 4) {
+            steamTimePresets = stored.map(Number);
+            updateSteamPresetDisplay();
+        }
+    } catch (e) {
+        logger.warn('Failed to load steam time presets:', e);
+    }
+}
+
+// Flush presets have no backing JS array — the value lives directly on each
+// button's textContent — so persist/restore work off the DOM instead.
+const FLUSH_PRESETS_KEY = 'flush-presets-user';
+
+async function persistFlushPresets(flushPresetsEl) {
+    try {
+        const values = Array.from(flushPresetsEl.children).map(b => parseFloat(b.textContent));
+        await setSetting(FLUSH_PRESETS_KEY, values);
+    } catch (e) {
+        logger.warn('Failed to persist flush presets:', e);
+    }
+}
+
+async function loadFlushPresets(flushPresetsEl) {
+    try {
+        await openDB();
+        const stored = await getSetting(FLUSH_PRESETS_KEY);
+        const buttons = Array.from(flushPresetsEl.children);
+        if (Array.isArray(stored) && stored.length === buttons.length) {
+            buttons.forEach((btn, i) => {
+                if (typeof stored[i] === 'number' && !isNaN(stored[i])) btn.textContent = `${stored[i]}s`;
+            });
+        }
+    } catch (e) {
+        logger.warn('Failed to load flush presets:', e);
+    }
+}
+
+// Brew temperature presets — same DOM-based shape as flush.
+const TEMP_PRESETS_KEY = 'brew-temp-presets-user';
+
+async function persistTempPresets(tempPresetsEl) {
+    try {
+        const values = Array.from(tempPresetsEl.children).map(b => parseFloat(b.textContent));
+        await setSetting(TEMP_PRESETS_KEY, values);
+    } catch (e) {
+        logger.warn('Failed to persist brew temp presets:', e);
+    }
+}
+
+async function loadTempPresets(tempPresetsEl) {
+    try {
+        await openDB();
+        const stored = await getSetting(TEMP_PRESETS_KEY);
+        const buttons = Array.from(tempPresetsEl.children);
+        if (Array.isArray(stored) && stored.length === buttons.length) {
+            buttons.forEach((btn, i) => {
+                if (typeof stored[i] === 'number' && !isNaN(stored[i])) btn.textContent = `${stored[i]}°c`;
+            });
+        }
+    } catch (e) {
+        logger.warn('Failed to load brew temp presets:', e);
+    }
+}
+
+// Drink-out presets store a "dose:out" pair, not a single number — persist
+// the raw label text rather than parsing it.
+const DRINK_OUT_PRESETS_KEY = 'drink-out-presets-user';
+
+async function persistDrinkOutPresets(drinkOutPresetsEl) {
+    try {
+        const values = Array.from(drinkOutPresetsEl.children).map(b => b.textContent.trim());
+        await setSetting(DRINK_OUT_PRESETS_KEY, values);
+    } catch (e) {
+        logger.warn('Failed to persist drink-out presets:', e);
+    }
+}
+
+async function loadDrinkOutPresets(drinkOutPresetsEl) {
+    try {
+        await openDB();
+        const stored = await getSetting(DRINK_OUT_PRESETS_KEY);
+        const buttons = Array.from(drinkOutPresetsEl.children);
+        if (Array.isArray(stored) && stored.length === buttons.length) {
+            buttons.forEach((btn, i) => {
+                if (typeof stored[i] === 'string' && /^\d+(\.\d+)?:\d+(\.\d+)?$/.test(stored[i])) btn.textContent = stored[i];
+            });
+        }
+    } catch (e) {
+        logger.warn('Failed to load drink-out presets:', e);
+    }
+}
+
+const HOT_WATER_TEMP_PRESETS_KEY = 'hot-water-temp-presets-user';
+const HOT_WATER_VOL_PRESETS_KEY = 'hot-water-vol-presets-user';
+
+async function persistHotWaterPresets() {
+    try {
+        await setSetting(HOT_WATER_TEMP_PRESETS_KEY, [...hotWaterTempPresets]);
+        await setSetting(HOT_WATER_VOL_PRESETS_KEY, [...hotWaterVolPresets]);
+    } catch (e) {
+        logger.warn('Failed to persist hot water presets:', e);
+    }
+}
+
+async function loadHotWaterPresets() {
+    try {
+        await openDB();
+        const storedTemp = await getSetting(HOT_WATER_TEMP_PRESETS_KEY);
+        const storedVol = await getSetting(HOT_WATER_VOL_PRESETS_KEY);
+        if (Array.isArray(storedTemp) && storedTemp.length === 4) hotWaterTempPresets = storedTemp.map(Number);
+        if (Array.isArray(storedVol) && storedVol.length === 4) hotWaterVolPresets = storedVol.map(Number);
+        if (storedTemp || storedVol) updateHotWaterPresetDisplay();
+    } catch (e) {
+        logger.warn('Failed to load hot water presets:', e);
+    }
+}
+
 function syncPresetHighlight(container, matchFn) {
     if (!container) return;
     for (const btn of container.children) {
@@ -1061,6 +1194,8 @@ export function initUI(callbacks) {
     const steamFlowPresetsEl = document.getElementById('steam-flow-presets');
     const machineStateEl = document.getElementById('machine-status');
     if (tempPresets) {
+        loadTempPresets(tempPresets); // async restore of user edits
+
         for (const button of tempPresets.children) {
             button.classList.add('no-select', 'has-context-menu');
             button.dataset.defaultValue = button.textContent;
@@ -1088,6 +1223,7 @@ export function initUI(callbacks) {
                                 button.textContent = `${newVal}°c`;
                                 flashElement(button);
                                 showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                                persistTempPresets(tempPresets);
                             },
                         });
                     } },
@@ -1095,11 +1231,13 @@ export function initUI(callbacks) {
                         button.textContent = tempValueEl.textContent;
                         flashElement(button);
                         flashElement(tempValueEl);
+                        persistTempPresets(tempPresets);
                     } },
                     { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
                         flashElement(button);
                         showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
+                        persistTempPresets(tempPresets);
                     } },
                 ]);
             };
@@ -1109,6 +1247,8 @@ export function initUI(callbacks) {
     }
 
     if (drinkOutPresets) {
+        loadDrinkOutPresets(drinkOutPresets); // async restore of user edits
+
         for (const button of drinkOutPresets.children) {
             button.classList.add('no-select', 'has-context-menu');
             button.dataset.defaultValue = button.textContent;
@@ -1150,6 +1290,7 @@ export function initUI(callbacks) {
                                             button.textContent = `${dose}:${out}`;
                                             flashElement(button);
                                             showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                                            persistDrinkOutPresets(drinkOutPresets);
                                         },
                                     });
                                 }, 150);
@@ -1161,11 +1302,13 @@ export function initUI(callbacks) {
                         flashElement(button);
                         flashElement(document.getElementById('dose-in-value'));
                         flashElement(document.getElementById('drink-out-value'));
+                        persistDrinkOutPresets(drinkOutPresets);
                     } },
                     { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
                         flashElement(button);
                         showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
+                        persistDrinkOutPresets(drinkOutPresets);
                     } },
                 ]);
             };
@@ -1175,6 +1318,8 @@ export function initUI(callbacks) {
     }
 
     if (flushPresets) {
+        loadFlushPresets(flushPresets); // async restore of user edits
+
         for (const button of flushPresets.children) {
             button.classList.add('no-select', 'has-context-menu');
             button.dataset.defaultValue = button.textContent;
@@ -1202,6 +1347,7 @@ export function initUI(callbacks) {
                                 button.textContent = `${newVal}s`;
                                 flashElement(button);
                                 showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
+                                persistFlushPresets(flushPresets);
                             },
                         });
                     } },
@@ -1209,11 +1355,13 @@ export function initUI(callbacks) {
                         button.textContent = flushValueEl.textContent;
                         flashElement(button);
                         flashElement(flushValueEl);
+                        persistFlushPresets(flushPresets);
                     } },
                     { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
                         button.textContent = button.dataset.defaultValue;
                         flashElement(button);
                         showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
+                        persistFlushPresets(flushPresets);
                     } },
                 ]);
             };
@@ -1225,6 +1373,7 @@ export function initUI(callbacks) {
     if (hotwaterPresets) {
         // Initial display update
         updateHotWaterPresetDisplay();
+        loadHotWaterPresets(); // async restore of user edits, re-renders once loaded
 
         Array.from(hotwaterPresets.children).forEach((button, index) => {
             button.classList.add('no-select', 'has-context-menu');
@@ -1269,6 +1418,7 @@ export function initUI(callbacks) {
                                 if (isTempMode) hotWaterTempPresets[index] = num;
                                 else hotWaterVolPresets[index] = num;
                                 updateHotWaterPresetDisplay();
+                                persistHotWaterPresets();
                                 flashElement(button);
                                 showToast(`Preset saved as ${num}${unit}`, 2000, 'success');
                             },
@@ -1278,6 +1428,7 @@ export function initUI(callbacks) {
                         if (isTempMode) hotWaterTempPresets[index] = currentValue;
                         else hotWaterVolPresets[index] = currentValue;
                         updateHotWaterPresetDisplay();
+                        persistHotWaterPresets();
                         flashElement(button);
                         flashElement(valueEl);
                     } },
@@ -1285,6 +1436,7 @@ export function initUI(callbacks) {
                         if (isTempMode) hotWaterTempPresets[index] = defaultValue;
                         else hotWaterVolPresets[index] = defaultValue;
                         updateHotWaterPresetDisplay();
+                        persistHotWaterPresets();
                         flashElement(button);
                         showToast(`Preset reverted to ${defaultValue}${unit}`, 2000, 'info');
                     } },
@@ -1297,6 +1449,7 @@ export function initUI(callbacks) {
 
     if (steamPresets) {
         updateSteamPresetDisplay();
+        loadSteamTimePresets(); // async restore of user edits, re-renders once loaded
 
         Array.from(steamPresets.children).forEach((button, index) => {
             button.classList.add('no-select', 'has-context-menu');
@@ -1326,6 +1479,7 @@ export function initUI(callbacks) {
                                 if (isNaN(num)) return;
                                 steamTimePresets[index] = num;
                                 updateSteamPresetDisplay();
+                                persistSteamTimePresets();
                                 flashElement(button);
                                 showToast(`Preset saved as ${num}s`, 2000, 'success');
                             },
@@ -1334,12 +1488,14 @@ export function initUI(callbacks) {
                     { label: getTranslation('Save current ({value}) here').replace('{value}', valueEl.textContent), disabled: isNaN(currentValue), onSelect: () => {
                         steamTimePresets[index] = currentValue;
                         updateSteamPresetDisplay();
+                        persistSteamTimePresets();
                         flashElement(button);
                         flashElement(valueEl);
                     } },
                     { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue}s`), danger: true, onSelect: () => {
                         steamTimePresets[index] = defaultValue;
                         updateSteamPresetDisplay();
+                        persistSteamTimePresets();
                         flashElement(button);
                         showToast(`Preset reverted to ${defaultValue}s`, 2000, 'info');
                     } },

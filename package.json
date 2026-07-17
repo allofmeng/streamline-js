@@ -1,12 +1,12 @@
 {
   "name": "streamline_project",
-  "version": "0.1.64",
+  "version": "0.1.69",
   "description": "A modern web UI skin for the Decent Espresso DE1, built on top of [Streamline-Bridge (reaprime)](https://github.com/tadelv/reaprime). This is a full rewrite of the original TCL-based Streamline skin into a browser-native web application — no framework, no bundler, just HTML/CSS/JS served as static files.",
   "main": "index.js",
   "scripts": {
     "build:css": "tailwindcss -i ./src/input.css -o ./src/css/app.css --minify",
     "watch:css": "tailwindcss -i ./src/input.css -o ./src/css/app.css --watch",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
