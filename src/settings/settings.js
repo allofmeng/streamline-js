@@ -345,83 +345,6 @@ const settingsTree = {
     }
 };
 
-// Cache for loading promise to prevent multiple simultaneous requests
-let settingsLoadingPromise = null;
-
-// Load all settings data
-export async function loadSettings() {
-    // If we're already loading, return the same promise
-    if (settingsLoadingPromise) {
-        return settingsLoadingPromise;
-    }
-
-    settingsLoadingPromise = _loadSettingsInternal();
-    return settingsLoadingPromise;
-}
-
-// Internal function to actually load settings
-async function _loadSettingsInternal() {
-    try {
-        await openDB();
-    } catch (e) { /* non-fatal — IDB unavailable, fallback skipped */ }
-
-    try {
-        const [reaResult, de1Result, de1AdvancedResult, appInfoResult, workflowResult] = await Promise.allSettled([
-            getReaSettings(),
-            getDe1Settings(),
-            getDe1AdvancedSettings(),
-            getAppInfo(),
-            getWorkflow()
-        ]);
-
-        const idbKeys = ['settings-rea', 'settings-de1', 'settings-de1Advanced', 'settings-appInfo', 'settings-workflow'];
-        const results = [reaResult, de1Result, de1AdvancedResult, appInfoResult, workflowResult];
-        const resolved = [];
-        let usedCache = false;
-
-        for (let i = 0; i < results.length; i++) {
-            if (results[i].status === 'fulfilled') {
-                resolved.push(results[i].value);
-                try { await setSetting(idbKeys[i], results[i].value); } catch (e) { /* non-fatal */ }
-            } else {
-                console.warn(`Settings fetch failed for ${idbKeys[i]}:`, results[i].reason);
-                let cached = null;
-                try { cached = await getSetting(idbKeys[i]); } catch (e) { /* non-fatal */ }
-                resolved.push(cached);
-                if (cached !== null) usedCache = true;
-            }
-        }
-
-        const [reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData] = resolved;
-
-        settingsCache.rea = reaSettings;
-        settingsCache.de1 = de1Settings;
-        settingsCache.de1Advanced = de1AdvancedSettings;
-        settingsCache.appInfo = appInfoData;
-        settingsCache.workflow = workflowData;
-
-        if (usedCache) {
-            ui.showToast('Some settings loaded from cache — connection issue', 4000, 'warning');
-        }
-
-        try {
-            const stored = await getSetting('screensaverImages');
-            if (Array.isArray(stored) && stored.length > 0) screensaverImagesCache = stored;
-        } catch (e) { /* non-fatal */ }
-
-        // Silently re-push any settings Rea may have lost (e.g. after a reset/reinstall)
-        reconcileSettingsWithBackup();
-
-        return { reaSettings, de1Settings, de1AdvancedSettings, appInfoData, workflowData };
-    } catch (error) {
-        console.error('Error loading settings:', error);
-        ui.showToast('Failed to load settings', 5000, 'error');
-        return { reaSettings: null, de1Settings: null, de1AdvancedSettings: null, workflowData: null };
-    } finally {
-        settingsLoadingPromise = null;
-    }
-}
-
 // Helper function to check if settings are loaded
 function areSettingsLoaded() {
     return settingsCache.rea !== null &&
@@ -512,77 +435,16 @@ async function saveSettingsBackup() {
     }
 }
 
-// Returns keys where backup has a value that differs from current.
-function diffSettings(backup, current) {
-    const diff = {};
-    for (const key of Object.keys(backup)) {
-        if (backup[key] !== null && backup[key] !== undefined &&
-            key in current && backup[key] !== current[key]) {
-            diff[key] = backup[key];
-        }
-    }
-    return diff;
-}
-
-export async function reconcileSettingsWithBackup() {
-    try {
-        await openDB();
-        const backup = await getSetting('settingsBackup');
-        // Skip if no backup, or backup is older than 30 days (avoid re-applying ancient data)
-        if (!backup?.ts || (Date.now() - backup.ts) > 30 * 24 * 60 * 60 * 1000) return;
-
-        const restored = [];
-
-        if (backup.rea && settingsCache.rea) {
-            const diff = diffSettings(backup.rea, settingsCache.rea);
-            if (Object.keys(diff).length) {
-                await setReaSettings(diff);
-                Object.assign(settingsCache.rea, diff);
-                restored.push('app settings');
-            }
-        }
-        if (backup.de1 && settingsCache.de1) {
-            const diff = diffSettings(backup.de1, settingsCache.de1);
-            if (Object.keys(diff).length) {
-                await setDe1Settings(diff);
-                Object.assign(settingsCache.de1, diff);
-                restored.push('DE1 settings');
-            }
-        }
-        if (backup.de1Advanced && settingsCache.de1Advanced) {
-            const diff = diffSettings(backup.de1Advanced, settingsCache.de1Advanced);
-            if (Object.keys(diff).length) {
-                await setDe1AdvancedSettings(diff);
-                Object.assign(settingsCache.de1Advanced, diff);
-                restored.push('advanced settings');
-            }
-        }
-        if (backup.steamSettings && settingsCache.workflow?.steamSettings) {
-            const diff = diffSettings(backup.steamSettings, settingsCache.workflow.steamSettings);
-            if (Object.keys(diff).length) {
-                const merged = { ...settingsCache.workflow.steamSettings, ...diff };
-                await updateWorkflow({ steamSettings: merged });
-                settingsCache.workflow.steamSettings = merged;
-                restored.push('steam settings');
-            }
-        }
-        if (backup.hotWaterData && settingsCache.workflow?.hotWaterData) {
-            const diff = diffSettings(backup.hotWaterData, settingsCache.workflow.hotWaterData);
-            if (Object.keys(diff).length) {
-                const merged = { ...settingsCache.workflow.hotWaterData, ...diff };
-                await updateWorkflow({ hotWaterData: merged });
-                settingsCache.workflow.hotWaterData = merged;
-                restored.push('hot water settings');
-            }
-        }
-
-        if (restored.length) {
-            ui.showToast(`Settings restored from backup: ${restored.join(', ')}`, 6000, 'info');
-        }
-    } catch (e) {
-        console.warn('reconcileSettingsWithBackup failed:', e);
-    }
-}
+// NOTE: the settingsBackup written by saveSettingsBackup() is consumed ONLY by
+// preSeedFromIDB() above, which seeds the in-memory display cache and never PUTs.
+// A "reconcile" step that re-applied backup diffs to the SERVER used to live here,
+// together with its loadSettings() caller -- both dead code, with no call sites
+// anywhere in the repo. It was deleted rather than left dormant: main-page edits
+// (steam flow, steam duration, the stop-at-weight target) never rewrite the
+// backup, so the backup is chronically stale for exactly the fields users touch
+// most, and re-applying it would silently revert their changes. If a
+// restore-after-a-server-reset feature is ever wanted, it must either exclude
+// every main-page-editable field or rewrite the backup on every main-page edit.
 
 // ── Render settings content based on selected category
 export function renderSettingsContent(category) {
@@ -4620,8 +4482,12 @@ export async function initializeSettings() {
         // If turning OFF while currently shown, hide immediately — the gate in
         // app.js only checks on state transition, so without this the overlay
         // would persist until next wake.
+        //
+        // hideScreensaver(), NOT the old deactivateScreensaver(): that one sent
+        // setMachineState('idle'), so turning a DISPLAY PREFERENCE off woke the
+        // machine. Changing a setting is not a wake.
         if (!enabled && ui.isScreensaverActive()) {
-            ui.deactivateScreensaver();
+            ui.hideScreensaver();
         }
         ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
     };

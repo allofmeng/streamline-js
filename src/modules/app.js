@@ -1,4 +1,4 @@
-import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, setMachineState, getReaSettings, getAppInfo } from './api.js';
+import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, connectShotStateWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, getMachineState, setMachineState, getReaSettings, getAppInfo } from './api.js';
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
@@ -10,6 +10,8 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
+import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
+import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { initTimePicker } from './time-picker-modal.js';
 import { openDB, setSetting } from './idb.js';
@@ -254,12 +256,76 @@ function renderScaleDisconnectedText() {
     fitTelemetry();
 }
 
+// ---------------------------------------------------------------------------
+// Machine link: surviving the machine's power-cycle
+//
+// reaprime binds /ws/v1/machine/snapshot (and shotSettings, and waterLevels) to a
+// De1 *instance*. On a power-cycle it builds a NEW machine object and neither
+// re-binds those sockets nor CLOSES them — so they go open-but-silent, forever.
+// ReconnectingWebSocket only retries on *close*, so it never notices, and the 5 s
+// data timeout below used to latch isDe1Connected = false with nothing left alive
+// to ever set it true again: "disconnected" until the app was reloaded.
+//
+// The /ws/v1/devices socket is bound to reaprime's DevicesStateAggregator, not to
+// a machine instance, so it SURVIVES the power-cycle and keeps telling us the
+// truth. We were already holding it open and reading only `scanning` from it.
+// It is now the authority on link state, and a link-up re-opens the machine-bound
+// sockets so the server re-binds them to the live machine.
+//
+// Belt and braces: this must be correct whether or not reaprime's server-side
+// re-bind fix is present. Both fixes are safe together — the worst case is that
+// the server closes the socket first and ReconnectingWebSocket heals it before we
+// get here.
+// ---------------------------------------------------------------------------
+
+// Re-open every socket reaprime binds to a De1 instance, forcing it to re-run
+// `_withDe1Ws` against the CURRENT machine. Proven on the bench: a fresh snapshot
+// socket streams 97 frames in 6 s while the pre-existing one sits silent.
+//
+// All three factories close-before-open, so this does not leak a socket per
+// power-cycle (the tell would be a doubled snapshot frame rate).
+function resyncMachineSockets(reason) {
+    logger.info(`Re-binding machine WebSockets to the live machine (${reason}).`);
+    connectWebSocket(handleData, onMachineSnapshotSocketOpen);
+    connectShotSettingsWebSocket(handleShotSettingsData);
+    initWaterTankSocket();
+    resetDataTimeout(); // fresh socket: give it the full window before judging it
+}
+
+const machineLink = createMachineLinkWatcher({
+    onLinkUp: (deviceId) => {
+        logger.info(`Machine link up (${deviceId}). Snapshot socket may be bound to a dead machine — resyncing.`);
+        if (deviceId) de1DeviceId = deviceId;
+        // Also un-sticks the Bluetooth-banner suppression in
+        // handleDeviceConnectionError, which is gated on this same flag.
+        isDe1Connected = true;
+        resyncMachineSockets('machine link up');
+        // The machine may come back ASLEEP, in which case handleData's reconnect
+        // branch deliberately skips the reload — so do it here.
+        loadInitialData();
+    },
+    onLinkDown: () => {
+        logger.warn('Machine link down (devices feed).');
+        isDe1Connected = false;
+        ui.updateMachineStatus({ status: "Disconnected" });
+    },
+});
+
 function handleDeviceWsData(data) {
     const next = !!data?.scanning;
     if (next !== isScaleScanning) {
         isScaleScanning = next;
         renderScaleDisconnectedText();
     }
+    // Edge-triggered, NOT id-diffed: the USB device id is byte-identical across a
+    // power-cycle (it comes from the SAMD21 factory unique id), so watching for an
+    // id change would silently never fire.
+    //
+    // This watcher supersedes the earlier ad-hoc rising-edge REST sync that lived
+    // here (the DE1 late-connect fix): a late connect is a not-connected ->
+    // connected edge, so onLinkUp resyncs the machine sockets and reloads data
+    // for that case too.
+    machineLink.update(data);
 }
 
 function onScaleReconnect() {
@@ -288,17 +354,69 @@ const deviceErrorCopy = {
 function handleDeviceConnectionError(err) {
     // scaleDisconnected is handled silently — the [Reconnect] UI on the main page covers it
     if (err.kind === 'scaleDisconnected') return;
+    // Adapter-level nags (Bluetooth off / permission missing) are meaningless
+    // while a machine is already connected -- connected over USB serial with BT
+    // off is a fully valid state, so don't tell the user to turn BT on. If the
+    // machine is NOT connected the banner still shows, since BT may genuinely be
+    // the missing piece.
+    if ((err.kind === 'adapterOff' || err.kind === 'bluetoothPermissionDenied') && isDe1Connected) return;
     const msg = deviceErrorCopy[err.kind] ?? `${err.message}${err.suggestion ? `\n${err.suggestion}` : ''}`;
     ui.showToast(msg, 5000, 'error');
 }
 
-// Sets a timer. If no data is received within 5 seconds, it assumes a stale connection.
+// The snapshot socket's onopen fires on every (re)connect — boot, a
+// ReconnectingWebSocket auto-retry, and our own resync. Boot and resync share this
+// handler so the two call sites cannot drift apart.
+function onMachineSnapshotSocketOpen() {
+    logger.info('Machine snapshot WebSocket (re)opened. Awaiting a frame to confirm the machine.');
+    isDe1Connected = false; // the first frame re-confirms it (handleData)
+}
+
+// A silent snapshot socket is NOT proof of a disconnected machine — it is exactly
+// what a stale, open-but-silent socket looks like after a power-cycle . Ask
+// REA who is actually connected before painting a lie. Rate-limited so a genuinely
+// absent machine is not hammered.
+const DEVICES_PROBE_MIN_INTERVAL_MS = 10000;
+let lastDevicesProbeAt = 0;
+let devicesProbeInFlight = false;
+
+function markMachineDisconnected() {
+    ui.updateMachineStatus({ status: "disconnected" });
+    isDe1Connected = false;
+}
+
+async function probeMachineOnSilentSocket() {
+    const now = Date.now();
+    if (devicesProbeInFlight || (now - lastDevicesProbeAt) < DEVICES_PROBE_MIN_INTERVAL_MS) {
+        markMachineDisconnected(); // rate-limited: fall back to believing the silence
+        return;
+    }
+    devicesProbeInFlight = true;
+    lastDevicesProbeAt = now;
+    try {
+        const link = machineFromDevicesPayload(await getDevices());
+        if (link.known && link.connected) {
+            logger.warn('Snapshot socket silent for 5 s but REA reports the machine connected — stale socket. Resyncing.');
+            if (link.deviceId) de1DeviceId = link.deviceId;
+            isDe1Connected = true;
+            resyncMachineSockets('stale snapshot socket');
+            return;
+        }
+    } catch (err) {
+        logger.warn('Devices probe failed while checking a silent machine socket:', err);
+    } finally {
+        devicesProbeInFlight = false;
+    }
+    markMachineDisconnected();
+}
+
+// Sets a timer. If no data is received within 5 seconds, the connection is stale —
+// but "stale" may mean a dead socket rather than a dead machine, so check first.
 function resetDataTimeout() {
     clearTimeout(dataTimeout);
     dataTimeout = setTimeout(() => {
-        logger.warn('No WebSocket data received for 5 seconds. Assuming REA or WebSocket disconnection.');
-        ui.updateMachineStatus({ status: "disconnected" });
-        isDe1Connected = false;
+        logger.warn('No WebSocket data received for 5 seconds. Checking whether the machine or the socket is gone.');
+        probeMachineOnSilentSocket();
     }, 5000); // 5-second timeout
 }
 
@@ -379,6 +497,43 @@ function handleTimeToReadyData(data) {
     }
 }
 
+// The screensaver is a pure function of the machine's CONFIRMED state.
+//
+// The derived action is paint-only -- 'show' | 'hide' | 'none' -- so a snapshot
+// frame is structurally incapable of commanding the machine. That is the whole
+// bug: 'hide' used to be spelled ui.deactivateScreensaver(), which sent
+// setMachineState('idle'), so this branch -- whose precondition is "the machine is
+// awake" -- WOKE the machine. In the 46 ms after a sleep press, with the overlay
+// optimistically up and the snapshot still reporting 'idle', that is the command
+// that cancelled the user's sleep.
+//
+// The one concession to latency runs the OTHER way. When the user taps to wake, we
+// hide the overlay immediately instead of making them watch it for a round-trip —
+// so for the next frame or three the machine still (honestly) reports 'sleeping'
+// and this function would raise the overlay straight back up. `wakePending` marks
+// those frames as stale by our own doing. It is time-bounded, so a wake that never
+// lands expires and the overlay returns: we decline to repaint a state we have
+// asked the machine to leave, we never paint one it never reported.
+function applyScreensaverAction(state) {
+    const action = deriveScreensaverAction({
+        machineState: state,
+        screensaverActive: ui.isScreensaverActive(),
+        screensaverEnabled: localStorage.getItem('screensaverEnabled') !== 'false',
+        wakePending: ui.isWakeRequestPending(),
+    });
+    if (action === 'show') {
+        logger.info('Machine confirmed sleeping. Activating screensaver.');
+        ui.activateScreensaver();
+    } else if (action === 'hide') {
+        ui.hideScreensaver(); // PURE UI -- never a machine command
+    }
+
+    // The machine has confirmed it is awake: the wake we were waiting on has
+    // landed, so stop suppressing. (A wake superseded by a sleep press is cleared
+    // by the sleep button itself.)
+    if (!isMachineAsleep(state)) ui.clearWakeRequest();
+}
+
 function handleData(data) {
     if (!data?.state) {
         logger.warn('Received WebSocket message with missing state:', data);
@@ -402,17 +557,10 @@ function handleData(data) {
     if (state === MachineState.ERROR) {
         statusString = "Error";
     } else if (state === MachineState.SLEEPING) {
-        // Activate screensaver when machine enters sleep state (if not disabled by user)
-        if (!ui.isScreensaverActive() && localStorage.getItem('screensaverEnabled') !== 'false') {
-            logger.info('Machine entered sleep state. Activating screensaver.');
-            ui.activateScreensaver();
-        }
+        applyScreensaverAction(state);
         statusString = "Sleeping";
     } else {
-        // Deactivate screensaver when machine wakes up from sleep (if it was active)
-        if (ui.isScreensaverActive()) {
-            ui.deactivateScreensaver();
-        }
+        applyScreensaverAction(state);
         if (isHeating && isHeatingFromTimeToReady) {
             // When heating and we're in a heating phase from time-to-ready,
             // rely solely on timeToReadyMessage from the time-to-ready WebSocket
@@ -474,8 +622,13 @@ function handleData(data) {
         ui.updateMachineStatus({ status: "Disconnected" });
     }
 
-    // Check for shot completion (transition from 'espresso' to 'ready' or 'idle')
-    if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE)) {
+    // Check for shot completion (transition from 'espresso' to 'ready' or 'idle').
+    // If the shotState feed tracked this shot, it already owns the stop toast,
+    // history refresh, and upload confirmation — the heuristics below are the
+    // gateway-mode fallback (no sequencer -> feed stays idle -> seqTrackedShot false).
+    if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE) && seqTrackedShot) {
+        logger.info('Shot finished — handled by shotState feed; skipping stop-reason heuristics.');
+    } else if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE)) {
         logger.info('Shot finished. Checking for upload confirmation and refreshing history.');
 
         (async () => {
@@ -583,18 +736,24 @@ function handleData(data) {
                     return;
                 }
                 shotStartTime = new Date(data.timestamp);
+                // Feed frames during this shot re-assert it; stays false in
+                // gateway mode so the fallback heuristics run at shot end.
+                seqTrackedShot = false;
                 chart.clearChart();
                 shotData.clearShotData();
                 const historyLabelEl = document.getElementById('shot-history-label');
                 if (historyLabelEl) {
-                    historyLabelEl.textContent = 'CURRENT';
+                    historyLabelEl.textContent = getTranslation('NEWEST');
                 }
             }
             chart.updateChart(shotStartTime, data, latestScaleWeight, latestScaleWeightFlow);
             shotData.updateShotData(data, latestScaleWeight);
         }
     } else {
-        if (shotStartTime) shotEndedAt = Date.now();
+        if (shotStartTime) {
+            shotEndedAt = Date.now();
+            chart.finalizeLiveChart();
+        }
         shotStartTime = null;
     }
 }
@@ -747,6 +906,98 @@ async function handleWeightClick() {
         //         scaleInfoContainer.style.display = 'none';
         //     }
         // }
+    }
+}
+
+// ── ShotState feed (ws/v1/machine/shotState) ────────────────────────────────
+// Authoritative shot phase + decision frames from Rea's shot sequencer. When
+// frames arrive for a shot they replace the snapshot-based stop-reason
+// heuristics in handleData, which stay as fallback: in full gateway mode no
+// sequencer runs and this feed stays idle.
+let seqTrackedShot = false;   // sequencer emitted frames for the current shot
+let seqLastState = 'idle';
+let seqScaleLostWarned = false;
+let seqHistoryRefreshed = false;
+let seqUploadPolled = false;
+
+// Refresh the history panel to the finished shot and confirm its upload.
+// Fired from stop/terminal AND finalize (first one wins): the feed replays
+// only its latest frame on reconnect, so a socket blip at shot end can
+// swallow the finalize frame — hanging the refresh on it alone left the
+// panel showing the previous shot.
+function seqRefreshHistory(shotId) {
+    if (!seqHistoryRefreshed) {
+        seqHistoryRefreshed = true;
+        history.refreshToNewestShot(history.getNewestShotId(), 6, 2000, shotId ?? null);
+    }
+    if (shotId && !seqUploadPolled) {
+        seqUploadPolled = true;
+        pollForUploadConfirmation(shotId);
+    }
+}
+
+function shotStateStopMessage(decision, machineHasAutonomousSAW) {
+    const reason = decision.reason;
+    // With firmware-side stop-at-weight (Bengle) the target-yield stop is
+    // reported as machineEnded — present it as a weight stop like app-side SAW.
+    if (reason === 'targetWeight' || (reason === 'machineEnded' && machineHasAutonomousSAW && isScaleConnected)) {
+        const w = parseFloat(decision.data?.projectedWeight ?? latestScaleWeight);
+        return getTranslation('Stopped by weight: {value}').replace('{value}', `${w.toFixed(1)}g`);
+    }
+    if (reason === 'targetVolume') {
+        const v = shotData.getCurrentShot()?.volumes?.at(-1) ?? 0;
+        return getTranslation('Stopped by volume: {value}').replace('{value}', `${Math.round(v)}ml`);
+    }
+    // apiStop / appStop / machineEnded / stoppingBackstop — and any unknown
+    // reason: the enum is an open set, newer builds may add values.
+    return getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`);
+}
+
+function handleShotStateEvent(frame) {
+    if (!frame?.event) return;
+
+    const active = frame.state && frame.state !== 'idle' && frame.state !== 'finished';
+    // Any active-shot or decision frame proves the sequencer is running this
+    // shot, so handleData's fallback heuristics stand down.
+    if (active || frame.decision) seqTrackedShot = true;
+    if (active && (seqLastState === 'idle' || seqLastState === 'finished')) {
+        seqScaleLostWarned = false;
+        seqHistoryRefreshed = false;
+        seqUploadPolled = false;
+    }
+    seqLastState = frame.state ?? seqLastState;
+
+    // Scale dropped mid-shot. Sticky per spec: stop-at-weight stays disabled
+    // for the rest of the shot even if the scale reconnects — warn once.
+    if (frame.scaleLost && active && !seqScaleLostWarned) {
+        seqScaleLostWarned = true;
+        ui.showToast(getTranslation('Scale lost — stop at weight disabled'), 6000, 'error');
+    }
+
+    const d = frame.decision;
+    if (!d) return;
+
+    switch (d.kind) {
+        case 'abort':
+            ui.showToast(d.reason === 'noScale'
+                ? getTranslation('Shot blocked: no scale connected')
+                : (d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`)),
+                4000, 'error');
+            break;
+        case 'stop':
+            ui.showToast(shotStateStopMessage(d, frame.machineHasAutonomousSAW), 6000, 'info');
+            seqRefreshHistory(frame.shotId);
+            break;
+        case 'terminal':
+            // Abnormal end (error / disconnect).
+            ui.showToast(d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`), 6000, 'error');
+            seqRefreshHistory(frame.shotId);
+            break;
+        case 'finalize':
+            // Post-stop settling closed — the shot record is persisted.
+            seqRefreshHistory(frame.shotId);
+            break;
+        // advance frames: chart already tracks step changes via profileFrame
     }
 }
 
@@ -913,7 +1164,8 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         if (flushtimeout !== undefined) {
             logger.debug('Received flush timeout data:', flushtimeout);
             ui.updateFlushDisplay(flushtimeout.duration);
-
+            api.resyncIfDrifted(api.FLUSH_DURATION_LAST_VALUE_KEY, flushtimeout.duration, (v) => ui.updateFlushValue(v))
+                .catch(e => logger.warn('Flush duration resync failed:', e));
         }
 
         // Update grind display - prefer context.grinderSetting over legacy grinderData.setting
@@ -936,8 +1188,25 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
 
         const hotwatersettings = workflow?.hotWaterData;
         const steamsettings = workflow?.steamSettings;
-        if (hotwatersettings) ui.updateHotWaterDisplay(hotwatersettings);
-        if (steamsettings) ui.updateSteamDisplay(steamsettings);
+        if (hotwatersettings) {
+            ui.updateHotWaterDisplay(hotwatersettings);
+            // Re-push only if the DE1 disagrees with what we last set — a plain GET
+            // can't tell us the device itself stayed in sync (BLE reconnect / Rea
+            // restart can leave it stale), but blindly re-pushing every boot would
+            // be wasteful and could clobber a legitimate reading if our cache were
+            // ever the stale one. See api.resyncIfDrifted.
+            api.resyncIfDrifted(api.HOT_WATER_VOLUME_LAST_VALUE_KEY, hotwatersettings.volume, api.setTargetHotWaterVolume)
+                .catch(e => logger.warn('Hot water volume resync failed:', e));
+            api.resyncIfDrifted(api.HOT_WATER_TEMP_LAST_VALUE_KEY, hotwatersettings.targetTemperature, api.setTargetHotWaterTemp)
+                .catch(e => logger.warn('Hot water temp resync failed:', e));
+        }
+        if (steamsettings) {
+            ui.updateSteamDisplay(steamsettings);
+            api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings.duration, api.setTargetSteamDuration)
+                .catch(e => logger.warn('Steam duration resync failed:', e));
+            api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings.flow, api.setTargetSteamFlow)
+                .catch(e => logger.warn('Steam flow resync failed:', e));
+        }
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
         // presets based on machine model (group-head size).
@@ -1127,15 +1396,13 @@ async function initMainPageOnce() {
         await loadInitialData();
         await initializeDe1Connection();
         await initVisualizer();
-        connectWebSocket(handleData, () => {
-            logger.info('WebSocket reconnected. Resetting DE1 connection status.');
-            isDe1Connected = false;
-        });
+        connectWebSocket(handleData, onMachineSnapshotSocketOpen);
         connectScaleWebSocket(handleScaleData, onScaleReconnect, onScaleDisconnect);
         connectDeviceWebSocket(handleDeviceWsData, () => {}, () => {}, handleDeviceConnectionError);
         initWaterTankSocket();
         initClockTicker();
         connectTimeToReadyWebSocket(handleTimeToReadyData);
+        connectShotStateWebSocket(handleShotStateEvent);
         connectDisplayWebSocket((data) => logger.debug('Display state updated:', data));
         ensureGatewayModeTracking();
         resetDataTimeout();
@@ -1255,8 +1522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.info('App DOMContentLoaded: Chart initialized.');
 
         await initI18n();
-        ui.initUI({ onWeightClick: handleWeightClick });
-        ui.initScreensaver(); // Initialize screensaver functionality
+        ui.initUI({ onWeightClick: handleWeightClick }); // also inits the screensaver
         initScaling();
         initNumpadModal();
         initTimePicker();
