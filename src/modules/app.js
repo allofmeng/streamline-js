@@ -310,6 +310,12 @@ const deviceErrorCopy = {
 function handleDeviceConnectionError(err) {
     // scaleDisconnected is handled silently — the [Reconnect] UI on the main page covers it
     if (err.kind === 'scaleDisconnected') return;
+    // Adapter-level nags (Bluetooth off / permission missing) are meaningless
+    // while a machine is already connected -- connected over USB serial with BT
+    // off is a fully valid state, so don't tell the user to turn BT on. If the
+    // machine is NOT connected the banner still shows, since BT may genuinely be
+    // the missing piece.
+    if ((err.kind === 'adapterOff' || err.kind === 'bluetoothPermissionDenied') && isDe1Connected) return;
     const msg = deviceErrorCopy[err.kind] ?? `${err.message}${err.suggestion ? `\n${err.suggestion}` : ''}`;
     ui.showToast(msg, 5000, 'error');
 }
