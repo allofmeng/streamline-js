@@ -512,6 +512,12 @@ export function updateButtonUI() {
             if (translatedTitle) {
                 translatedTitle = translatedTitle.replace(/^[A-Z][A-Z0-9]+\s*\/\s*/, '');
             }
+            // Any remaining "/" (e.g. "Tea portafilter/Yunnan green") is treated as a
+            // category delimiter too — keep only the tail so long category+name
+            // combos don't get shrunk illegibly small on the button.
+            if (translatedTitle && translatedTitle.includes('/')) {
+                translatedTitle = translatedTitle.split('/').pop().trim();
+            }
             button.textContent = translatedTitle || 'Untitled';
             button.style.fontSize = '';
             fitButtonText(button);
