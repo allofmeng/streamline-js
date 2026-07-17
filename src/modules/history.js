@@ -88,7 +88,7 @@ async function displayShot(index) {
         } else if (index === shots.length - 1 && shots.length >= totalAvailable) {
             historyLabelEl.textContent = getTranslation('OLDEST');
         } else {
-            historyLabelEl.textContent = getTranslation('SHOT HISTORY');
+            historyLabelEl.textContent = getTranslation('HISTORY');
         }
     }
 
@@ -150,6 +150,25 @@ async function displayShot(index) {
     if (currentShotIndex >= shots.length - 3 && shots.length < totalAvailable) {
         loadMoreShots();
     }
+
+    // Warm the neighbours so the next arrow tap draws without a network stall.
+    prefetchMeasurements(index - 1);
+    prefetchMeasurements(index + 1);
+}
+
+// Fire-and-forget load of a shot's measurements into the cache. No-op if the
+// index is out of range or the shot already has data.
+function prefetchMeasurements(index) {
+    const shot = shots[index];
+    if (!shot || shot.measurements) return;
+    fetch(`${API_BASE_URL}/shots/${shot.id}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(full => {
+            if (!full || shots[index]?.id !== shot.id || shots[index].measurements) return;
+            shots[index] = { ...shots[index], ...full };
+            addShot(shots[index]);
+        })
+        .catch(() => {}); // prefetch is best-effort
 }
 
 // Re-plot the currently selected history shot. The main-page chart shares the
@@ -225,9 +244,12 @@ function setupHistoryLongPress() {
     const panel = document.getElementById('shot-history-panel');
     if (!panel) return;
 
+    // Stop BOTH press and release from reaching the panel. Release matters on
+    // touch: the panel's press-and-hold endPress preventDefaults touchend,
+    // which suppresses the button's synthetic click — arrows dead on tablets.
     ['history-prev-btn', 'history-next-btn'].forEach((id) => {
         const btn = document.getElementById(id);
-        ['mousedown', 'touchstart', 'pointerdown'].forEach((ev) =>
+        ['mousedown', 'touchstart', 'pointerdown', 'mouseup', 'touchend', 'pointerup'].forEach((ev) =>
             btn?.addEventListener(ev, (e) => e.stopPropagation()));
     });
 
@@ -288,11 +310,13 @@ export function getNewestShotId() {
 // A single fixed-delay reload races that write and silently shows the previous
 // shot. Poll the list until a shot newer than `knownNewestId` appears, then
 // render it. ponytail: fixed retry budget, not a server-side watcher.
-export async function refreshToNewestShot(knownNewestId, tries = 6, intervalMs = 2000) {
+export async function refreshToNewestShot(knownNewestId, tries = 6, intervalMs = 2000, expectedId = null) {
     for (let i = 0; i < tries; i++) {
         await loadShotHistory();
-        if (shots.length > 0 && shots[0].id !== knownNewestId) {
-            displayShot(0);
+        // Success = the expected shot id is on top (exact, from the shotState
+        // feed) — or, without one, any id newer than what we knew before.
+        if (shots.length > 0 && (expectedId ? shots[0].id === expectedId : shots[0].id !== knownNewestId)) {
+            await displayShot(0); // labels itself NEWEST
             return;
         }
         await new Promise(r => setTimeout(r, intervalMs));
