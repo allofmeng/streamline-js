@@ -31,6 +31,17 @@ const SETTINGS_NUMPAD_CONFIGS = {
     weightFlowMultiplierInput: { title: 'WEIGHT FLOW MULT',  unit: '',     min: 0,              fieldType: 'settings-weight-mult' },
     volumeFlowMultiplierInput: { title: 'VOLUME FLOW MULT',  unit: '',     min: 0,              fieldType: 'settings-volume-mult' },
     hotWaterFlowMultiplierInput: { title: 'HW FLOW MULT',    unit: 's',    min: 0,              fieldType: 'settings-hw-flow-mult' },
+    // Native type=number fields migrated onto the in-app numpad for a single,
+    // consistent numeric-entry surface on the tablet (desktop keeps the native
+    // control, since attachSettingsNumpad is gated on shouldUseNumpad()). The
+    // keep-awake pair lives inside the Add Schedule <dialog>; the numpad
+    // re-homes into that dialog's top layer -- see openModal in numpad-modal.js.
+    'sleep-timeout-input':       { title: 'SLEEP TIMEOUT',     unit: 'min',  min: 1,   max: 120,  fieldType: 'settings-sleep-timeout' },
+    'brightness-number':         { title: 'BRIGHTNESS',        unit: '%',    min: 0,   max: 100,  fieldType: 'settings-brightness' },
+    'screensaver-cycle-seconds': { title: 'IMAGE CYCLE',       unit: 'sec',  min: 2,   max: 600,  fieldType: 'settings-screensaver-cycle' },
+    'visualizer-min-duration':   { title: 'MIN SHOT DURATION', unit: 'sec',  min: 1,              fieldType: 'settings-visualizer-min' },
+    'keep-awake-hours-input':    { title: 'KEEP AWAKE HOURS',  unit: 'hr',   min: 0,   max: 12,   fieldType: 'settings-keep-awake-hours' },
+    'keep-awake-mins-input':     { title: 'KEEP AWAKE MINS',   unit: 'min',  min: 0,   max: 59,   fieldType: 'settings-keep-awake-mins' },
 };
 
 let _settingsNumpadSelected = null;
@@ -47,50 +58,30 @@ function attachSettingsNumpad() {
         input.readOnly = true;
         input.style.cursor = 'pointer';
 
+        // One tap opens the numpad. (Was a two-tap select-then-open; the numpad is
+        // now a lightweight popup card, so the guard tap is just friction.)
         input.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
 
-            if (_settingsNumpadSelected === input) {
-                // Second click — open numpad
-                clearTimeout(_settingsNumpadTimer);
-                _settingsNumpadSelected = null;
-                input.style.outline = '';
-
-                const currentVal = String(parseFloat(input.value) || config.min);
-                const mockEl = {
-                    value: currentVal,
-                    getAttribute: () => currentVal,
-                    dispatchEvent: () => {}
-                };
-                openModal(mockEl, {
-                    fieldType: config.fieldType,
-                    config,
-                    onConfirm: (val) => {
-                        const num = parseFloat(val);
-                        if (!isNaN(num)) {
-                            const clamped = Math.max(config.min ?? -Infinity, Math.min(config.max ?? Infinity, num));
-                            input.value = clamped;
-                            input.dispatchEvent(new Event('change'));
-                        }
+            const currentVal = String(parseFloat(input.value) || config.min);
+            const mockEl = {
+                value: currentVal,
+                getAttribute: () => currentVal,
+                dispatchEvent: () => {}
+            };
+            openModal(mockEl, {
+                fieldType: config.fieldType,
+                config,
+                onConfirm: (val) => {
+                    const num = parseFloat(val);
+                    if (!isNaN(num)) {
+                        const clamped = Math.max(config.min ?? -Infinity, Math.min(config.max ?? Infinity, num));
+                        input.value = clamped;
+                        input.dispatchEvent(new Event('change'));
                     }
-                });
-            } else {
-                // First click — select / highlight
-                if (_settingsNumpadSelected) {
-                    _settingsNumpadSelected.style.outline = '';
                 }
-                clearTimeout(_settingsNumpadTimer);
-                _settingsNumpadSelected = input;
-                input.style.outline = '2px solid var(--mimoja-blue)';
-                input.style.borderRadius = '4px';
-                _settingsNumpadTimer = setTimeout(() => {
-                    if (_settingsNumpadSelected === input) {
-                        _settingsNumpadSelected = null;
-                        input.style.outline = '';
-                    }
-                }, 2000);
-            }
+            });
         });
     });
 }
@@ -1974,8 +1965,7 @@ async function loadPresenceSettingsAsync() {
                                value="${settings.sleepTimeoutMinutes ?? 30}"
                                min="1"
                                max="120"
-                               oninput="this.value = Math.max(1, Math.min(120, this.value))"
-                               onchange="handleSleepTimeoutChange(this.value)">
+                               onchange="this.value = Math.max(1, Math.min(120, this.value)); handleSleepTimeoutChange(this.value)">
                         <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-2" data-i18n-key="Minutes of inactivity before auto-sleep">
                             Minutes of inactivity before auto-sleep
                         </p>
@@ -2024,13 +2014,13 @@ async function loadPresenceSettingsAsync() {
                                     <div class="flex items-center gap-2">
                                         <input type="number" id="keep-awake-hours-input" class="input input-bordered w-20 text-[20px] bg-[var(--presence-input-bg)] text-[var(--presence-input-text)] border-[var(--presence-input-border)]"
                                                min="0" max="12" placeholder="0" value="0"
-                                               oninput="this.value = Math.max(0, Math.min(12, this.value)); if (this.value == 12) { document.getElementById('keep-awake-mins-input').value = 0; } if (this.value > 12) { ui.showToast('Maximum 12 hours', 3000, 'error'); }">
+                                               onchange="this.value = Math.max(0, Math.min(12, this.value)); if (this.value == 12) { document.getElementById('keep-awake-mins-input').value = 0; } if (this.value > 12) { ui.showToast('Maximum 12 hours', 3000, 'error'); }">
                                         <span class="text-[var(--presence-card-text)]">hr</span>
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <input type="number" id="keep-awake-mins-input" class="input input-bordered w-20 text-[20px] bg-[var(--presence-input-bg)] text-[var(--presence-input-text)] border-[var(--presence-input-border)]"
                                                min="0" max="59" placeholder="0" value="0"
-                                               oninput="this.value = Math.max(0, Math.min(59, this.value))">
+                                               onchange="this.value = Math.max(0, Math.min(59, this.value))">
                                         <span class="text-[var(--presence-card-text)]">min</span>
                                     </div>
                                 </div>
@@ -2048,6 +2038,12 @@ async function loadPresenceSettingsAsync() {
                 </dialog>
             </div>
         `;
+
+        // These presence fields (sleep timeout, keep-awake) are injected here,
+        // asynchronously, AFTER updateSettingsContentArea's one-shot attach has
+        // already run -- so re-attach the settings numpad now that they exist,
+        // otherwise they fall through to the OS keyboard.
+        attachSettingsNumpad();
     } catch (error) {
         console.error('Error rendering presence settings:', error);
         container.innerHTML = `<div class="text-error text-[20px]" data-i18n-key="Failed to load presence settings">Failed to load presence settings</div>`;

@@ -153,78 +153,58 @@ window.testNumpadModal = function(force = true) {
 };
 
 function createModalHTML() {
-    const overlay = document.createElement('div');
+    const overlay = document.createElement('dialog');
     overlay.id = 'numpad-modal-overlay';
     overlay.className = 'numpad-modal-overlay';
-    
+
     overlay.innerHTML = `
         <div class="numpad-modal-container">
-            <div class="numpad-modal-scaled-inner">
-                <div class="numpad-modal-header">
-                    <span class="numpad-modal-title">DOSE</span>
-                    <div class="numpad-modal-actions ml-auto">
-                        <button class="numpad-modal-cancel" id="numpad-cancel">CANCEL</button>
-                        <button class="numpad-modal-confirm" id="numpad-confirm">CONFIRM</button>
-                    </div>
+            <div class="numpad-modal-header">
+                <span class="numpad-modal-title">DOSE</span>
+                <div class="numpad-modal-actions">
+                    <button class="numpad-modal-cancel" id="numpad-cancel">CANCEL</button>
+                    <button class="numpad-modal-confirm" id="numpad-confirm">CONFIRM</button>
                 </div>
-                
-                <div class="numpad-modal-header-divider"></div>
-                
-                <div class="numpad-modal-content">
-                    <div class="numpad-modal-left">
-                        <div class="numpad-modal-input-section">
-                            <span class="numpad-modal-input-label">Input value between 1–120</span>
-                            <div class="numpad-modal-input-box">
-                                <div class="numpad-modal-input-border"></div>
-                                <span class="numpad-modal-input-value" id="numpad-display-value"></span>
-                            </div>
-                        </div>
-                        
-                        <div class="numpad-previous-divider"></div>
-                        
-                        <div class="numpad-modal-previous-values" id="numpad-previous-values-container" style="display: none;">
-                            <div class="numpad-modal-previous-container">
-                                <div class="numpad-modal-previous-title">Previous Values</div>
-                                <div class="numpad-modal-previous-grid" id="numpad-previous-grid"></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="numpad-modal-divider"></div>
-                    
-                    <div class="numpad-modal-right">
-                        <div class="numpad-modal-numpad">
-                            <button class="numpad-modal-numpad-btn" data-number="1">1</button>
-                            <button class="numpad-modal-numpad-btn" data-number="2">2</button>
-                            <button class="numpad-modal-numpad-btn" data-number="3">3</button>
-                            <button class="numpad-modal-numpad-btn" data-number="4">4</button>
-                            <button class="numpad-modal-numpad-btn" data-number="5">5</button>
-                            <button class="numpad-modal-numpad-btn" data-number="6">6</button>
-                            <button class="numpad-modal-numpad-btn" data-number="7">7</button>
-                            <button class="numpad-modal-numpad-btn" data-number="8">8</button>
-                            <button class="numpad-modal-numpad-btn" data-number="9">9</button>
-                            <button class="numpad-modal-numpad-btn numpad-decimal" data-action="decimal">.</button>
-                            <button class="numpad-modal-numpad-btn" data-number="0">0</button>
-                            <button class="numpad-modal-numpad-btn numpad-delete" data-action="delete">
-                                <svg viewBox="0 0 54.8076 43.5" class="delete-icon-small">
-                                    <path d="M49.9746 0C52.644 0 54.8076 2.16461 54.8076 4.83398V38.667C54.8074 41.3362 52.6439 43.5 49.9746 43.5H15.6025C14.3529 43.4999 13.1907 42.8565 12.5283 41.7969L0.799805 23.0312L0 21.75L0.799805 20.4697L12.5283 1.7041C13.1907 0.644322 14.3528 0.000123843 15.6025 0H49.9746ZM5.69922 21.75L16.2715 38.667H49.9746V4.83398H16.2715L5.69922 21.75ZM37.3906 12.791C38.3343 11.8474 39.8648 11.8475 40.8086 12.791C41.752 13.7348 41.7522 15.2653 40.8086 16.209L34.6631 22.3535L40.8086 28.499C41.752 29.4428 41.7522 30.9733 40.8086 31.917C39.8649 32.8607 38.3344 32.8604 37.3906 31.917L31.2451 25.7715L25.1006 31.917C24.1569 32.8607 22.6264 32.8604 21.6826 31.917C20.7391 30.9732 20.7389 29.4427 21.6826 28.499L27.8271 22.3535L21.6826 16.209C20.739 15.2652 20.7389 13.7347 21.6826 12.791C22.6264 11.8473 24.1568 11.8474 25.1006 12.791L31.2451 18.9355L37.3906 12.791Z" fill="#121212" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            </div>
+
+            <div class="numpad-modal-input-box">
+                <span class="numpad-modal-input-value" id="numpad-display-value"></span>
+            </div>
+            <div class="numpad-modal-input-label">Input value between 1-120</div>
+
+            <div class="numpad-modal-previous-values" id="numpad-previous-values-container" style="display: none;">
+                <div class="numpad-modal-previous-title">Previous Values</div>
+                <div class="numpad-modal-previous-grid" id="numpad-previous-grid"></div>
+            </div>
+
+            <div class="numpad-modal-numpad">
+                <button class="numpad-modal-numpad-btn" data-number="1">1</button>
+                <button class="numpad-modal-numpad-btn" data-number="2">2</button>
+                <button class="numpad-modal-numpad-btn" data-number="3">3</button>
+                <button class="numpad-modal-numpad-btn" data-number="4">4</button>
+                <button class="numpad-modal-numpad-btn" data-number="5">5</button>
+                <button class="numpad-modal-numpad-btn" data-number="6">6</button>
+                <button class="numpad-modal-numpad-btn" data-number="7">7</button>
+                <button class="numpad-modal-numpad-btn" data-number="8">8</button>
+                <button class="numpad-modal-numpad-btn" data-number="9">9</button>
+                <button class="numpad-modal-numpad-btn numpad-decimal" data-action="decimal">.</button>
+                <button class="numpad-modal-numpad-btn" data-number="0">0</button>
+                <button class="numpad-modal-numpad-btn numpad-delete" data-action="delete">
+                    <svg viewBox="0 0 54.8076 43.5" class="delete-icon-small"><path d="M49.9746 0C52.644 0 54.8076 2.16461 54.8076 4.83398V38.667C54.8074 41.3362 52.6439 43.5 49.9746 43.5H15.6025C14.3529 43.4999 13.1907 42.8565 12.5283 41.7969L0.799805 23.0312L0 21.75L0.799805 20.4697L12.5283 1.7041C13.1907 0.644322 14.3528 0.000123843 15.6025 0H49.9746ZM5.69922 21.75L16.2715 38.667H49.9746V4.83398H16.2715L5.69922 21.75ZM37.3906 12.791C38.3343 11.8474 39.8648 11.8475 40.8086 12.791C41.752 13.7348 41.7522 15.2653 40.8086 16.209L34.6631 22.3535L40.8086 28.499C41.752 29.4428 41.7522 30.9733 40.8086 31.917C39.8649 32.8607 38.3344 32.8604 37.3906 31.917L31.2451 25.7715L25.1006 31.917C24.1569 32.8607 22.6264 32.8604 21.6826 31.917C20.7391 30.9732 20.7389 29.4427 21.6826 28.499L27.8271 22.3535L21.6826 16.209C20.739 15.2652 20.7389 13.7347 21.6826 12.791C22.6264 11.8473 24.1568 11.8474 25.1006 12.791L31.2451 18.9355L37.3906 12.791Z" /></svg>
+                </button>
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(overlay);
-    
-    // Attempt to move modal inside scaled-content for proper scaling
-    const scaledContent = document.getElementById('scaled-content');
-    if (scaledContent && overlay.parentElement === document.body) {
-        scaledContent.appendChild(overlay);
-    }
-    
+
+    // 'close' fires on EVERY closure path, including ESC (which closes a native
+    // <dialog> without going through closeModal) — restore page scroll there so
+    // an ESC'd numpad can't leave the body stuck at overflow:hidden.
+    overlay.addEventListener('close', () => {
+        document.body.style.overflow = '';
+    });
+
     return overlay;
 }
 
@@ -294,19 +274,13 @@ function renderPreviousValues() {
     container.style.display = 'block';
     grid.innerHTML = '';
 
-    const rows = [previousValues.slice(0, 2), previousValues.slice(2, 4)];
-    rows.forEach(rowValues => {
-        if (rowValues.length === 0) return;
-        const row = document.createElement('div');
-        row.className = 'numpad-previous-row';
-        rowValues.forEach(value => {
-            const btn = document.createElement('button');
-            btn.className = 'numpad-modal-previous-btn';
-            btn.textContent = value;
-            btn.addEventListener('click', () => handlePreviousValue(value));
-            row.appendChild(btn);
-        });
-        grid.appendChild(row);
+    // Up to 4 recent values as a single row of chips (the card's grid is 4-wide).
+    previousValues.slice(0, 4).forEach(value => {
+        const btn = document.createElement('button');
+        btn.className = 'numpad-modal-previous-btn';
+        btn.textContent = value;
+        btn.addEventListener('click', () => handlePreviousValue(value));
+        grid.appendChild(btn);
     });
 }
 
@@ -396,142 +370,46 @@ async function openModal(inputElement, options = {}) {
     onConfirmCallback = options.onConfirm || null;
     
     const overlay = document.getElementById('numpad-modal-overlay');
-    overlay.classList.add('active');
-    
-    // Apply the same scaling logic as the main content to the modal
-    // Calculate scale specifically for modal to fill viewport
-    const designWidth = 1920;
-    const designHeight = 1200;
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
 
-    // Calculate scale to fit viewport while maintaining aspect ratio (same logic as scaling.js)
-    const screenAspectRatio = screenWidth / screenHeight;
-    const designAspectRatio = designWidth / designHeight;
-
-    let modalScale;
-    if (screenAspectRatio > designAspectRatio) {
-        // Screen is wider - scale based on height
-        modalScale = screenHeight / designHeight;
-    } else {
-        // Screen is taller - scale based on width
-        modalScale = screenWidth / designWidth;
-    }
-
-    // The modal container uses CSS width: 100%, height: 100% to fill viewport
-    // No scale transform needed - container already fills 1280x800
-    // The scaling.js handles main content, modal fills viewport naturally
-    
-    console.log('[Numpad] Modal uses viewport size directly:', screenWidth, 'x', screenHeight);
-    
-    // Get the container for event listeners later
-    const container = overlay.querySelector('.numpad-modal-container');
-    
-    // Set container to fill overlay dimensions (1920x1200), not viewport
-    // This way container inherits parent scale once and renders at correct viewport size
-    container.style.width = '1920px';
-    container.style.height = '1200px';
-    
-    // No scale needed here - container already inherits parent scale from #scaled-content
-    // Inner wrapper fills 100% of container, elements naturally display at correct size
-    const innerContent = container?.querySelector('.numpad-modal-scaled-inner');
-    console.log('[DEBUG] Inner wrapper uses parent scale only - no explicit scale applied');
-    
-    // DEBUG: Log viewport dimensions when modal opens
-    console.log('[DEBUG] Numpad Modal Opened');
-    console.log('[DEBUG] window.innerWidth:', window.innerWidth, 'window.innerHeight:', window.innerHeight);
-    console.log('[DEBUG] screen.width:', screen.width, 'screen.height:', screen.height);
-    console.log('[DEBUG] screen.availWidth:', screen.availWidth, 'screen.availHeight:', screen.availHeight);
-    console.log('[DEBUG] window.devicePixelRatio:', window.devicePixelRatio);
-    console.log('[DEBUG] Calculated physical pixels:', screen.width * window.devicePixelRatio, 'x', screen.height * window.devicePixelRatio);
-    console.log('[DEBUG] document.documentElement.clientWidth:', document.documentElement.clientWidth, 'clientHeight:', document.documentElement.clientHeight);
-    
-    // Log modal container dimensions after it's rendered
-    requestAnimationFrame(() => {
-        const modalContainer = overlay.querySelector('.numpad-modal-container');
-        if (modalContainer) {
-            const rect = modalContainer.getBoundingClientRect();
-            console.log('[DEBUG] Modal container rect - width:', rect.width, 'height:', rect.height);
-            console.log('[DEBUG] Modal container offsetWidth:', modalContainer.offsetWidth, 'offsetHeight:', modalContainer.offsetHeight);
-        }
-        
-        // Log inner wrapper dimensions
-        if (innerContent) {
-            const innerRect = innerContent.getBoundingClientRect();
-            const innerComputed = window.getComputedStyle(innerContent);
-            console.log('[DEBUG] Inner wrapper rect - width:', innerRect.width, 'height:', innerRect.height);
-            console.log('[DEBUG] Inner wrapper transform:', innerComputed.transform);
-            console.log('[DEBUG] getDesignScale() returned:', getDesignScale());
-        }
-        
-        // Log scaled-content transform
-        const scaledContent = document.getElementById('scaled-content');
-        if (scaledContent) {
-            console.log('[DEBUG] scaled-content transform:', scaledContent.style.transform);
-        }
-
-        // Log viewport dimensions
-        const viewport = document.getElementById('scaling-container');
-        if (viewport) {
-            console.log('[DEBUG] scaling-container style - width:', viewport.style.width, 'height:', viewport.style.height);
-        }
-    });
-    
-    // Prevent OS keyboard by preventing focus on any element
-    // Keep focus prevention but make touchstart selective to not block button clicks
-    // Reuse the container variable from earlier
-    const preventFocus = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-    };
-    container.addEventListener('focus', preventFocus, true);
-    container.addEventListener('focusin', preventFocus, true);
-    
-    // Only prevent touchstart on input-like elements, not buttons
-    const preventTouchKeyboard = (e) => {
-        const tagName = e.target.tagName;
-        // Only prevent default on input/textarea to block OS keyboard
-        // Allow clicks on buttons (BUTTON tag or elements with onclick/role=button)
-        if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        }
-    };
-    container.addEventListener('touchstart', preventTouchKeyboard, { passive: false });
-    // Note: mousedown is intentionally NOT prevented to allow button clicks
-    
-    // Store reference to remove listeners later
-    container._numpadPreventFocus = preventFocus;
-    container._numpadPreventTouch = preventTouchKeyboard;
-    
     renderPreviousValues();
     updateDisplay();
-    
+
+    // The numpad is a top-layer <dialog>: it renders above everything (including
+    // an open showModal() dialog like Add Schedule) at natural viewport size, so
+    // there is no manual scaling, re-parenting, or OS-keyboard suppression to do.
+    if (!overlay.open) overlay.showModal();
+    // Fit the title AFTER layout and AFTER fonts settle -- a synchronous read can
+    // race the top-layer dialog's layout or async font loading on the device,
+    // which left long single words (e.g. TEMPERATURE) measured as "fits" and then
+    // clipped. requestAnimationFrame covers layout; fonts.ready covers a late
+    // font swap that changes the text width.
+    requestAnimationFrame(fitNumpadTitle);
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(() => requestAnimationFrame(fitNumpadTitle));
+    }
     document.body.style.overflow = 'hidden';
+}
+
+// The title wraps to up to two lines; shrink the font ONLY while a line still
+// overflows the measured header width, so long field names ("STEAM TEMPERATURE",
+// "VOLUME FLOW MULT") show in full at the largest size that clears the
+// Cancel/Confirm buttons. Runs after showModal() so the header width is known.
+function fitNumpadTitle() {
+    const el = document.querySelector('.numpad-modal-title');
+    if (!el || !el.clientWidth) return; // not laid out yet -- a later call will fit it
+    let fs = 22;
+    el.style.fontSize = fs + 'px';
+    let guard = 0;
+    while (el.scrollWidth > el.clientWidth && fs > 11 && guard++ < 28) {
+        fs -= 1;
+        el.style.fontSize = fs + 'px';
+    }
 }
 
 function closeModal() {
     const overlay = document.getElementById('numpad-modal-overlay');
-    overlay.classList.remove('active');
+    if (overlay.open) overlay.close();
     document.body.style.overflow = '';
-    
-    // Clean up keyboard prevention listeners
-    const container = overlay.querySelector('.numpad-modal-container');
-    if (container) {
-        if (container._numpadPreventFocus) {
-            const preventFocus = container._numpadPreventFocus;
-            container.removeEventListener('focus', preventFocus, true);
-            container.removeEventListener('focusin', preventFocus, true);
-            delete container._numpadPreventFocus;
-        }
-        if (container._numpadPreventTouch) {
-            const preventTouchKeyboard = container._numpadPreventTouch;
-            container.removeEventListener('touchstart', preventTouchKeyboard, { passive: false });
-            delete container._numpadPreventTouch;
-        }
-    }
 }
 
 function handleCancel() {

@@ -13,6 +13,7 @@ import { logger, setDebug } from './logger.js';
 import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
+import { initTimePicker } from './time-picker-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
 
@@ -1524,6 +1525,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ui.initUI({ onWeightClick: handleWeightClick }); // also inits the screensaver
         initScaling();
         initNumpadModal();
+        initTimePicker();
         initMobileValueInputs();
         logger.info('App DOMContentLoaded: UI initialized.');
 
