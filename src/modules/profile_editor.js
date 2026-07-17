@@ -881,7 +881,10 @@ function renderStepCards() {
 
             const limUnit = isFlow ? 'bar' : 'mL/s';
             const limMax  = isFlow ? 12 : 8;
-            const limMin  = isFlow ? 1  : 0;
+            // 0 always allowed: 0 = limiter off (saveProfile nulls a 0-value
+            // limiter). A min of 1 on flow steps made the pressure limit
+            // impossible to switch off from the − button or the numpad.
+            const limMin  = 0;
             const lStep   = 0.1;
             const isLimExp = expandedLimSteps.has(index);
 
@@ -990,7 +993,7 @@ function renderStepCards() {
                 if (expandedLimSteps.has(index)) {
                     if (shouldUseNumpad()) {
                         const limConfig = isFlow
-                            ? { fieldType: 'pe-lim', title: 'PRESSURE LIMIT', unit: 'bar', min: 1, max: 12, label: '1\u201312' }
+                            ? { fieldType: 'pe-lim', title: 'PRESSURE LIMIT', unit: 'bar', min: 0, max: 12, label: '0\u201312' }
                             : { fieldType: 'pe-lim', title: 'FLOW LIMIT', unit: 'mL/s', min: 0, max: 8, label: '0\u20138' };
                         openNumpadForField(limValue, limConfig, (val) => {
                             limValue = val;
