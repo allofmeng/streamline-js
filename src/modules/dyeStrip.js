@@ -394,7 +394,11 @@ function wireOnce() {
     // openPluginOverlay); returning via the browser Back button restores this page
     // from bfcache — a frozen pre-edit snapshot that fires `pageshow` (persisted),
     // not focus/visibilitychange. Mirrors profile_selector.js's plugin-return guard.
-    window.addEventListener('pageshow', repoll);
+    // getDye2KvArray coerces a fetch error to [] (its own bridge-quirk handling), so
+    // a transient failure isn't visible as a rejection here — a fetch fired right as
+    // the browser wakes the network stack back up from bfcache can intermittently
+    // fail and get read as "no favourites". Retry once shortly after to cover that.
+    window.addEventListener('pageshow', () => { repoll(); setTimeout(repoll, 500); });
 }
 
 // Reveal the DYE2 UI: shift the profile nav right to make room, show the toggle +
