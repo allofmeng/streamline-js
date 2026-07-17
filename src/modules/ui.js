@@ -1,5 +1,6 @@
 import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
+import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
@@ -954,6 +955,19 @@ let screensaverDimOverlay = null;
 let screensaverImages = [];
 let screensaverCurrentIndex = 0;
 let screensaverCycleInterval = null;
+
+// When we last sent a wake ('idle') the machine has not yet confirmed. 0 = none.
+//
+// A wake is the one place the skin legitimately gets ahead of the machine: the
+// user tapped, so we hide the overlay immediately rather than making them stare
+// at it for a round-trip. But for the next frame or three the machine still
+// honestly reports 'sleeping', and app.js would dutifully raise the overlay again
+// — a ~100–300 ms flash straight back into the user's face. This timestamp lets
+// app.js recognise those frames as stale-by-our-own-doing and leave the overlay
+// down. It is time-bounded (WAKE_CONFIRM_GRACE_MS), so a wake that is lost or
+// refused simply expires and the overlay returns: the suppression can never latch
+// the screensaver off.
+let wakeRequestedAt = 0;
 const DEFAULT_SCREENSAVER_CYCLE_SECONDS = 10;
 const MIN_SCREENSAVER_CYCLE_SECONDS = 2;
 const MAX_SCREENSAVER_CYCLE_SECONDS = 600;
@@ -981,6 +995,18 @@ function isInWebView() {
 }
 
 export async function initScreensaver() {
+    // Idempotent. This used to be called twice — once from initUI() and again
+    // straight from app.js's DOMContentLoaded — and each call built ANOTHER
+    // <div id="screensaver">, appended it to <body>, and bound another
+    // click -> wakeFromScreensaver listener. The module only remembers the last
+    // one, so the earlier node was orphaned: a duplicate id, a live listener on an
+    // element nothing can ever show, and a second IndexedDB read of the image list.
+    //
+    // It was harmless only by luck (the orphan stays display:none, so it cannot be
+    // clicked). A duplicate id is still a landmine — the first
+    // getElementById('screensaver') anyone writes gets the dead one.
+    if (screensaverElement) return;
+
     screensaverElement = document.createElement('div');
     screensaverElement.id = 'screensaver';
     screensaverElement.style.position = 'fixed';
@@ -1005,8 +1031,11 @@ export async function initScreensaver() {
     screensaverDimOverlay.style.display = 'none';
     screensaverElement.appendChild(screensaverDimOverlay);
 
-    screensaverElement.addEventListener('click', deactivateScreensaver);
-    screensaverElement.addEventListener('touchstart', deactivateScreensaver);
+    // Tapping the overlay is the one place a screensaver interaction may wake the
+    // machine. Bind ONCE: a WebView synthesises `click` from a tap, so binding
+    // `touchstart` as well (as this did) sent 'idle' twice per tap. The
+    // !screensaverActive guard inside wakeFromScreensaver() is the backstop.
+    screensaverElement.addEventListener('click', wakeFromScreensaver);
 
     document.body.appendChild(screensaverElement);
 
@@ -1073,18 +1102,63 @@ export function activateScreensaver() {
     }
 }
 
-export function deactivateScreensaver() {
-    if (!screensaverElement) {
-        console.error('Screensaver element not initialized');
-        return;
-    }
+/**
+ * PURE UI: take the overlay down. Sends NOTHING. Idempotent.
+ *
+ * This was deactivateScreensaver(), which hid the overlay AND sent
+ * setMachineState('idle') — so tearing the overlay down WOKE THE MACHINE. Three
+ * of its four callers did not want a wake, and one of them (app.js's snapshot
+ * handler, on a branch whose precondition is "the machine is awake") turned a
+ * stale frame into the command that cancelled the user's sleep press.
+ *
+ * A UI teardown must never command the machine. Everything that merely hides the
+ * overlay calls this; only wakeFromScreensaver() below may command.
+ */
+export function hideScreensaver() {
+    if (!screensaverActive) return; // idempotent — also kills the click/touchstart double-fire
     if (screensaverCycleInterval) {
         clearInterval(screensaverCycleInterval);
         screensaverCycleInterval = null;
     }
-    screensaverElement.style.display = 'none';
+    if (screensaverElement) {
+        screensaverElement.style.display = 'none';
+    }
     screensaverActive = false;
-    setMachineState('idle');
+}
+
+/**
+ * The user tapped the screensaver to wake the machine.
+ *
+ * The ONLY screensaver path allowed to emit a machine command, and it is bound to
+ * exactly one thing: a tap on the overlay itself. The hide is a paint; the wake is
+ * this explicit, user-initiated command sitting next to it — never inside it.
+ */
+export function wakeFromScreensaver() {
+    if (!screensaverActive) return; // a tap that lands twice only wakes once
+    hideScreensaver();
+    noteWakeRequested();
+    // Until the machine confirms this, its snapshots still say 'sleeping'. If the
+    // wake fails, drop the suppression at once rather than making the user wait out
+    // the grace period for the overlay they are looking at to come back.
+    setMachineState('idle').catch((err) => {
+        logger.error('Screensaver tap: failed to wake the machine:', err);
+        clearWakeRequest();
+    });
+}
+
+/** We have asked the machine to wake and are waiting for it to confirm. */
+export function noteWakeRequested() {
+    wakeRequestedAt = Date.now();
+}
+
+/** The wake is settled (confirmed, superseded by a sleep, or failed). */
+export function clearWakeRequest() {
+    wakeRequestedAt = 0;
+}
+
+/** Is a wake we sent still unconfirmed (and still within its grace window)? */
+export function isWakeRequestPending() {
+    return isWakePending(wakeRequestedAt);
 }
 
 export function isScreensaverActive() {
@@ -1493,27 +1567,51 @@ export function initUI(callbacks) {
     }
 
     if (sleepButton) {
+        // One tap used to send 'sleeping' and then 'idle' 46 ms later, so the
+        // machine slept and instantly woke. Two defects, both closed here:
+        //
+        //  1. The button raised the screensaver OPTIMISTICALLY, before the machine
+        //     had confirmed the sleep. The next snapshot still said 'idle', so
+        //     app.js's "machine is awake, tidy the overlay away" branch tore the
+        //     overlay down — and the teardown used to wake the machine. There is no
+        //     optimistic activation any more: app.js raises the screensaver when the
+        //     machine CONFIRMS 'sleeping', which is the only source of truth.
+        //  2. A fast double-tap could read a stale currentMachineState (it lags the
+        //     machine by a snapshot) and derive the OPPOSITE action, undoing the
+        //     first press. The in-flight guard makes the second tap a no-op.
+        let sleepRequestInFlight = false;
+
         sleepButton.addEventListener('click', async () => {
-            if (currentMachineState === 'sleeping') {
-                // Wake machine up
-                await setMachineState('idle');
-                logger.info("current machine state in sleep button:", currentMachineState);
-                logger.info('Machine state set to idle.');
+            if (sleepRequestInFlight) return;
+            sleepRequestInFlight = true;
 
-                // Deactivate screensaver if it's active
-                if (isScreensaverActive()) {
-                    deactivateScreensaver();
-                }
-            } else {
-                // Put machine to sleep
-                await setMachineState('sleeping');
-                logger.info("current machine state in sleep button:", currentMachineState);
-                logger.info('Machine state set to sleeping.');
+            const action = deriveSleepButtonAction({
+                machineState: currentMachineState,
+                screensaverActive: isScreensaverActive(),
+            });
 
-                // Activate screensaver (unless disabled by user)
-                if (!isScreensaverActive() && localStorage.getItem('screensaverEnabled') !== 'false') {
-                    activateScreensaver();
-                }
+            try {
+                // The hide is a paint. The command below is the only command — and
+                // when the machine is already awake, `action.command` is 'sleeping',
+                // so no path through here can wake a machine the user just slept.
+                if (action.hideScreensaver) hideScreensaver();
+
+                // Waking hides the overlay ahead of the machine's confirmation, so
+                // tell app.js to ignore the 'sleeping' frames still in flight (they
+                // are stale by our own doing) rather than flashing the overlay back
+                // up. Sleeping must CLEAR any pending wake instead: a wake followed
+                // within the grace window by a sleep would otherwise suppress the
+                // screensaver the sleep is supposed to raise.
+                if (action.command === 'idle') noteWakeRequested();
+                else clearWakeRequest();
+
+                await setMachineState(action.command);
+                logger.info(`Sleep button: machine reported "${currentMachineState}" -> requested "${action.command}".`);
+            } catch (err) {
+                logger.error(`Sleep button: failed to set machine state to "${action.command}":`, err);
+                clearWakeRequest(); // the wake never landed — let the overlay come back
+            } finally {
+                sleepRequestInFlight = false;
             }
         });
     }

@@ -10,6 +10,7 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
+import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { openDB, setSetting } from './idb.js';
@@ -495,6 +496,43 @@ function handleTimeToReadyData(data) {
     }
 }
 
+// The screensaver is a pure function of the machine's CONFIRMED state.
+//
+// The derived action is paint-only -- 'show' | 'hide' | 'none' -- so a snapshot
+// frame is structurally incapable of commanding the machine. That is the whole
+// bug: 'hide' used to be spelled ui.deactivateScreensaver(), which sent
+// setMachineState('idle'), so this branch -- whose precondition is "the machine is
+// awake" -- WOKE the machine. In the 46 ms after a sleep press, with the overlay
+// optimistically up and the snapshot still reporting 'idle', that is the command
+// that cancelled the user's sleep.
+//
+// The one concession to latency runs the OTHER way. When the user taps to wake, we
+// hide the overlay immediately instead of making them watch it for a round-trip —
+// so for the next frame or three the machine still (honestly) reports 'sleeping'
+// and this function would raise the overlay straight back up. `wakePending` marks
+// those frames as stale by our own doing. It is time-bounded, so a wake that never
+// lands expires and the overlay returns: we decline to repaint a state we have
+// asked the machine to leave, we never paint one it never reported.
+function applyScreensaverAction(state) {
+    const action = deriveScreensaverAction({
+        machineState: state,
+        screensaverActive: ui.isScreensaverActive(),
+        screensaverEnabled: localStorage.getItem('screensaverEnabled') !== 'false',
+        wakePending: ui.isWakeRequestPending(),
+    });
+    if (action === 'show') {
+        logger.info('Machine confirmed sleeping. Activating screensaver.');
+        ui.activateScreensaver();
+    } else if (action === 'hide') {
+        ui.hideScreensaver(); // PURE UI -- never a machine command
+    }
+
+    // The machine has confirmed it is awake: the wake we were waiting on has
+    // landed, so stop suppressing. (A wake superseded by a sleep press is cleared
+    // by the sleep button itself.)
+    if (!isMachineAsleep(state)) ui.clearWakeRequest();
+}
+
 function handleData(data) {
     if (!data?.state) {
         logger.warn('Received WebSocket message with missing state:', data);
@@ -518,17 +556,10 @@ function handleData(data) {
     if (state === MachineState.ERROR) {
         statusString = "Error";
     } else if (state === MachineState.SLEEPING) {
-        // Activate screensaver when machine enters sleep state (if not disabled by user)
-        if (!ui.isScreensaverActive() && localStorage.getItem('screensaverEnabled') !== 'false') {
-            logger.info('Machine entered sleep state. Activating screensaver.');
-            ui.activateScreensaver();
-        }
+        applyScreensaverAction(state);
         statusString = "Sleeping";
     } else {
-        // Deactivate screensaver when machine wakes up from sleep (if it was active)
-        if (ui.isScreensaverActive()) {
-            ui.deactivateScreensaver();
-        }
+        applyScreensaverAction(state);
         if (isHeating && isHeatingFromTimeToReady) {
             // When heating and we're in a heating phase from time-to-ready,
             // rely solely on timeToReadyMessage from the time-to-ready WebSocket
@@ -1490,8 +1521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.info('App DOMContentLoaded: Chart initialized.');
 
         await initI18n();
-        ui.initUI({ onWeightClick: handleWeightClick });
-        ui.initScreensaver(); // Initialize screensaver functionality
+        ui.initUI({ onWeightClick: handleWeightClick }); // also inits the screensaver
         initScaling();
         initNumpadModal();
         initMobileValueInputs();
