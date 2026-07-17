@@ -6,7 +6,7 @@
   "scripts": {
     "build:css": "tailwindcss -i ./src/input.css -o ./src/css/app.css --minify",
     "watch:css": "tailwindcss -i ./src/input.css -o ./src/css/app.css --watch",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
