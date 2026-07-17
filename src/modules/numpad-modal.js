@@ -157,27 +157,48 @@ function createModalHTML() {
     overlay.id = 'numpad-modal-overlay';
     overlay.className = 'numpad-modal-overlay';
 
+    // Full-screen layout on the top-layer <dialog>: the inner canvas is a fixed
+    // 1920x1200 design surface (the sizes below and in numpad-modal.css are
+    // design pixels) scaled to the viewport by scaleNumpadCanvas() — the same
+    // visual as the original full-screen numpad, without the old #scaled-content
+    // re-parenting.
     overlay.innerHTML = `
         <div class="numpad-modal-container">
-            <div class="numpad-modal-header">
-                <span class="numpad-modal-title">DOSE</span>
-                <div class="numpad-modal-actions">
-                    <button class="numpad-modal-cancel" id="numpad-cancel">CANCEL</button>
-                    <button class="numpad-modal-confirm" id="numpad-confirm">CONFIRM</button>
+            <div class="numpad-modal-scaled-inner">
+                <div class="numpad-modal-header">
+                    <span class="numpad-modal-title">DOSE</span>
+                    <div class="numpad-modal-actions">
+                        <button class="numpad-modal-cancel" id="numpad-cancel">CANCEL</button>
+                        <button class="numpad-modal-confirm" id="numpad-confirm">CONFIRM</button>
+                    </div>
                 </div>
-            </div>
 
-            <div class="numpad-modal-input-box">
-                <span class="numpad-modal-input-value" id="numpad-display-value"></span>
-            </div>
-            <div class="numpad-modal-input-label">Input value between 1-120</div>
+                <div class="numpad-modal-header-divider"></div>
 
-            <div class="numpad-modal-previous-values" id="numpad-previous-values-container" style="display: none;">
-                <div class="numpad-modal-previous-title">Previous Values</div>
-                <div class="numpad-modal-previous-grid" id="numpad-previous-grid"></div>
-            </div>
+                <div class="numpad-modal-content">
+                    <div class="numpad-modal-left">
+                        <div class="numpad-modal-input-section">
+                            <span class="numpad-modal-input-label">Input value between 1–120</span>
+                            <div class="numpad-modal-input-box">
+                                <div class="numpad-modal-input-border"></div>
+                                <span class="numpad-modal-input-value" id="numpad-display-value"></span>
+                            </div>
+                        </div>
 
-            <div class="numpad-modal-numpad">
+                        <div class="numpad-previous-divider"></div>
+
+                        <div class="numpad-modal-previous-values" id="numpad-previous-values-container" style="display: none;">
+                            <div class="numpad-modal-previous-container">
+                                <div class="numpad-modal-previous-title">Previous Values</div>
+                                <div class="numpad-modal-previous-grid" id="numpad-previous-grid"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="numpad-modal-divider"></div>
+
+                    <div class="numpad-modal-right">
+                        <div class="numpad-modal-numpad">
                 <button class="numpad-modal-numpad-btn" data-number="1">1</button>
                 <button class="numpad-modal-numpad-btn" data-number="2">2</button>
                 <button class="numpad-modal-numpad-btn" data-number="3">3</button>
@@ -191,7 +212,10 @@ function createModalHTML() {
                 <button class="numpad-modal-numpad-btn" data-number="0">0</button>
                 <button class="numpad-modal-numpad-btn numpad-delete" data-action="delete">
                     <svg viewBox="0 0 54.8076 43.5" class="delete-icon-small"><path d="M49.9746 0C52.644 0 54.8076 2.16461 54.8076 4.83398V38.667C54.8074 41.3362 52.6439 43.5 49.9746 43.5H15.6025C14.3529 43.4999 13.1907 42.8565 12.5283 41.7969L0.799805 23.0312L0 21.75L0.799805 20.4697L12.5283 1.7041C13.1907 0.644322 14.3528 0.000123843 15.6025 0H49.9746ZM5.69922 21.75L16.2715 38.667H49.9746V4.83398H16.2715L5.69922 21.75ZM37.3906 12.791C38.3343 11.8474 39.8648 11.8475 40.8086 12.791C41.752 13.7348 41.7522 15.2653 40.8086 16.209L34.6631 22.3535L40.8086 28.499C41.752 29.4428 41.7522 30.9733 40.8086 31.917C39.8649 32.8607 38.3344 32.8604 37.3906 31.917L31.2451 25.7715L25.1006 31.917C24.1569 32.8607 22.6264 32.8604 21.6826 31.917C20.7391 30.9732 20.7389 29.4427 21.6826 28.499L27.8271 22.3535L21.6826 16.209C20.739 15.2652 20.7389 13.7347 21.6826 12.791C22.6264 11.8473 24.1568 11.8474 25.1006 12.791L31.2451 18.9355L37.3906 12.791Z" /></svg>
-                </button>
+                        </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -205,7 +229,18 @@ function createModalHTML() {
         document.body.style.overflow = '';
     });
 
+    window.addEventListener('resize', scaleNumpadCanvas);
+
     return overlay;
+}
+
+// Fit the fixed 1920x1200 design canvas to the viewport (letterboxing on other
+// aspect ratios, exactly like the pre-dialog full-screen numpad rendered).
+function scaleNumpadCanvas() {
+    const inner = document.querySelector('#numpad-modal-overlay .numpad-modal-scaled-inner');
+    if (!inner) return;
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1200);
+    inner.style.transform = `scale(${s})`;
 }
 
 function updateDisplay() {
@@ -274,13 +309,20 @@ function renderPreviousValues() {
     container.style.display = 'block';
     grid.innerHTML = '';
 
-    // Up to 4 recent values as a single row of chips (the card's grid is 4-wide).
-    previousValues.slice(0, 4).forEach(value => {
-        const btn = document.createElement('button');
-        btn.className = 'numpad-modal-previous-btn';
-        btn.textContent = value;
-        btn.addEventListener('click', () => handlePreviousValue(value));
-        grid.appendChild(btn);
+    // Up to 4 recent values, as two rows of two pills (the full-screen layout).
+    const rows = [previousValues.slice(0, 2), previousValues.slice(2, 4)];
+    rows.forEach(rowValues => {
+        if (rowValues.length === 0) return;
+        const row = document.createElement('div');
+        row.className = 'numpad-previous-row';
+        rowValues.forEach(value => {
+            const btn = document.createElement('button');
+            btn.className = 'numpad-modal-previous-btn';
+            btn.textContent = value;
+            btn.addEventListener('click', () => handlePreviousValue(value));
+            row.appendChild(btn);
+        });
+        grid.appendChild(row);
     });
 }
 
@@ -375,35 +417,12 @@ async function openModal(inputElement, options = {}) {
     updateDisplay();
 
     // The numpad is a top-layer <dialog>: it renders above everything (including
-    // an open showModal() dialog like Add Schedule) at natural viewport size, so
-    // there is no manual scaling, re-parenting, or OS-keyboard suppression to do.
+    // an open showModal() dialog like Add Schedule). The 1920x1200 design canvas
+    // inside it is fitted to the viewport by scaleNumpadCanvas — no re-parenting
+    // into #scaled-content, no OS-keyboard suppression.
     if (!overlay.open) overlay.showModal();
-    // Fit the title AFTER layout and AFTER fonts settle -- a synchronous read can
-    // race the top-layer dialog's layout or async font loading on the device,
-    // which left long single words (e.g. TEMPERATURE) measured as "fits" and then
-    // clipped. requestAnimationFrame covers layout; fonts.ready covers a late
-    // font swap that changes the text width.
-    requestAnimationFrame(fitNumpadTitle);
-    if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => requestAnimationFrame(fitNumpadTitle));
-    }
+    scaleNumpadCanvas();
     document.body.style.overflow = 'hidden';
-}
-
-// The title wraps to up to two lines; shrink the font ONLY while a line still
-// overflows the measured header width, so long field names ("STEAM TEMPERATURE",
-// "VOLUME FLOW MULT") show in full at the largest size that clears the
-// Cancel/Confirm buttons. Runs after showModal() so the header width is known.
-function fitNumpadTitle() {
-    const el = document.querySelector('.numpad-modal-title');
-    if (!el || !el.clientWidth) return; // not laid out yet -- a later call will fit it
-    let fs = 22;
-    el.style.fontSize = fs + 'px';
-    let guard = 0;
-    while (el.scrollWidth > el.clientWidth && fs > 11 && guard++ < 28) {
-        fs -= 1;
-        el.style.fontSize = fs + 'px';
-    }
 }
 
 function closeModal() {
