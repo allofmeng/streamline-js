@@ -1,5 +1,6 @@
 import * as ui from './ui.js';
 import { logger ,setDebug} from './logger.js';
+import { openDB, getSetting, setSetting } from './idb.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
 export const REA_PORT = 8080;
@@ -297,6 +298,36 @@ export function connectShotSettingsWebSocket(onData) {
 
     shotSettingsWebSocket.onerror = (error) => {
         logger.error('Shot Settings WebSocket error:', error);
+    };
+}
+
+// ShotState feed (ws/v1/machine/shotState): shot phase + decision frames from
+// Rea's shot sequencer. The server replays the latest frame on connect and the
+// socket is not gated on a connected machine — attach once and keep it open.
+export function connectShotStateWebSocket(onData) {
+    const shotStateWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/shotState`, [], {
+        debug: true,
+        reconnectInterval: 3000,
+    });
+
+    shotStateWebSocket.onopen = () => {
+        logger.info('Shot State WebSocket connected');
+    };
+
+    shotStateWebSocket.onmessage = (event) => {
+        try {
+            onData(JSON.parse(event.data));
+        } catch (error) {
+            logger.error('Error parsing Shot State WebSocket message:', error);
+        }
+    };
+
+    shotStateWebSocket.onclose = () => {
+        logger.info('Shot State WebSocket disconnected. Attempting to reconnect...');
+    };
+
+    shotStateWebSocket.onerror = (error) => {
+        logger.error('Shot State WebSocket error:', error);
     };
 }
 
@@ -978,20 +1009,58 @@ async function sendShotSettings() {
     return;
 }
 
-export async function setTargetHotWaterVolume(volume) {
-    return updateWorkflow({
-        hotWaterData: {
-            volume: parseFloat(volume)
+// Last-value-set-by-the-user cache, per main-page control. Kept fresh from
+// every surface that can change these (dashboard +/-, presets, numpad),
+// since each setter below writes here on success. Used at boot to tell
+// "the device drifted from what the user set" apart from "nothing changed" —
+// see resyncIfDrifted.
+export const STEAM_DURATION_LAST_VALUE_KEY = 'last-steam-duration';
+export const STEAM_FLOW_LAST_VALUE_KEY = 'last-steam-flow';
+export const FLUSH_DURATION_LAST_VALUE_KEY = 'last-flush-duration';
+export const HOT_WATER_VOLUME_LAST_VALUE_KEY = 'last-hot-water-volume';
+export const HOT_WATER_TEMP_LAST_VALUE_KEY = 'last-hot-water-temp';
+
+export async function persistLastValue(key, value) {
+    try {
+        await openDB();
+        await setSetting(key, value);
+    } catch (e) {
+        logger.warn(`Failed to persist ${key}:`, e);
+    }
+}
+
+// Boot-time resync for a main-page control. A plain GET tells us what Rea's
+// workflow record says, not whether the DE1 itself is still holding that
+// value (BLE reconnect / Rea restart can leave it stale). Re-pushing on
+// every boot unconditionally works but is wasteful and, if `fetchedValue`
+// were ever the stale one, would clobber a legitimate reading. Comparing
+// against our own last-written value avoids both: push only when they
+// actually disagree.
+export async function resyncIfDrifted(key, fetchedValue, pushFn) {
+    if (fetchedValue == null) return;
+    try {
+        await openDB();
+        const remembered = await getSetting(key);
+        if (remembered != null && remembered !== fetchedValue) {
+            await pushFn(remembered);
         }
-    });
+    } catch (e) {
+        logger.warn(`resyncIfDrifted failed for ${key}:`, e);
+    }
+}
+
+export async function setTargetHotWaterVolume(volume) {
+    const value = parseFloat(volume);
+    const result = await updateWorkflow({ hotWaterData: { volume: value } });
+    persistLastValue(HOT_WATER_VOLUME_LAST_VALUE_KEY, value);
+    return result;
 }
 
 export async function setTargetHotWaterTemp(temp) {
-    return updateWorkflow({
-        hotWaterData: {
-            targetTemperature: parseFloat(temp)
-        }
-    });
+    const value = parseFloat(temp);
+    const result = await updateWorkflow({ hotWaterData: { targetTemperature: value } });
+    persistLastValue(HOT_WATER_TEMP_LAST_VALUE_KEY, value);
+    return result;
 }
 
 export async function setTargetHotWaterDuration(duration) {
@@ -1011,20 +1080,17 @@ export async function setTargetSteamTemp(temp) {
 }
 
 export async function setTargetSteamDuration(duration) {
-    return updateWorkflow({
-        steamSettings: {
-            duration: parseFloat(duration)
-        }
-    });
+    const value = parseFloat(duration);
+    const result = await updateWorkflow({ steamSettings: { duration: value } });
+    persistLastValue(STEAM_DURATION_LAST_VALUE_KEY, value);
+    return result;
 }
 
-
 export async function setTargetSteamFlow(flow) {
-    return updateWorkflow({
-        steamSettings: {
-            flow: parseFloat(flow)
-        }
-    });
+    const value = parseFloat(flow);
+    const result = await updateWorkflow({ steamSettings: { flow: value } });
+    persistLastValue(STEAM_FLOW_LAST_VALUE_KEY, value);
+    return result;
 }
 
 export async function getReaSettings() {
@@ -1055,6 +1121,16 @@ export async function getMachineInfo() {
     const response = await fetch(`${API_BASE_URL}/machine/info`);
     if (!response.ok) {
         throw new Error(`Failed to get machine info: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+// Current machine state as a MachineSnapshot (same shape as the snapshot WS).
+// Lets callers sync status without waiting on a snapshot frame.
+export async function getMachineState() {
+    const response = await fetch(`${API_BASE_URL}/machine/state`);
+    if (!response.ok) {
+        throw new Error(`Failed to get machine state: ${response.statusText}`);
     }
     return response.json();
 }

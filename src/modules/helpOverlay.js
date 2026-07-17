@@ -166,6 +166,17 @@ function placeLabel(label, ring, placed, prefer = null) {
 }
 
 const HIDE_KEY = 'streamlineHelpHidden';
+const LAUNCH_KEY = 'streamlineHelpLaunches';
+
+// Effective hidden state. An explicit user choice wins ('1' hidden via long-press
+// or the settings toggle, '0' shown via the toggle). With no choice recorded, the
+// button auto-hides from the 3rd startup on — it exists for first-run discovery,
+// after that it just covers useful controls.
+function helpHidden() {
+    const pref = localStorage.getItem(HIDE_KEY);
+    if (pref !== null) return pref === '1';
+    return (parseInt(localStorage.getItem(LAUNCH_KEY), 10) || 0) > 2;
+}
 
 let overlay = null;
 
@@ -307,7 +318,8 @@ function init() {
     btn.setAttribute('aria-pressed', 'false');
     btn.title = 'Help (long-press to hide)';
     btn.textContent = '?';
-    if (localStorage.getItem(HIDE_KEY) === '1') btn.style.display = 'none';
+    localStorage.setItem(LAUNCH_KEY, String((parseInt(localStorage.getItem(LAUNCH_KEY), 10) || 0) + 1));
+    if (helpHidden()) btn.style.display = 'none';
     // Tap = toggle help. Long-press = hide the button and remember it.
     setupPressAndHold(
         btn,
@@ -326,7 +338,7 @@ function init() {
             localStorage.setItem(HIDE_KEY, '1');
             document.documentElement.classList.remove('help-webview');
         } else {
-            localStorage.removeItem(HIDE_KEY);
+            localStorage.setItem(HIDE_KEY, '0'); // explicit "show" survives the startup auto-hide
             btn.style.display = '';
             if (isInWebView()) document.documentElement.classList.add('help-webview');
             syncWebviewButton();
@@ -334,12 +346,12 @@ function init() {
     };
     window.showHelpButton = () => setHidden(false);
     window.hideHelpButton = () => setHidden(true);
-    window.isHelpButtonHidden = () => localStorage.getItem(HIDE_KEY) === '1';
+    window.isHelpButtonHidden = () => helpHidden();
 
     // Webview only: keep the button parked over the fullscreen-toggle slot,
     // re-syncing on resize and whenever the router swaps the page.
     if (isInWebView()) {
-        if (localStorage.getItem(HIDE_KEY) !== '1') document.documentElement.classList.add('help-webview');
+        if (!helpHidden()) document.documentElement.classList.add('help-webview');
         const sync = () => requestAnimationFrame(syncWebviewButton);
         sync();
         window.addEventListener('resize', sync);
