@@ -1,31 +1,73 @@
 /* Numpad -- a centred popup card, rendered as a top-layer <dialog> so it stacks
    above any showModal() dialog and is not affected by the app's #scaled-content
-   transform (natural viewport pixels). Palette matches the original Figma dark
-   numpad: #101217 base, #1F2234 keys, #385A92 accent, #DA515E delete. */
+   transform (natural viewport pixels).
+
+   Theme-aware: light values are the defaults (the skin's default theme is
+   data-theme="light"); the [data-theme="dark"] block restores the original Figma
+   dark palette (#101217 base, #1F2234 keys, #385A92 accent, #DA515E delete)
+   byte-for-byte. The navy accent and the red delete glyph read well on both
+   themes, so they are shared. */
+
+.numpad-modal-overlay {
+    --np-card: #ffffff;
+    --np-card-border: rgba(0, 0, 0, 0.10);
+    --np-shadow: rgba(15, 23, 42, 0.28);
+    --np-backdrop: rgba(15, 23, 42, 0.35);
+    --np-text: #2a2e3a;
+    --np-text-strong: #121212;
+    --np-text-soft: #4a5162;
+    --np-text-muted: #6b7280;
+    --np-label: #6b7280;
+    --np-key: #eef0f5;
+    --np-key-hover: #e2e6ee;
+    --np-key-active: #cfd7e6;
+    --np-key-border: #dfe3ec;
+    --np-input-bg: #f6f8fc;
+    --np-cancel-border: rgba(0, 0, 0, 0.18);
+    --np-accent: #385A92;
+}
+
+[data-theme="dark"] .numpad-modal-overlay {
+    --np-card: #101217;
+    --np-card-border: rgba(255, 255, 255, 0.12);
+    --np-shadow: rgba(0, 0, 0, 0.6);
+    --np-backdrop: rgba(0, 0, 0, 0.75);
+    --np-text: #E8E8E8;
+    --np-text-strong: #fff;
+    --np-text-soft: #c7ccdb;
+    --np-text-muted: #8b90a3;
+    --np-label: #959595;
+    --np-key: #1F2234;
+    --np-key-hover: #2b3048;
+    --np-key-active: #3c4671;
+    --np-key-border: #2b3048;
+    --np-input-bg: #0c0e13;
+    --np-cancel-border: rgba(255, 255, 255, 0.18);
+}
 
 .numpad-modal-overlay {
     border: none;
     padding: 0;
     background: transparent;
-    color: #E8E8E8;
+    color: var(--np-text);
     max-width: 96vw;
     max-height: 96vh;
     overflow: visible;
 }
 
 .numpad-modal-overlay::backdrop {
-    background: rgba(0, 0, 0, 0.75);
+    background: var(--np-backdrop);
     backdrop-filter: blur(6px);
 }
 
 .numpad-modal-container {
     width: min(94vw, 460px);
     box-sizing: border-box;
-    background: #101217;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: var(--np-card);
+    border: 1px solid var(--np-card-border);
     border-radius: 24px;
     padding: 24px;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 24px 70px var(--np-shadow);
     font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -44,7 +86,7 @@
     font-weight: 800;
     letter-spacing: 0.3px;
     line-height: 1.15;
-    color: #fff;
+    color: var(--np-text-strong);
     overflow: hidden;
     /* Wraps to up to two lines. fitNumpadTitle() (numpad-modal.js) shrinks the
        font ONLY if a line still overflows the available width -- keeping the text
@@ -67,20 +109,20 @@
 }
 .numpad-modal-cancel {
     background: transparent;
-    color: #c7ccdb;
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: var(--np-text-soft);
+    border: 1px solid var(--np-cancel-border);
 }
 .numpad-modal-confirm {
-    background: #385A92;
+    background: var(--np-accent);
     color: #fff;
 }
 
 /* value display */
 .numpad-modal-input-box {
     height: 96px;
-    border: 2px solid #385A92;
+    border: 2px solid var(--np-accent);
     border-radius: 16px;
-    background: #0c0e13;
+    background: var(--np-input-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -89,7 +131,7 @@
 .numpad-modal-input-value {
     font-size: 64px;
     font-weight: 800;
-    color: #fff;
+    color: var(--np-text-strong);
     line-height: 1;
     font-variant-numeric: tabular-nums;
     display: inline-flex;
@@ -99,7 +141,7 @@
     display: inline-block;
     width: 3px;
     height: 58px;
-    background: #385A92;
+    background: var(--np-accent);
     margin: 0 1px;
     animation: numpad-blink 1s step-end infinite;
 }
@@ -107,13 +149,13 @@
 .numpad-unit-text {
     font-size: 30px;
     font-weight: 700;
-    color: #8b90a3;
+    color: var(--np-text-muted);
     margin-left: 6px;
 }
 .numpad-modal-input-label {
     text-align: center;
     font-size: 15px;
-    color: #959595;
+    color: var(--np-label);
     margin: 6px 0 16px;
 }
 
@@ -126,7 +168,7 @@
     font-weight: 700;
     letter-spacing: 1px;
     text-transform: uppercase;
-    color: #8b90a3;
+    color: var(--np-text-muted);
     margin-bottom: 8px;
 }
 .numpad-modal-previous-grid {
@@ -136,16 +178,16 @@
 }
 .numpad-modal-previous-btn {
     height: 46px;
-    background: #1F2234;
-    border: 1px solid #2b3048;
+    background: var(--np-key);
+    border: 1px solid var(--np-key-border);
     border-radius: 12px;
-    color: #c7ccdb;
+    color: var(--np-text-soft);
     font-size: 20px;
     font-weight: 700;
     cursor: pointer;
 }
 .numpad-modal-previous-btn:active {
-    background: #2b3048;
+    background: var(--np-key-hover);
 }
 
 /* keypad */
@@ -156,10 +198,10 @@
 }
 .numpad-modal-numpad-btn {
     height: 66px;
-    background: #1F2234;
+    background: var(--np-key);
     border: none;
     border-radius: 14px;
-    color: #fff;
+    color: var(--np-text-strong);
     font-size: 32px;
     font-weight: 800;
     cursor: pointer;
@@ -167,8 +209,8 @@
     align-items: center;
     justify-content: center;
 }
-.numpad-modal-numpad-btn:hover { background: #2b3048; }
-.numpad-modal-numpad-btn:active { background: #3c4671; }
+.numpad-modal-numpad-btn:hover { background: var(--np-key-hover); }
+.numpad-modal-numpad-btn:active { background: var(--np-key-active); }
 .numpad-modal-numpad-btn.numpad-decimal { font-size: 34px; }
 .numpad-modal-numpad-btn.numpad-delete .delete-icon-small {
     width: 34px;
