@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, persistLastValue, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -154,18 +154,6 @@ async function flushPendingChanges() {
     if (pendingChanges.workflow.steamSettings) tasks.push(updateWorkflow({ steamSettings: pendingChanges.workflow.steamSettings }));
     if (pendingChanges.workflow.hotWaterData) tasks.push(updateWorkflow({ hotWaterData: pendingChanges.workflow.hotWaterData }));
     if (tasks.length) await Promise.all(tasks);
-
-    // Keep the dashboard's "last value the user set" cache in sync even when
-    // the edit came from here instead of the main page — otherwise the next
-    // boot's resyncIfDrifted compares against a stale cache and reverts this
-    // edit right back.
-    const steam = pendingChanges.workflow.steamSettings;
-    if (steam?.duration !== undefined) persistLastValue(STEAM_DURATION_LAST_VALUE_KEY, steam.duration);
-    if (steam?.flow !== undefined) persistLastValue(STEAM_FLOW_LAST_VALUE_KEY, steam.flow);
-    const hotWater = pendingChanges.workflow.hotWaterData;
-    if (hotWater?.volume !== undefined) persistLastValue(HOT_WATER_VOLUME_LAST_VALUE_KEY, hotWater.volume);
-    if (hotWater?.targetTemperature !== undefined) persistLastValue(HOT_WATER_TEMP_LAST_VALUE_KEY, hotWater.targetTemperature);
-
     saveSettingsBackup();
     resetPendingChanges();
 }
@@ -426,6 +414,11 @@ async function preSeedFromIDB() {
         if (backup.rea)         { settingsCache.rea         = backup.rea;         settingsCache.reaLoading         = false; }
         if (backup.de1)         { settingsCache.de1         = backup.de1;         settingsCache.de1Loading         = false; }
         if (backup.de1Advanced) { settingsCache.de1Advanced = backup.de1Advanced; settingsCache.de1AdvancedLoading = false; }
+        if (backup.steamSettings || backup.hotWaterData) {
+            settingsCache.workflow = settingsCache.workflow || {};
+            if (backup.steamSettings) settingsCache.workflow.steamSettings = backup.steamSettings;
+            if (backup.hotWaterData)  settingsCache.workflow.hotWaterData  = backup.hotWaterData;
+        }
         return true;
     } catch (e) {
         console.warn('preSeedFromIDB failed:', e);
@@ -441,69 +434,26 @@ async function saveSettingsBackup() {
             rea:         settingsCache.rea         ? { ...settingsCache.rea }         : null,
             de1:         settingsCache.de1         ? { ...settingsCache.de1 }         : null,
             de1Advanced: settingsCache.de1Advanced ? { ...settingsCache.de1Advanced } : null,
+            steamSettings: settingsCache.workflow?.steamSettings
+                ? { ...settingsCache.workflow.steamSettings } : null,
+            hotWaterData:  settingsCache.workflow?.hotWaterData
+                ? { ...settingsCache.workflow.hotWaterData }  : null,
         });
     } catch (e) {
         console.warn('saveSettingsBackup failed:', e);
     }
 }
 
-// Returns keys where backup has a value that differs from current.
-function diffSettings(backup, current) {
-    const diff = {};
-    for (const key of Object.keys(backup)) {
-        if (backup[key] !== null && backup[key] !== undefined &&
-            key in current && backup[key] !== current[key]) {
-            diff[key] = backup[key];
-        }
-    }
-    return diff;
-}
-
-export async function reconcileSettingsWithBackup() {
-    try {
-        await openDB();
-        const backup = await getSetting('settingsBackup');
-        // Skip if no backup, or backup is older than 30 days (avoid re-applying ancient data)
-        if (!backup?.ts || (Date.now() - backup.ts) > 30 * 24 * 60 * 60 * 1000) return;
-
-        const restored = [];
-
-        if (backup.rea && settingsCache.rea) {
-            const diff = diffSettings(backup.rea, settingsCache.rea);
-            if (Object.keys(diff).length) {
-                await setReaSettings(diff);
-                Object.assign(settingsCache.rea, diff);
-                restored.push('app settings');
-                logger.info('reconcileSettingsWithBackup: restored app settings from backup', diff);
-            }
-        }
-        if (backup.de1 && settingsCache.de1) {
-            const diff = diffSettings(backup.de1, settingsCache.de1);
-            if (Object.keys(diff).length) {
-                await setDe1Settings(diff);
-                Object.assign(settingsCache.de1, diff);
-                restored.push('DE1 settings');
-                logger.info('reconcileSettingsWithBackup: restored DE1 settings from backup', diff);
-            }
-        }
-        if (backup.de1Advanced && settingsCache.de1Advanced) {
-            const diff = diffSettings(backup.de1Advanced, settingsCache.de1Advanced);
-            if (Object.keys(diff).length) {
-                await setDe1AdvancedSettings(diff);
-                Object.assign(settingsCache.de1Advanced, diff);
-                restored.push('advanced settings');
-                logger.info('reconcileSettingsWithBackup: restored advanced settings from backup', diff);
-            }
-        }
-        if (restored.length) {
-            // Dev-console only — this is a silent self-healing background check,
-            // not something the user needs to see or act on.
-            logger.info(`Settings restored from backup: ${restored.join(', ')}`);
-        }
-    } catch (e) {
-        console.warn('reconcileSettingsWithBackup failed:', e);
-    }
-}
+// NOTE: the settingsBackup written by saveSettingsBackup() is consumed ONLY by
+// preSeedFromIDB() above, which seeds the in-memory display cache and never PUTs.
+// A "reconcile" step that re-applied backup diffs to the SERVER used to live here,
+// together with its loadSettings() caller -- both dead code, with no call sites
+// anywhere in the repo. It was deleted rather than left dormant: main-page edits
+// (steam flow, steam duration, the stop-at-weight target) never rewrite the
+// backup, so the backup is chronically stale for exactly the fields users touch
+// most, and re-applying it would silently revert their changes. If a
+// restore-after-a-server-reset feature is ever wanted, it must either exclude
+// every main-page-editable field or rewrite the backup on every main-page edit.
 
 // ── Render settings content based on selected category
 export function renderSettingsContent(category) {
@@ -1180,6 +1130,24 @@ export function renderUsbChargerModeSettings(settings) {
 
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
                 <p class="leading-[1.2]">USB Charger</p>
+            </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <div class="flex items-center justify-between gap-[24px] w-full">
+                <div class="flex flex-col gap-[4px]">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power ${(settings.usb === true || settings.usb === 'enable') ? 'off' : 'on'}</p>
+                    </div>
+                </div>
+                <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                    <input type="checkbox" id="usbChargerModeToggle"
+                           class="sr-only peer"
+                           ${(settings.usb === true || settings.usb === 'enable') ? 'checked' : ''}
+                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable'); document.getElementById('usbChargerModeLabel').textContent = 'USB Power ' + (this.checked ? 'off' : 'on')">
+                    <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                    <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                </label>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -3254,12 +3222,11 @@ export function renderMainAirPurgeSettings() {
 
 // ── Skin update check ────────────────────────────────────────────────────────
 // For every bundled skin installed from a GitHub release, "Update available"
-// compares the installed release tag the bridge reports (reaMetadata.sourceUrl
-// "github_release:owner/repo@tag", falling back to the skin manifest's s.version)
-// against the latest release tag of that skin's own repo. Older installed tag
-// => update available. Skins not installed from a GitHub release have no signal
-// and show "Up to date". APP_VERSION is NOT used here — it is a hardcoded build
-// marker shown only so dist/preview users know which build runs.
+// compares the installed version the bridge reports (GET /api/v1/webui/skins ->
+// s.version) against the latest release tag of that skin's own repo. Older
+// installed version => update available. Skins not installed from a GitHub release
+// have no signal and show "Up to date". APP_VERSION is NOT used here — it is a
+// hardcoded build marker shown only so dist/preview users know which build runs.
 
 function compareVersions(a, b) {
     const parse = (v) => {
@@ -3280,15 +3247,6 @@ function compareVersions(a, b) {
         return c < 0 ? -1 : c > 0 ? 1 : 0;
     }
     return 0;
-}
-
-// Installed version of record: the release tag the bridge actually installed
-// (reaMetadata.sourceUrl "github_release:owner/repo@tag"). The manifest's own
-// version is a fallback — skin authors forget to bump it (e.g. extracto-patronum
-// v0.1.3 ships "version": "0.1.0"). Leading "v" stripped for display.
-function installedSkinVersion(s) {
-    const tag = (s?.reaMetadata?.sourceUrl || '').match(/github_release:[^@\s]+@(\S+)/i)?.[1];
-    return (tag || s?.version || '').replace(/^v/i, '');
 }
 
 // owner/repo for a skin from the bridge's install metadata, or null when it wasn't
@@ -3343,8 +3301,7 @@ export function renderSkinSettings() {
     const skinBadge = (s, isActive) => {
         const slug = skinRepoSlug(s);
         const latest = slug ? releases[slug] : null;
-        const installed = installedSkinVersion(s);
-        const needsUpdate = !!latest && !!installed && compareVersions(installed, latest) < 0;
+        const needsUpdate = !!latest && !!s.version && compareVersions(s.version, latest) < 0;
         const base = 'text-[16px] font-semibold px-[8px] py-[2px] rounded-full';
         if (isActive) return needsUpdate
             ? `<span class="${base} bg-white/20 text-white" data-i18n-key="Update available">Update available</span>`
@@ -3390,11 +3347,11 @@ export function renderSkinSettings() {
                 <div class="grid grid-cols-2 gap-[14px] w-full">
                     ${(allSkins.length > 0 ? allSkins : (activeSkin ? [activeSkin] : [])).map(s => {
                         const isActive = s.id === activeSkinId;
-                        // Show the installed release tag (same source as the update
-                        // badge) so card and badge never disagree. Fall back to the
-                        // hardcoded build marker only when the bridge reports nothing
-                        // for our skin (dist/preview builds).
-                        const displayVersion = installedSkinVersion(s) || (s.id === SKIN_ID ? APP_VERSION : '');
+                        // Prefer the version the bridge reports (the actually-installed
+                        // release, which tracks GitHub) so the card matches the update
+                        // badge. Fall back to the hardcoded build marker only when the
+                        // bridge reports no version for our skin (dist/preview builds).
+                        const displayVersion = s.version || (s.id === SKIN_ID ? APP_VERSION : '');
                         return `
                         <button
                             onclick="${isActive ? '' : `window.setActiveSkin('${s.id}')`}"
@@ -4353,14 +4310,6 @@ async function _preloadSettingsInternal() {
         settingsCache.machineInfoLoading = false;
         settingsCache.skinInfoLoading = false;
 
-        try {
-            const stored = await getSetting('screensaverImages');
-            if (Array.isArray(stored) && stored.length > 0) screensaverImagesCache = stored;
-        } catch (e) { /* non-fatal */ }
-
-        // Silently re-push any settings Rea may have lost (e.g. after a reset/reinstall)
-        reconcileSettingsWithBackup();
-
         return { reaSettings, de1Settings, de1AdvancedSettings, appInfo, machineInfo };
     } catch (error) {
         console.error('Error during settings preload:', error);
@@ -5130,18 +5079,14 @@ export async function initializeSettings() {
     window.updateSkin = async function() {
         try {
             ui.showToast('Checking for skin updates...', 3000, 'info');
-            // Reload only when the update actually changed the installed version —
-            // comparing against APP_VERSION reload-loops whenever the baked build
-            // marker drifts from the on-disk manifest (or the webview caches version.js).
-            const prevVersion = installedSkinVersion(settingsCache.allSkins?.find(s => s.id === SKIN_ID));
             await updateSkins(); // bridge checks sources & downloads newer skin files server-side
             settingsCache.allSkins = await getAllSkins();
-            const diskVersion = installedSkinVersion(settingsCache.allSkins.find(s => s.id === SKIN_ID));
-            if (diskVersion && diskVersion !== prevVersion) {
+            const diskVersion = settingsCache.allSkins.find(s => s.id === SKIN_ID)?.version;
+            if (diskVersion && diskVersion !== APP_VERSION) {
                 ui.showToast(`New version v${diskVersion} downloaded. Reloading...`, 2000, 'success');
                 setTimeout(() => window.location.reload(), 2000);
             } else {
-                ui.showToast(`Already up to date (v${diskVersion || APP_VERSION}).`, 4000, 'info');
+                ui.showToast(`Already up to date (v${APP_VERSION}).`, 4000, 'info');
                 if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
             }
         } catch (error) {
@@ -5864,19 +5809,7 @@ export function initDisplayWebSocket() {
  */
 window.renderDeviceListFromCache = function() { renderDeviceListFromCache(); };
 
-// The devices WS pushes many frames/sec during a scan; coalesce them into one
-// render per frame so we don't rebuild both containers' innerHTML on every push.
-let _deviceRenderScheduled = false;
 function renderDeviceListFromCache() {
-    if (_deviceRenderScheduled) return;
-    _deviceRenderScheduled = true;
-    requestAnimationFrame(() => {
-        _deviceRenderScheduled = false;
-        renderDeviceListNow();
-    });
-}
-
-function renderDeviceListNow() {
     const machines = deviceStateCache.devices.filter(device =>
         device.type === 'machine' ||
         (device.name && (device.name.toLowerCase().includes('de1') ||
@@ -6416,13 +6349,8 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
             </div>`;
     }
     // The device list is injected via WebSocket updates, after the page's initial
-    // translatePage() pass — so re-translate or its data-i18n-key text stays
-    // English. Only walk THIS container: translatePage() re-translates + re-fits
-    // the whole settings DOM, and it ran twice per WS frame (once per container)
-    // during scans, which is the jank in the device list / status pills.
-    container.querySelectorAll('[data-i18n-key]').forEach(el => {
-        el.textContent = getTranslation(el.getAttribute('data-i18n-key'));
-    });
+    // translatePage() pass — so re-translate or its data-i18n-key text stays English.
+    translatePage();
 }
 
 // Helper function to render a single list of devices with connection controls
