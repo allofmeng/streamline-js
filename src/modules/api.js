@@ -1,5 +1,6 @@
 import * as ui from './ui.js';
 import { logger ,setDebug} from './logger.js';
+import { createSocketSlot } from './socket-slot.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
@@ -158,11 +159,18 @@ export async function tareScale() {
     }
 }
 
+// Close-before-open. app.js re-opens these sockets after a machine power-cycle to
+// force reaprime to re-bind them to the live De1 (resyncMachineSockets); the slot
+// guarantees the old socket is closed and silenced first, so a resync cannot leak
+// a socket or double-deliver frames.
+const snapshotSocketSlot = createSocketSlot('machine snapshot');
+const shotSettingsSocketSlot = createSocketSlot('shot settings');
+
 export function connectWebSocket(onData, onReconnect) {
-    reconnectingWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/snapshot`, [], {
+    reconnectingWebSocket = snapshotSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/snapshot`, [], {
         debug: true,
         reconnectInterval: 3000,
-    }); // Enable debug logging
+    })); // Enable debug logging
 
     reconnectingWebSocket.onopen = () => {
         logger.info('WebSocket (re)connected.');
@@ -273,10 +281,10 @@ export function connectScaleWebSocket(onData, onReconnect, onDisconnect) {
 }
 
 export function connectShotSettingsWebSocket(onData) {
-    const shotSettingsWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/shotSettings`, [], {
+    const shotSettingsWebSocket = shotSettingsSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/shotSettings`, [], {
         debug: true,
         reconnectInterval: 3000,
-    });
+    }));
 
     shotSettingsWebSocket.onopen = () => {
         logger.info('Shot Settings WebSocket connected');

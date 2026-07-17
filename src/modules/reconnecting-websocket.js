@@ -206,6 +206,23 @@
         };
 
         this.open = function (reconnectAttempt) {
+            // LOCAL PATCH: a close()d socket must STAY closed.
+            //
+            // close() sets forcedClose, but only calls ws.close() `if (ws)`. Between
+            // reconnect attempts ws is null (onclose nulls it and arms a setTimeout
+            // -> self.open(true)), so a close() landing in that window closed
+            // nothing and cancelled nothing — and open() never consulted
+            // forcedClose. The pending timer then opened a brand-new WebSocket on
+            // behalf of an instance its owner had already discarded and can no
+            // longer reach: a permanently-open socket, silenced and unownable.
+            //
+            // socket-slot.js's close-before-open (and api.js's scale/device
+            // close-then-reassign) rely on close() being final. It now is: the
+            // pending reconnect timer still fires, but it is a no-op.
+            if (forcedClose) {
+                return;
+            }
+
             ws = new WebSocket(self.url, protocols || []);
             ws.binaryType = this.binaryType;
 
@@ -322,6 +339,14 @@
             forcedClose = true;
             if (ws) {
                 ws.close(code, reason);
+            } else {
+                // LOCAL PATCH: closed between reconnect attempts. There is no
+                // underlying socket whose onclose can move us to CLOSED, so without
+                // this the instance would report CONNECTING for ever — a lie, now
+                // that open() will refuse to reconnect it. Callers that gate on
+                // `readyState === WebSocket.OPEN` (api.js) already treat it as not
+                // sendable; this just stops it claiming it is on its way back.
+                self.readyState = WebSocket.CLOSED;
             }
         };
 
