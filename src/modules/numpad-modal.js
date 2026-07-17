@@ -197,7 +197,14 @@ function createModalHTML() {
     `;
 
     document.body.appendChild(overlay);
-    
+
+    // 'close' fires on EVERY closure path, including ESC (which closes a native
+    // <dialog> without going through closeModal) — restore page scroll there so
+    // an ESC'd numpad can't leave the body stuck at overflow:hidden.
+    overlay.addEventListener('close', () => {
+        document.body.style.overflow = '';
+    });
+
     return overlay;
 }
 
