@@ -1,31 +1,68 @@
 /* Clock-face time picker (see src/modules/time-picker-modal.js).
    Rendered as a native <dialog> in the top layer, so it is NOT affected by the
-   app's #scaled-content transform -- sizes are real viewport pixels. Palette is
-   matched to the numpad card: #101217 base, #1F2234 boxes, #385A92 accent. */
+   app's #scaled-content transform -- sizes are real viewport pixels.
+
+   Theme-aware, matched to the numpad card: light values are the defaults (the
+   skin's default theme is data-theme="light"); the [data-theme="dark"] block
+   restores the original dark palette (#101217 base, #1F2234 boxes, #385A92
+   accent) byte-for-byte. The navy accent is shared by both themes; the selected
+   number stays white because it sits on the navy knob in either theme. */
+
+.tpm-dialog {
+    --tpm-card: #ffffff;
+    --tpm-card-border: rgba(0, 0, 0, 0.10);
+    --tpm-shadow: rgba(15, 23, 42, 0.28);
+    --tpm-backdrop: rgba(15, 23, 42, 0.35);
+    --tpm-text: #2a2e3a;
+    --tpm-text-strong: #121212;
+    --tpm-text-soft: #4a5162;
+    --tpm-text-muted: #6b7280;
+    --tpm-key: #eef0f5;
+    --tpm-seg-active-bg: rgba(56, 90, 146, 0.12);
+    --tpm-face: rgba(56, 90, 146, 0.10);
+    --tpm-cancel-border: rgba(0, 0, 0, 0.18);
+    --tpm-accent: #385A92;
+    --tpm-accent-soft: #5f8ad6;
+}
+
+[data-theme="dark"] .tpm-dialog {
+    --tpm-card: #101217;
+    --tpm-card-border: rgba(255, 255, 255, 0.12);
+    --tpm-shadow: rgba(0, 0, 0, 0.6);
+    --tpm-backdrop: rgba(0, 0, 0, 0.75);
+    --tpm-text: #E8E8E8;
+    --tpm-text-strong: #fff;
+    --tpm-text-soft: #c7ccdb;
+    --tpm-text-muted: #8b90a3;
+    --tpm-key: #1F2234;
+    --tpm-seg-active-bg: rgba(56, 90, 146, 0.22);
+    --tpm-face: rgba(120, 140, 180, 0.12);
+    --tpm-cancel-border: rgba(255, 255, 255, 0.18);
+}
 
 .tpm-dialog {
     border: none;
     padding: 0;
     background: transparent;
-    color: #E8E8E8;
+    color: var(--tpm-text);
     max-width: 96vw;
     max-height: 96vh;
     overflow: visible;
 }
 
 .tpm-dialog::backdrop {
-    background: rgba(0, 0, 0, 0.75);
+    background: var(--tpm-backdrop);
     backdrop-filter: blur(6px);
 }
 
 .tpm-card {
     width: min(94vw, 360px);
     box-sizing: border-box;
-    background: #101217;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: var(--tpm-card);
+    border: 1px solid var(--tpm-card-border);
     border-radius: 24px;
     padding: 24px;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 24px 70px var(--tpm-shadow);
     font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -44,7 +81,7 @@
     font-weight: 800;
     letter-spacing: 0.3px;
     text-transform: uppercase;
-    color: #fff;
+    color: var(--tpm-text-strong);
 }
 
 /* Display: the whole HH : MM + AM/PM group is centred as one unit. */
@@ -61,8 +98,8 @@
     height: 68px;
     border: none;
     border-radius: 12px;
-    background: #1F2234;
-    color: #E8E8E8;
+    background: var(--tpm-key);
+    color: var(--tpm-text);
     font-size: 42px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -70,15 +107,15 @@
 }
 
 .tpm-seg-active {
-    background: rgba(56, 90, 146, 0.22);
-    color: #fff;
-    box-shadow: inset 0 0 0 2px #5f8ad6;
+    background: var(--tpm-seg-active-bg);
+    color: var(--tpm-text-strong);
+    box-shadow: inset 0 0 0 2px var(--tpm-accent-soft);
 }
 
 .tpm-colon {
     font-size: 38px;
     font-weight: 700;
-    color: #8b90a3;
+    color: var(--tpm-text-muted);
 }
 
 .tpm-ampm {
@@ -86,7 +123,7 @@
     flex-direction: column;
     height: 68px;
     margin-left: 4px;
-    border: 1px solid #385A92;
+    border: 1px solid var(--tpm-accent);
     border-radius: 11px;
     overflow: hidden;
 }
@@ -96,7 +133,7 @@
     width: 54px;
     border: none;
     background: transparent;
-    color: #c7ccdb;
+    color: var(--tpm-text-soft);
     font-size: 15px;
     font-weight: 700;
     opacity: 0.65;
@@ -104,11 +141,11 @@
 }
 
 .tpm-ampm-btn + .tpm-ampm-btn {
-    border-top: 1px solid #385A92;
+    border-top: 1px solid var(--tpm-accent);
 }
 
 .tpm-ampm-on {
-    background: #385A92;
+    background: var(--tpm-accent);
     color: #fff;
     opacity: 1;
 }
@@ -126,26 +163,26 @@
 }
 
 .tpm-face {
-    fill: rgba(120, 140, 180, 0.12);
+    fill: var(--tpm-face);
 }
 
 .tpm-hand {
-    stroke: #5f8ad6;
+    stroke: var(--tpm-accent-soft);
     stroke-width: 2.5;
 }
 
 .tpm-knob {
-    fill: #385A92;
+    fill: var(--tpm-accent);
 }
 
 .tpm-hub {
-    fill: #5f8ad6;
+    fill: var(--tpm-accent-soft);
 }
 
 .tpm-num {
     font-size: 17px;
     font-weight: 700;
-    fill: #E8E8E8;
+    fill: var(--tpm-text);
     text-anchor: middle;
     dominant-baseline: central;
     cursor: pointer;
@@ -179,11 +216,11 @@
 
 .tpm-cancel {
     background: transparent;
-    color: #c7ccdb;
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: var(--tpm-text-soft);
+    border: 1px solid var(--tpm-cancel-border);
 }
 
 .tpm-ok {
-    background: #385A92;
+    background: var(--tpm-accent);
     color: #fff;
 }
