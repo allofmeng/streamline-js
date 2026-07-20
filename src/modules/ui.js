@@ -270,18 +270,23 @@ function makeEditable(element, onCommit) {
 
         // Derive the container scale so we can convert viewport px → design-space px.
         const scaledContent = document.getElementById('scaled-content');
+        // scaling.js scales x and y independently, so read both factors.
+        const contentRect = scaledContent ? scaledContent.getBoundingClientRect() : null;
         const scale = (scaledContent && scaledContent.offsetWidth > 0)
-            ? scaledContent.getBoundingClientRect().width / scaledContent.offsetWidth
+            ? contentRect.width / scaledContent.offsetWidth
             : 1;
+        const scaleY = (scaledContent && scaledContent.offsetHeight > 0)
+            ? contentRect.height / scaledContent.offsetHeight
+            : scale;
 
         const relLeft = (elementRect.left - parentRect.left) / scale;
-        const relTop  = (elementRect.top  - parentRect.top)  / scale;
+        const relTop  = (elementRect.top  - parentRect.top)  / scaleY;
 
         input.style.position = 'absolute';
         input.style.left   = (relLeft - 5) + 'px';
         input.style.top    = (relTop  - 5) + 'px';
         input.style.width  = (elementRect.width  / scale + 20) + 'px';
-        input.style.height = (elementRect.height / scale + 20) + 'px';
+        input.style.height = (elementRect.height / scaleY + 20) + 'px';
         input.style.display = 'flex';
         input.style.alignItems = 'center';
         input.style.justifyContent = 'center';

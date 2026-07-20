@@ -17,7 +17,8 @@ function getAppScale() {
     const content = document.getElementById('scaled-content');
     if (!content) return 1;
     const transform = content.style.transform || '';
-    const match = transform.match(/scale\(([\d.]+)\)/);
+    // scaling.js emits scale(sx, sy) — first number is the horizontal factor.
+    const match = transform.match(/scale\(([\d.]+)/);
     return match ? parseFloat(match[1]) : 1;
 }
 

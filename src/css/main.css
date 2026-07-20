@@ -151,24 +151,29 @@ body {
 }
 
 /* New classes for status messages */
+/* Status messages -- skin.tcl:653-657. The font names are decorative; the real
+   size is load_font's numeric arg, and the weight is whichever .ttf it points
+   at. Inter-HeavyBold24 is load_font "$InterSemiBold" 17 (skin.tcl:283) and
+   mono18 is NotoSansMono-SemiBold 17 (skin.tcl:330), so all three are N=17 ->
+   int(0.65*17) = 11pt = 33px, SemiBold 600. */
 .status-msg-green {
     font-family: 'Inter', sans-serif;
-    font-weight: 700;
-    font-size: 30px;
+    font-weight: 600;
+    font-size: 33px;
     color: var(--status-green-color);
 }
 
 .status-msg-red {
     font-family: 'Inter', sans-serif;
-    font-weight: 800; /* Inter-HeavyBold24 */
-    font-size: 30px;
+    font-weight: 600;
+    font-size: 33px;
     color: var(--status-red-color);
 }
 
 .status-msg-clickable {
     font-family: 'NotoSansMono', monospace;
-    font-weight: 400; /* mono18, assuming Regular is 400 */
-    font-size: 18px;
+    font-weight: 600;
+    font-size: 33px;
     color: var(--status-clickable-color);
     cursor: pointer;
 }
