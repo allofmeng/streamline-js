@@ -235,7 +235,11 @@ body {
   width: 200px;
   height: 8px;
   border-radius: 5px;
-  background: linear-gradient(to right, #385a92 0%, #385a92 75%, #e8e8e8 75%, #e8e8e8 100%);
+  /* Unfilled by default. syncBrightnessSliderFill() in settings.js paints the
+     filled portion from the value, aligned to the thumb centre. This used to be
+     a fixed 75% stop, so the bar showed 75% on first paint regardless of the
+     actual brightness, until the user dragged it. */
+  background: #e8e8e8;
   outline: none;
   cursor: pointer;
 }

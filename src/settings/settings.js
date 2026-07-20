@@ -223,11 +223,40 @@ function renderErrorState(title, message) {
 }
 
 // Helper function to update the settings content area in the DOM
+/**
+ * Paint the brightness slider's filled portion so it lines up with the thumb.
+ *
+ * A range input's thumb centre does not travel the full track: it runs from
+ * thumbW/2 to trackW - thumbW/2, so a gradient stop at the raw value% drifts
+ * from the dot by up to half a thumb at each end (~7% on the 200px slider) and
+ * only agrees at 50%. Convert value -> thumb-centre -> percentage instead.
+ *
+ * Must run after the element is laid out, since the two sliders have different
+ * widths (200px in Miscellaneous, flex-grow in the Brightness panel).
+ */
+const BRIGHTNESS_THUMB_PX = 28; // 24px thumb + 2px border each side, see main.css
+
+function syncBrightnessSliderFill(slider, value) {
+    if (!slider) return;
+    const track = slider.offsetWidth;
+    if (!track) return; // not laid out yet
+    const v = Math.min(100, Math.max(0, parseFloat(value)));
+    const thumb = Math.min(BRIGHTNESS_THUMB_PX, track);
+    const centrePx = (thumb / 2) + (v / 100) * (track - thumb);
+    const stop = (centrePx / track) * 100;
+    slider.style.background =
+        `linear-gradient(to right, #385a92 0%, #385a92 ${stop}%, #e8e8e8 ${stop}%, #e8e8e8 100%)`;
+}
+
 function updateSettingsContentArea(category) {
     const contentArea = document.getElementById('settings-content-area');
     if (contentArea) {
         contentArea.innerHTML = renderSettingsContent(category);
         translatePage();
+        // The CSS default is a fixed 75% stop, so without this the bar sits at 75%
+        // on first paint no matter what the value is.
+        const slider = contentArea.querySelector('#brightness-slider');
+        if (slider) syncBrightnessSliderFill(slider, slider.value);
         if (category === 'appearance') {
             setTimeout(() => {
                 ui.initThemeToggle();
@@ -1823,12 +1852,15 @@ export function renderScreenSaverSettings() {
 
 // Render Brightness settings
 export function renderBrightnessSettings() {
-    // requestedBrightness is the user's level; `brightness` can be capped by REA's
-    // low-battery limit. Fall back to api.js's cached frame, then to 100 (the API's
-    // "OS-managed" value) -- never to an invented 75, which used to be shown
-    // whenever displayStateCache was null and then written back on first touch.
+    // The slider reflects reality: `brightness` is the level actually applied,
+    // which REA caps at 20 while lowBatteryBrightnessActive. requestedBrightness
+    // (what was asked for) is only the fallback. This must match what the
+    // ws/v1/display handler writes on later frames, or the controls jump from one
+    // to the other the moment a frame lands. Then api.js's cached frame, then 100
+    // -- the API's "OS-managed" value -- never an invented 75, which used to show
+    // whenever displayStateCache was null and got written back on first touch.
     const ds = displayState();
-    const brightnessVal = ds?.requestedBrightness ?? ds?.brightness ?? 100;
+    const brightnessVal = ds?.brightness ?? ds?.requestedBrightness ?? 100;
     return `
         <div class="content-stretch flex flex-col gap-[80px] items-start relative w-full px-[60px] py-[80px]">
             <div class="content-stretch flex items-center justify-between relative w-full">
@@ -2215,12 +2247,15 @@ export function renderResolutionSettings() {
 }
 
 export function renderMiscellaneousSettings() {
-    // requestedBrightness is the user's level; `brightness` can be capped by REA's
-    // low-battery limit. Fall back to api.js's cached frame, then to 100 (the API's
-    // "OS-managed" value) -- never to an invented 75, which used to be shown
-    // whenever displayStateCache was null and then written back on first touch.
+    // The slider reflects reality: `brightness` is the level actually applied,
+    // which REA caps at 20 while lowBatteryBrightnessActive. requestedBrightness
+    // (what was asked for) is only the fallback. This must match what the
+    // ws/v1/display handler writes on later frames, or the controls jump from one
+    // to the other the moment a frame lands. Then api.js's cached frame, then 100
+    // -- the API's "OS-managed" value -- never an invented 75, which used to show
+    // whenever displayStateCache was null and got written back on first touch.
     const ds = displayState();
-    const brightnessVal = ds?.requestedBrightness ?? ds?.brightness ?? 100;
+    const brightnessVal = ds?.brightness ?? ds?.requestedBrightness ?? 100;
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
@@ -5848,7 +5883,12 @@ export function initDisplayWebSocket() {
         if (data.brightness !== undefined) {
             const brightnessSlider = document.getElementById('brightness-slider');
             const brightnessNumber = document.getElementById('brightness-number');
-            if (brightnessSlider) brightnessSlider.value = data.brightness;
+            if (brightnessSlider) {
+                brightnessSlider.value = data.brightness;
+                // Moving the thumb without repainting the fill is what leaves the
+                // bar behind when REA pushes a level we did not set locally.
+                syncBrightnessSliderFill(brightnessSlider, data.brightness);
+            }
             if (brightnessNumber) brightnessNumber.value = data.brightness;
         }
 
@@ -6008,7 +6048,7 @@ window.handleBrightnessChange = async function(value) {
         // Keep slider + number entry in sync
         if (slider) {
             slider.value = brightnessValue;
-            slider.style.background = `linear-gradient(to right, #385a92 0%, #385a92 ${brightnessValue}%, #e8e8e8 ${brightnessValue}%, #e8e8e8 100%)`;
+            syncBrightnessSliderFill(slider, brightnessValue);
         }
         if (number) number.value = brightnessValue;
 
