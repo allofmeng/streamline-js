@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, getSaverBrightness, setSaverBrightness, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -1695,6 +1695,11 @@ export function renderScreenSaverSettings() {
     const enabled = localStorage.getItem('screensaverEnabled') !== 'false';
     const hasCustom = screensaverImagesCache.length > 0;
     const cycleSeconds = parseInt(localStorage.getItem('screensaverCycleSeconds'), 10) || 10;
+    const saverBrightness = getSaverBrightness();
+    // Hide the control where REA says the platform cannot set brightness --
+    // DisplayState.platformSupported.brightness. Assume supported until the first
+    // snapshot lands, so the row does not flicker in on load.
+    const brightnessSupported = displayStateCache?.platformSupported?.brightness !== false;
 
     const thumbnails = screensaverImagesCache.map((src, i) => `
         <div class="relative w-[120px] h-[80px] rounded-[10px] overflow-hidden flex-shrink-0">
@@ -1787,6 +1792,30 @@ export function renderScreenSaverSettings() {
                         : 'Add more than one image to enable cycling.'}
                 </p>
             </div>
+
+            ${brightnessSupported ? `
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Screen brightness">Screen brightness</p>
+                    </div>
+                    <input type="number"
+                           id="saver-brightness"
+                           min="0"
+                           max="100"
+                           step="1"
+                           value="${saverBrightness}"
+                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center"
+                           onchange="window.handleSaverBrightnessChange(this.value)">
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full"
+                   data-i18n-key="Adjust screen brightness level">
+                    Adjust screen brightness level
+                </p>
+            </div>
+            ` : ''}
 
             <input type="file" id="screensaver-file-input" class="hidden" multiple accept="image/*"
                    onchange="window.addScreensaverFiles(this.files)">
@@ -4497,6 +4526,16 @@ export async function initializeSettings() {
         const input = document.getElementById('screensaver-cycle-seconds');
         if (input) input.value = applied;
         ui.showToast(`Cycle set to ${applied}s`, 2000, 'success');
+    };
+
+    window.handleSaverBrightnessChange = function(value) {
+        const applied = setSaverBrightness(value);
+        const input = document.getElementById('saver-brightness');
+        if (input) input.value = applied;
+        // "Saved" is an existing translated key in the de1 gui translation sheet;
+        // showToast does not translate, so do it here. Applied on the next sleep,
+        // not now -- changing it must not dim the screen being read.
+        ui.showToast(getTranslation('Saved'), 2000, 'success');
     };
 
     window.setWaterTankUnit = function(unit) {

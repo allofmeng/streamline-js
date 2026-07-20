@@ -38,6 +38,11 @@ let previousMachineState = null;
 let scaleWebSocket = null;
 let displayWebSocket = null;
 let displayWebSocketReady = false;
+// Latest DisplayState frame from ws/v1/display. Null until the socket delivers
+// its first snapshot.
+let lastDisplayState = null;
+// Brightness to return to on wake, captured just before we dim.
+let brightnessBeforeDim = null;
 let updateWebSocket = null;
 let updateWebSocketReady = false;
 
@@ -523,6 +528,13 @@ export function connectDisplayWebSocket(onData) {
     displayWebSocket.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
+            // REA replays a DisplayState snapshot on connect and pushes one on
+            // every change, so this cache is current without polling. Kept here
+            // (not just in the settings page) because restoreDisplay needs the
+            // user's brightness even when settings was never opened.
+            if (data && typeof data.requestedBrightness === 'number') {
+                lastDisplayState = data;
+            }
             if (onData) {
                 onData(data);
             }
@@ -1695,11 +1707,35 @@ export async function getDisplayState() {
     }
 }
 
+/** Brightness the screensaver drops to, 0-100. Default 0 mirrors the TCL skin's
+ *  saver_brightness (de1plus/machine.tcl:420), which also drops to 0 on entering
+ *  the saver page (de1plus/utils.tcl:485). Neither app can truly power the panel
+ *  off -- REA exposes no such command and TCL only calls `borg brightness` -- so
+ *  0 is as dark as a sleeping tablet gets. */
+export function getSaverBrightness() {
+    const raw = parseInt(localStorage.getItem('saverBrightness'), 10);
+    return Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+}
+
+export function setSaverBrightness(value) {
+    const clamped = Math.min(100, Math.max(0, parseInt(value, 10) || 0));
+    localStorage.setItem('saverBrightness', String(clamped));
+    return clamped;
+}
+
 export function dimDisplay() {
     try {
+        // Remember where to come back to. requestedBrightness (not brightness) is
+        // the user's intent -- they differ when REA's low-battery cap is active.
+        // Skip capture if we are already dimmed, so a second dim cannot record
+        // the saver level as the thing to restore.
+        const current = lastDisplayState?.requestedBrightness;
+        if (typeof current === 'number' && current !== getSaverBrightness()) {
+            brightnessBeforeDim = current;
+        }
         sendDisplayCommand({
             command: 'setBrightness',
-            brightness: 10
+            brightness: getSaverBrightness()
         });
     } catch (error) {
         logger.error('Error dimming display:', error);
@@ -1709,10 +1745,15 @@ export function dimDisplay() {
 
 export function restoreDisplay() {
     try {
+        // Restore what the user had, not a hardcoded 100 -- per the API, 100 means
+        // "hand back to OS-managed brightness", so restoring to it discarded any
+        // level set on the settings slider on every sleep/wake cycle. TCL restores
+        // to its app_brightness setting for the same reason (de1plus/utils.tcl:496).
         sendDisplayCommand({
             command: 'setBrightness',
-            brightness: 100
+            brightness: brightnessBeforeDim ?? 100
         });
+        brightnessBeforeDim = null;
     } catch (error) {
         logger.error('Error restoring display:', error);
         throw error;
