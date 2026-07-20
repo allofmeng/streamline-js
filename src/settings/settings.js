@@ -1,9 +1,14 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
+import { isBengleMachine, setMachineModel } from '../modules/machine.js';
+import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
+import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
+import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, cupWarmerViewMode, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
+import { clampCalWeight, calActionState, CAL_WEIGHT_DEFAULT_G, CAL_WEIGHT_MIN_G, CAL_WEIGHT_MAX_G } from '../modules/loadcell-cal.js';
 import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
@@ -16,6 +21,7 @@ const SETTINGS_NUMPAD_CONFIGS = {
     tankTempInput:           { title: 'TANK TEMPERATURE',    unit: '°C',   min: 10,  max: 40,   fieldType: 'settings-tank-temp' },
     waterAlertInput:         { title: 'WATER ALERT LEVEL',   unit: 'mm',   min: 0,   max: 30,   fieldType: 'settings-water-alert' },
     calibFanInput:           { title: 'FAN THRESHOLD',       unit: '%',    min: 0,   max: 100,  fieldType: 'settings-calib-fan' },
+    calibWeightInput:        { title: 'CALIBRATION WEIGHT',  unit: 'g',    min: 1,   max: 10000,fieldType: 'settings-calib-weight' },
     steamCalibTempInput:     { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 135, max: 170,  fieldType: 'settings-steam-calib-temp' },
     steamTempInput:          { title: 'STEAM TEMPERATURE',   unit: '°C',   min: 0,   max: 170,  fieldType: 'settings-steam-temp' },
     steamDurationInput:      { title: 'STEAM DURATION',      unit: 'sec',  min: 10,  max: 120,  fieldType: 'settings-steam-duration' },
@@ -42,6 +48,11 @@ const SETTINGS_NUMPAD_CONFIGS = {
     'visualizer-min-duration':   { title: 'MIN SHOT DURATION', unit: 'sec',  min: 1,              fieldType: 'settings-visualizer-min' },
     'keep-awake-hours-input':    { title: 'KEEP AWAKE HOURS',  unit: 'hr',   min: 0,   max: 12,   fieldType: 'settings-keep-awake-hours' },
     'keep-awake-mins-input':     { title: 'KEEP AWAKE MINS',   unit: 'min',  min: 0,   max: 59,   fieldType: 'settings-keep-awake-mins' },
+    // Bengle cup-warmer fields -- register so they open the in-app numpad on the
+    // tablet like every other settings number, instead of the OS keyboard.
+    cupWarmerTempInput:      { title: 'CUP WARMER TEMP',   unit: '°C',   min: 30,  max: 80,   fieldType: 'settings-cupwarmer-temp' },
+    cupWarmerPrewarmInput:   { title: 'PRE-WARM LEAD',     unit: 'min',  min: PREWARM_MIN_MINUTES, max: PREWARM_MAX_MINUTES, fieldType: 'settings-cupwarmer-prewarm' },
+    steamMilkStopInput:      { title: 'STOP AT MILK TEMP', unit: '°C',   min: 30,  max: 85,   fieldType: 'settings-steam-milk-stop' },
 };
 
 let _settingsNumpadSelected = null;
@@ -249,6 +260,14 @@ function syncBrightnessSliderFill(slider, value) {
 }
 
 function updateSettingsContentArea(category) {
+    // Leaving the Lighting page → flush any deferred cross-state palette PUT,
+    // THEN stop previewing (flush-before-clear: one strip transition, and the
+    // edit persists exactly as the old always-PUT behaviour did).
+    if (category !== 'ledstrip') { ledFlushDirty(); ledClearPreview(); }
+    // Leaving the Load Cells page → hand the scale WS back to the main page.
+    if (category !== 'calib_loadcell' && calWsClaimed) calReleaseScaleWs();
+    // Leaving the Cup Warmer page → stop its ~5 s revalidate poll.
+    if (category !== 'cupwarmer' && cupWarmerPollTimer !== null) stopCupWarmerPoll();
     const contentArea = document.getElementById('settings-content-area');
     if (contentArea) {
         contentArea.innerHTML = renderSettingsContent(category);
@@ -280,6 +299,13 @@ function updateSettingsContentArea(category) {
         if (category === 'quickstart') {
             setTimeout(initQuickstartGuideSettings, 0);
         }
+        if (category === 'ledstrip') {
+            setTimeout(initLedPicker, 0);
+        }
+        // Step 4's live readout needs the scale WS — claim it on every render
+        // of the page at step 4 (idempotent), so returning to a resumed wizard
+        // re-wires it after a reclaim.
+        if (category === 'calib_loadcell' && calStep === 4) calEnsureScaleWs();
         setTimeout(attachSettingsNumpad, 0);
     }
 }
@@ -312,13 +338,16 @@ const settingsTree = {
             { id: 'refillkit',           name: 'Refill Kit',            settingsCategory: 'calib_refillkit' },
             { id: 'voltage',             name: 'Voltage',               settingsCategory: 'calib_voltage' },
             { id: 'fan',                 name: 'Fan',                   settingsCategory: 'calib_fan' },
-            { id: 'steam',               name: 'Steam',                 settingsCategory: 'calib_steam' }
+            { id: 'steam',               name: 'Steam',                 settingsCategory: 'calib_steam' },
+            { id: 'loadcell',            name: 'Load Cells',            settingsCategory: 'calib_loadcell', i18nKey: 'Load Cells', bengleOnly: true }
         ]
     },
     'machine': {
         name: 'Machine',
         subcategories: [
             { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' },
+            { id: 'cupwarmer', name: 'Cup Warmer', settingsCategory: 'cupwarmer', i18nKey: 'Cup Warmer', bengleOnly: true },
+            { id: 'ledstrip', name: 'Lighting', settingsCategory: 'ledstrip', i18nKey: 'Lighting', bengleOnly: true },
             { id: 'machineinfo', name: 'Machine Information', settingsCategory: 'machineinfo', i18nKey: 'Machine Info' }
         ]
     },
@@ -574,6 +603,8 @@ export function renderSettingsContent(category) {
             return renderCalibVoltageSettings();
         case 'calib_steam':
             return renderCalibSteamSettings();
+        case 'calib_loadcell':
+            return renderLoadCellCalibration();
         case 'maint_descaling':
             return renderMainDescalingSettings();
         case 'maint_airpurge':
@@ -628,6 +659,10 @@ export function renderSettingsContent(category) {
             return renderFanThresholdSettings(settingsCache.de1);
         case 'usbchargermode':
             return renderUsbChargerModeSettings(settingsCache.de1);
+        case 'cupwarmer':
+            return renderCupWarmerSettings();
+        case 'ledstrip':
+            return renderLedSettings();
         case 'machineinfo':
             return renderMachineInformationSettings();
         case 'de1advanced':
@@ -2427,6 +2462,83 @@ function timeStringToMinutes(timeStr) {
 }
 
 // Render Steam settings
+// Steam-stop mode is a skin-side concept: reaprime stores only the independent
+// `stopAtTemperature` field (0 = off), not a mode enum. The pure derivation
+// lives in ../modules/steam-mode.js (node-tested); this wraps it with the
+// settings cache and the skin-local preference.
+function getSteamStopMode() {
+    const stopTemp = settingsCache.workflow?.steamSettings?.stopAtTemperature ?? 0;
+    let stored = null;
+    try {
+        stored = localStorage.getItem('streamline.steamStopMode');
+    } catch (e) { /* localStorage unavailable */ }
+    return resolveSteamStopMode(stopTemp, stored, isBengleMachine());
+}
+
+// Milk-probe state tracked in app.js from the live machine snapshot
+// (milkTemperature; 0/absent = no probe, sustained-absence debounced).
+// Absent tracker (page loaded standalone / before the main page) = no probe —
+// never fake a reading.
+function getMilkProbe() {
+    return window.app?.getMilkProbe?.() ?? { present: false, temperature: 0 };
+}
+
+// Last non-temperature stop mode the user chose ('time'|'off') — what the page
+// falls back to while the probe is absent. Probe loss is NOT display-only:
+// ui.js un-arms an active stop on the machine (stopAtTemperature = 0) and
+// lands the stop-mode record on this fallback (onMilkProbeUpdate below mirrors
+// the un-arm into this page's cached/staged workflow), so re-attaching the
+// probe restores the Milk Temp OPTION but not the mode — Milk Temp comes back
+// only when the user re-selects it (or an armed stop survived, e.g. a boot
+// with the probe attached).
+function getSteamStopFallbackMode() {
+    try {
+        return localStorage.getItem('streamline.steamStopModeFallback');
+    } catch (e) { return null; }
+}
+
+// The steam page's effective stop mode: the resolved mode gated on probe
+// presence ('temperature' is not offerable without a probe).
+function getEffectiveSteamStopMode(probePresent) {
+    return applyMilkProbeGate(getSteamStopMode(), probePresent, getSteamStopFallbackMode());
+}
+
+// Live milk-probe feed from app.js (one call per machine snapshot, ~10 Hz).
+// A presence FLIP while the steam page is open re-renders the section (gates
+// the Milk Temp option and applies/undoes the Time/Off fallback); a plain
+// temperature tick patches only the live text node so input focus isn't
+// clobbered mid-edit. renderSteamSettings re-baselines the flip detector.
+let steamMilkProbeWasPresent = null;
+let milkProbeLastPresent = null; // page-independent flip tracker (cache mirror below)
+window.onMilkProbeUpdate = function(present, temperatureC) {
+    // On a probe LOSS the main screen un-arms the milk stop on the machine
+    // (ui.setMilkProbePresent writes stopAtTemperature = 0 and records the
+    // Time/Off fallback as the stop mode). Mirror that into this page's cached
+    // and STAGED workflow state whatever category is open, so a later steam
+    // render can't resurrect Milk Temp from a stale armed value and a pending
+    // Save can't silently re-arm it.
+    const flippedAbsent = milkProbeLastPresent === true && !present;
+    milkProbeLastPresent = present;
+    if (flippedAbsent) {
+        if (settingsCache.workflow?.steamSettings?.stopAtTemperature > 0) {
+            settingsCache.workflow.steamSettings.stopAtTemperature = 0;
+        }
+        if (pendingChanges.workflow?.steamSettings?.stopAtTemperature > 0) {
+            delete pendingChanges.workflow.steamSettings.stopAtTemperature;
+        }
+    }
+    if (activeSettingsCategory !== 'steam') { steamMilkProbeWasPresent = null; return; }
+    if (steamMilkProbeWasPresent !== null && present !== steamMilkProbeWasPresent) {
+        steamMilkProbeWasPresent = present;
+        updateSettingsContentArea('steam');
+        return;
+    }
+    steamMilkProbeWasPresent = present;
+    if (!present) return;
+    const el = document.getElementById('steam-milk-live-temp');
+    if (el) el.textContent = `${temperatureC.toFixed(1)} °C`;
+};
+
 export function renderSteamSettings() {
     if (!settingsCache.de1 && !settingsCache.workflow) {
         return `
@@ -2443,6 +2555,32 @@ export function renderSteamSettings() {
     const targetTemp = steamSettings.targetTemperature ?? 150;
     const duration = steamSettings.duration ?? 60;
     const flow = steamSettings.flow ?? 0.9;
+    const stopTemp = steamSettings.stopAtTemperature ?? 0;
+    const bengle = isBengleMachine();
+    const probe = getMilkProbe(); // { present, temperature } — live snapshot state
+    steamMilkProbeWasPresent = probe.present; // baseline for the live flip detector
+    // Effective mode: 'temperature' only offerable with the probe attached;
+    // absent probe falls back to the previously-set Time/Off (display-level).
+    const stopMode = getEffectiveSteamStopMode(probe.present); // 'off' | 'time' | 'temperature'
+    const milkTarget = stopTemp > 0 ? Math.round(stopTemp) : 60;
+
+    // Steam-stop segmented button (mimics the gatewayMode segmented control).
+    // A disabled button (Milk Temp with no probe) renders grayed and inert.
+    const stopSegBtn = (value, label, disabled = false) => {
+        if (disabled) {
+            return `<button class="flex-1 h-[96px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[28px] flex items-center justify-center cursor-not-allowed transition-colors duration-200 bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7] opacity-40"
+                    aria-pressed="false" aria-disabled="true" disabled data-i18n-key="${label}">${getTranslation(label)}</button>`;
+        }
+        const active = stopMode === value;
+        return `<button class="flex-1 h-[96px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[28px] flex items-center justify-center cursor-pointer transition-colors duration-200 ${active ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[#b6c3d7]'}"
+                    aria-pressed="${active}"
+                    onclick="window.setSteamStopMode('${value}')" data-i18n-key="${label}">${getTranslation(label)}</button>`;
+    };
+    const stopDescriptions = {
+        off: 'Steam runs until you stop it (subject to the machine safety timeout).',
+        time: 'Steam stops automatically after the set duration.',
+        temperature: 'Steam stops automatically when the milk reaches the target temperature.'
+    };
 
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
@@ -2455,7 +2593,7 @@ export function renderSteamSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
+                            <p class="leading-[1.2]" data-i18n-key="Heater Target Temperature (°C)">Heater Target Temperature (°C)</p>
                             <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0 – 170 °C</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
@@ -2480,38 +2618,6 @@ export function renderSteamSettings() {
                         </div>
                     </div>
                     <p class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] leading-[1.2]" data-i18n-key="Setting below 130 °C turns the steam heater off">Setting below 130 °C turns the steam heater off</p>
-                </div>
-            </div>
-
-            <!-- Steam Duration -->
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Duration (seconds)">Duration (seconds)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">10 – 120 s</span>
-                        </div>
-                        <div class="flex gap-[20px] h-[72px] items-center">
-                            <button aria-label="Decrease steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
-                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(-5);">
-                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                            </button>
-                            <div class="flex items-center justify-center" style="width: 130px;">
-                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamDurationInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${duration}" step="5" min="10" max="120"
-                                       onchange="window.updateSteamSetting('duration', parseInt(this.value))">
-                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
-                            </div>
-                            <button aria-label="Increase steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
-                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(5);">
-                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -2547,6 +2653,94 @@ export function renderSteamSettings() {
                 </div>
             </div>
 
+            <!-- Steam Stop mode -->
+            <div class="content-stretch flex flex-col gap-[24px] items-start relative w-full">
+                <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                    <p class="leading-[1.2]" data-i18n-key="Steam Stop">Steam Stop</p>
+                </div>
+                <div class="flex gap-[16px] w-full">
+                    ${stopSegBtn('off', 'Off')}
+                    ${stopSegBtn('time', 'Time')}
+                    ${bengle ? stopSegBtn('temperature', 'Milk Temp', !probe.present) : ''}
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="${stopDescriptions[stopMode]}">${getTranslation(stopDescriptions[stopMode])}</p>
+                ${bengle && !probe.present ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] opacity-60 text-[24px] w-full" data-i18n-key="Requires the Bengle milk temperature probe.">${getTranslation('Requires the Bengle milk temperature probe.')}</p>
+                ` : ''}
+            </div>
+
+            <!-- Steam Duration (Time mode) -->
+            ${stopMode === 'time' ? `
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Duration (seconds)">Duration (seconds)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">10 – 120 s</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(-5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamDurationInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${duration}" step="5" min="10" max="120"
+                                       onchange="window.updateSteamSetting('duration', parseInt(this.value))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">s</span>
+                            </div>
+                            <button aria-label="Increase steam duration" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustSteamDuration(5);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Stop at Milk Temperature (Milk Temp mode — Bengle) -->
+            ${stopMode === 'temperature' && bengle ? `
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Stop at Milk Temperature (°C)">Stop at Milk Temperature (°C)</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">30 – 85 °C</span>
+                        </div>
+                        <div class="flex gap-[20px] h-[72px] items-center">
+                            <button aria-label="Decrease milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustMilkStopTemp(-1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div class="flex items-center justify-center" style="width: 130px;">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamMilkStopInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                                       value="${milkTarget}" step="1" min="30" max="85"
+                                       onchange="window.updateSteamSetting('stopAtTemperature', Math.max(30, Math.min(85, Math.round(parseFloat(this.value)) || 30)))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                            </div>
+                            <button aria-label="Increase milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                                    onclick="window.flashPlusMinusButton(this); window.adjustMilkStopTemp(1);">
+                                <svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Probe present (this section is unreachable without it) → show the
+                         LIVE reading instead of the old "requires the probe" note; the text
+                         node is patched per snapshot by window.onMilkProbeUpdate. -->
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">${getTranslation('Live milk temperature:')} <span id="steam-milk-live-temp" class="font-bold">${probe.temperature.toFixed(1)} °C</span></p>
+                </div>
+            </div>
+            ` : ''}
+
             <!-- Steam Purge Mode -->
             ${settingsCache.de1 ? `
             <div class="content-stretch flex flex-col items-start relative w-full">
@@ -2570,6 +2764,845 @@ export function renderSteamSettings() {
         </div>
     `;
 }
+
+// ── Cup Warmer (Bengle) ─────────────────────────────────────────────────────
+// Machine truth is a single `temperature` setpoint (0 = off). We keep the
+// user's desired target in localStorage so toggling off (PUT 0) doesn't lose
+// it. Pure clamp/format helpers live in ../modules/cup-warmer.js so node:test
+// covers them.
+//
+// State lives in the SHARED store in ../modules/cup-warmer.js — one copy for
+// this page AND app.js's header quick-toggle (see the note there; the old
+// fetch-once cupWarmerCache here froze the bench display at a 20-minute-old
+// reading, audit I1 / checklist 2b). Freshness while the page is open comes
+// from startCupWarmerPoll(): an immediate revalidate on entry (stale-while-
+// revalidate — cached values paint instantly, fresh data patches in) plus a
+// ~5 s repeat whose ticks touch ONLY the #cupWarmerCurrentTemp text node so
+// input focus survives. The poll stops on category change (top of
+// updateSettingsContentArea — the same exit seam the Lighting preview and the
+// Load-Cell scale WS use), on Save/Cancel page exit, and self-guards against
+// any other page swap.
+let cupWarmerPollTimer = null;      // interval handle; non-null only while this page owns the poll
+const CUP_WARMER_POLL_MS = 5000;    // revalidate cadence while the page is open
+
+// Wake-schedule list, for the "pre-warm will do nothing" warning. The cup-warmer
+// page has no other reason to know about schedules, so it fetches the list on
+// entry and caches it here.
+//   null = UNKNOWN (not fetched yet, or the fetch failed) — we do NOT warn
+//   []   = genuinely no wake windows — we DO warn
+// Conflating those two is how a UI ends up crying wolf at a user whose schedule
+// simply hasn't loaded.
+let cupWarmerSchedules = null;
+// Pre-warm shape + warnings as last RENDERED, so a poll tick can tell a repaint
+// that is needed (a block appeared/disappeared) from one that would merely
+// clobber a stepper the user is mid-edit in.
+let cupWarmerRenderedSig = null;
+let cupWarmerRenderedWarnings = null;
+// A revalidate failed with NOTHING in the store: we hold no machine state at
+// all. Distinct from "not fetched yet" (also a null store) — the page renders
+// the error state rather than a made-up machine (see cupWarmerViewMode). Reset
+// on page entry and by the next successful fetch.
+let cupWarmerLoadFailed = false;
+
+// One store subscription paints the open page: a missing enable-toggle
+// (loading/error placeholder on screen) or an on/off flip (header toggle,
+// reconnect invalidation, machine-side change) re-renders the section; a
+// plain temperature tick patches only the text node so it can never clobber
+// input focus mid-edit (same flip-vs-tick split as onMilkProbeUpdate above).
+onCupWarmerStateChange((state) => {
+    if (activeSettingsCategory !== 'cupwarmer') return;
+    const toggleEl = document.getElementById('cupWarmerEnableToggle');
+    if (!toggleEl || toggleEl.checked !== isCupWarmerOn(state?.temperature)) {
+        updateSettingsContentArea('cupwarmer');
+        return;
+    }
+    // Same flip-vs-tick split for the pre-warm: a change of SHAPE (support
+    // appearing, the toggle flipping, the firmware starting or stopping a
+    // scheduled pre-warm) adds or removes whole blocks and must repaint. The
+    // lead value is deliberately not in the signature — a tick must never
+    // rewrite an input under the user's fingers.
+    if (prewarmShapeSignature(resolvePrewarm(state)) !== cupWarmerRenderedSig) {
+        updateSettingsContentArea('cupwarmer');
+        return;
+    }
+    patchCupWarmerCurrentTemp(state?.currentTemperature);
+});
+
+// Refresh the wake-schedule list for the empty-schedule warning. Repaints only
+// when the warning set actually changed, so the fetch landing cannot clobber a
+// stepper the user is already editing.
+async function refreshCupWarmerSchedules() {
+    let schedules = null;
+    try {
+        const list = await getPresenceSchedules();
+        schedules = Array.isArray(list) ? list : null;
+    } catch (e) {
+        schedules = null; // unknown, not empty — stay quiet rather than warn wrongly
+    }
+    cupWarmerSchedules = schedules;
+    if (activeSettingsCategory !== 'cupwarmer') return;
+    const state = getCupWarmerState();
+    const warnings = prewarmWarnings({
+        prewarm: resolvePrewarm(state),
+        temperature: state?.temperature,
+        schedules: cupWarmerSchedules,
+    }).join(',');
+    if (warnings !== cupWarmerRenderedWarnings) updateSettingsContentArea('cupwarmer');
+}
+
+// Patch just the current-temperature line (bold reading vs dimmed "No
+// reading"), leaving the rest of the rendered page — and any focused input —
+// untouched. Mirrors the two render variants in renderCupWarmerSettings.
+function patchCupWarmerCurrentTemp(currentTemperature) {
+    const el = document.getElementById('cupWarmerCurrentTemp');
+    if (!el) return;
+    const text = formatCurrentMatTemp(currentTemperature);
+    if (text !== null) {
+        el.textContent = `${text} °C`;
+        el.classList.add('font-bold');
+        el.classList.remove('font-normal', 'opacity-60');
+        el.removeAttribute('data-i18n-key');
+    } else {
+        el.textContent = getTranslation('No reading');
+        el.classList.add('font-normal', 'opacity-60');
+        el.classList.remove('font-bold');
+        el.setAttribute('data-i18n-key', 'No reading');
+    }
+}
+
+// Fetch fresh machine state and fold it into the shared store; the store
+// subscription above paints the page (and app.js's header button). A failed
+// fetch keeps the last snapshot on screen — the next tick retries — and with
+// nothing loaded at all it paints the error state.
+//
+// What it must NOT do is invent a snapshot. It used to fall back to a synthetic
+// `{ temperature: 0 }`, which reads as a fully-loaded machine with the warmer
+// off — so the render skipped its loading guard and resolvePrewarm(), unable to
+// tell a field absent because the FETCH failed from one absent because the
+// FIRMWARE lacks the register, reported the pre-warm unsupported: a network blip
+// told the user to go update their firmware. See cupWarmerViewMode().
+async function revalidateCupWarmer() {
+    try {
+        const data = await getCupWarmer();
+        cupWarmerLoadFailed = false;
+        setCupWarmerState(data || { temperature: 0 });
+    } catch (e) {
+        if (getCupWarmerState() !== null) return;   // last good snapshot stands; next tick retries
+        if (cupWarmerLoadFailed) return;            // already saying so — don't repaint over it
+        cupWarmerLoadFailed = true;
+        // Nothing in the store changed, so the store subscription cannot repaint
+        // for us: swap the loading placeholder for the error state ourselves. A
+        // later tick that succeeds clears the flag and the subscription repaints.
+        if (activeSettingsCategory === 'cupwarmer') updateSettingsContentArea('cupwarmer');
+    }
+}
+
+function startCupWarmerPoll() {
+    if (cupWarmerPollTimer !== null) return; // already armed — a re-render, not a page entry
+    cupWarmerLoadFailed = false; // fresh page entry: a stale error must not pre-empt the retry
+    cupWarmerPollTimer = setInterval(() => {
+        // Self-guard: an exit path that misses stopCupWarmerPoll() (e.g. a
+        // history/back page swap) lands here at most one tick later.
+        if (activeSettingsCategory !== 'cupwarmer' || !document.getElementById('settings-content-area')) {
+            stopCupWarmerPoll();
+            return;
+        }
+        revalidateCupWarmer();
+    }, CUP_WARMER_POLL_MS);
+    revalidateCupWarmer(); // stale-while-revalidate: refresh immediately on entry
+    // Schedules can be edited on the Presence page between visits, so re-fetch
+    // on entry rather than caching for the session. Once per entry, not per tick.
+    refreshCupWarmerSchedules();
+}
+
+function stopCupWarmerPoll() {
+    if (cupWarmerPollTimer === null) return;
+    clearInterval(cupWarmerPollTimer);
+    cupWarmerPollTimer = null;
+}
+
+export function renderCupWarmerSettings() {
+    startCupWarmerPoll(); // idempotent: page entry kicks a revalidate + arms the ~5 s poll
+    const cupWarmer = getCupWarmerState();
+    // A fetch that never landed is an error, not a machine with everything
+    // switched off: with no snapshot we know NOTHING about this machine — least
+    // of all whether its firmware has the pre-warm registers. Say so, and let
+    // the ~5 s poll heal it. (Same loading → error split as the Lighting page.)
+    const mode = cupWarmerViewMode(cupWarmer, cupWarmerLoadFailed);
+    if (mode === 'loading') return renderLoadingState(getTranslation('Cup Warmer'));
+    if (mode === 'error') {
+        return renderErrorState(
+            getTranslation('Cup Warmer'),
+            getTranslation('Failed to load cup warmer settings'),
+        );
+    }
+
+    const machineTemp = Math.round(cupWarmer.temperature ?? 0);
+    const enabled = machineTemp > 0;
+    // When enabled the machine's setpoint is truth; when off, show the stored
+    // desired target. Either way the display stays within the 30–80 UI range.
+    let target = enabled ? machineTemp : readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
+    if (!(target >= 30 && target <= 80)) target = 70;
+    // Pre-warm is seeded from the MACHINE, never from localStorage: the firmware
+    // owns the schedule-driven pre-warm and persists these two settings in flash,
+    // so a local mirror could only ever disagree with it. `supported === false`
+    // means the firmware has no such registers (the bench build 95) — the
+    // controls render disabled and say so rather than faking a state.
+    const prewarm = resolvePrewarm(cupWarmer);
+    const prewarmWarns = prewarmWarnings({
+        prewarm,
+        temperature: cupWarmer.temperature,
+        schedules: cupWarmerSchedules,
+    });
+    // Remember what this paint is showing, so a 5 s poll tick can tell a needed
+    // repaint from one that would clobber a focused input.
+    cupWarmerRenderedSig = prewarmShapeSignature(prewarm);
+    cupWarmerRenderedWarnings = prewarmWarns.join(',');
+    // Live mat temperature: shown when
+    // the app reports a non-null `currentTemperature`; "No reading" when it is
+    // null OR when the field is absent (older reaprime). Never fake data.
+    const currentTempText = formatCurrentMatTemp(cupWarmer.currentTemperature);
+
+    const minusSvg = `<svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const plusSvg = `<svg aria-hidden="true" width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    // `disabled` renders the toggle inert AND visibly so — used when the firmware
+    // does not support pre-warm, where a live-looking switch would be a lie.
+    const toggle = (id, checked, onchange, disabled = false) => `
+        <label class="relative flex items-center flex-shrink-0 w-[100px] h-[50px] ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}">
+            <input type="checkbox" id="${id}" class="sr-only peer" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="${onchange}">
+            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+        </label>`;
+
+    return `
+        <div class="content-stretch flex flex-col gap-[48px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Cup Warmer">Cup Warmer</p>
+            </div>
+
+            <!-- Enable -->
+            <div class="flex items-center justify-between gap-[24px] w-full">
+                <div class="flex flex-col gap-[4px]">
+                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]" data-i18n-key="Cup Warmer">Cup Warmer</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Warm your cups on the top plate">Warm your cups on the top plate</p>
+                </div>
+                ${toggle('cupWarmerEnableToggle', enabled, "window.toggleCupWarmer(this.checked)")}
+            </div>
+
+            <!-- Target Temperature -->
+            <div class="content-stretch flex items-center justify-between relative w-full">
+                <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                    <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
+                    <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">30 – 80 °C</span>
+                </div>
+                <div class="flex gap-[20px] h-[72px] items-center">
+                    <button aria-label="Decrease cup warmer temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerTemp(-1);">${minusSvg}</button>
+                    <div class="flex items-center justify-center" style="width: 130px;">
+                        <input type="text" inputmode="numeric" pattern="[0-9]*" id="cupWarmerTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full" value="${target}" step="1" min="30" max="80" onchange="window.setCupWarmerTarget(parseFloat(this.value))">
+                        <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                    </div>
+                    <button aria-label="Increase cup warmer temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerTemp(1);">${plusSvg}</button>
+                </div>
+            </div>
+
+            <!-- Current temperature (read-only; placeholder when no reading) -->
+            <div class="content-stretch flex items-center justify-between gap-[24px] relative w-full">
+                <div class="flex flex-col gap-[4px]">
+                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[var(--text-primary)] text-[30px] leading-[1.2]" data-i18n-key="Current Temperature (°C)">Current Temperature (°C)</p>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Live temperature of the cup-warming plate">Live temperature of the cup-warming plate</p>
+                </div>
+                ${currentTempText !== null
+                    ? `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-bold leading-[1.2] whitespace-nowrap">${currentTempText}&nbsp;°C</p>`
+                    : `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-normal opacity-60 leading-[1.2] whitespace-nowrap" data-i18n-key="No reading">No reading</p>`}
+            </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+
+            <!-- Pre-warm — the FIRMWARE owns the timing; we write two settings
+                 and read one status flag. Disabled + explained on firmware that
+                 does not have the registers: never a switch that pretends. -->
+            <div class="flex flex-col gap-[24px] w-full">
+                <div class="flex items-center justify-between gap-[24px] w-full">
+                    <div class="flex flex-col gap-[4px]">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]" data-i18n-key="Pre-warm before wake-up">Pre-warm before wake-up</p>
+                        <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Warm the cups automatically ahead of a scheduled wake time">Warm the cups automatically ahead of a scheduled wake time</p>
+                    </div>
+                    ${toggle('cupWarmerPrewarmToggle', prewarm.enabled, "window.toggleCupWarmerPrewarm(this.checked)", !prewarm.supported)}
+                </div>
+                ${!prewarm.supported ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-amber-600 text-[22px] w-full" data-i18n-key="This machine's firmware doesn't support pre-warm — update the firmware to use it.">This machine's firmware doesn't support pre-warm — update the firmware to use it.</p>
+                ` : ''}
+                ${prewarm.supported && prewarm.active ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-[#385a92] text-[22px] w-full" data-i18n-key="Pre-warming now for a scheduled wake.">Pre-warming now for a scheduled wake.</p>
+                ` : ''}
+                ${prewarm.supported && prewarm.enabled ? `
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Minutes before wake">Minutes before wake</p>
+                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${PREWARM_MIN_MINUTES} – ${PREWARM_MAX_MINUTES} min</span>
+                    </div>
+                    <div class="flex gap-[20px] h-[72px] items-center">
+                        <button aria-label="Decrease pre-warm minutes" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerPrewarmMinutes(-5);">${minusSvg}</button>
+                        <div class="flex items-center justify-center" style="width: 130px;">
+                            <input type="text" inputmode="numeric" pattern="[0-9]*" id="cupWarmerPrewarmInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full" value="${prewarm.leadMinutes}" step="5" min="${PREWARM_MIN_MINUTES}" max="${PREWARM_MAX_MINUTES}" onchange="window.setCupWarmerPrewarmMinutes(parseFloat(this.value))">
+                            <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">min</span>
+                        </div>
+                        <button aria-label="Increase pre-warm minutes" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerPrewarmMinutes(5);">${plusSvg}</button>
+                    </div>
+                </div>
+                ` : ''}
+                ${prewarmWarns.includes('noSchedule') ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-amber-600 text-[22px] w-full" data-i18n-key="No wake schedule set — add one in Presence Detection.">No wake schedule set — add one in Presence Detection.</p>
+                ` : ''}
+                ${prewarmWarns.includes('noSetpoint') ? `
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-amber-600 text-[22px] w-full" data-i18n-key="Cup warmer is off — pre-warm needs it on to heat the plate.">Cup warmer is off — pre-warm needs it on to heat the plate.</p>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+// Cup-warmer window handlers — the settings UI is innerHTML-injected template
+// strings, so interactivity must go through window-scoped inline handlers.
+// Toggling / editing applies live via PUT /machine/cupWarmer.
+window.toggleCupWarmer = async function(on) {
+    const target = readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
+    const temp = on ? target : 0;
+    try {
+        await setCupWarmer(temp);
+        // Merge keeps currentTemperature visible across toggles;
+        // the store notify also repaints app.js's header quick-toggle.
+        patchCupWarmerState({ temperature: temp });
+        ui.showToast(on ? getTranslation('Cup warmer on') : getTranslation('Cup warmer off'), 2000, 'success');
+    } catch (e) {
+        ui.showToast(getTranslation('Failed to set cup warmer'), 3000, 'error');
+    }
+    if (activeSettingsCategory === 'cupwarmer') updateSettingsContentArea('cupwarmer');
+};
+
+window.adjustCupWarmerTemp = function(change) {
+    const input = document.getElementById('cupWarmerTempInput');
+    if (input) {
+        let v = parseInt(input.value, 10) + change;
+        v = Math.max(30, Math.min(80, v));
+        input.value = v;
+        input.dispatchEvent(new Event('change'));
+    }
+};
+
+window.setCupWarmerTarget = async function(value) {
+    const v = clampCupWarmerTarget(value);
+    try { localStorage.setItem(CUP_WARMER_TARGET_KEY, String(v)); } catch (e) { /* non-fatal */ }
+    // Apply live only if the warmer is currently on — editing the target while
+    // off must not power the mat.
+    if (isCupWarmerOn(getCupWarmerState()?.temperature)) {
+        try { await setCupWarmer(v); patchCupWarmerState({ temperature: v }); }
+        catch (e) { ui.showToast(getTranslation('Failed to set cup warmer'), 3000, 'error'); }
+    }
+};
+
+// Pre-warm writes go to the MACHINE (the firmware owns the timing and persists
+// the settings in flash) — there is no localStorage mirror to keep.
+//
+// `MatPreheatEnable` and `MatPreheatLeadMin` are one register PAIR written
+// together, so each write sends both; the untouched half is re-sent as the
+// machine currently holds it. The PUT echoes the pair back READ FROM THE
+// MACHINE, and on firmware without the registers the write landed in unmapped
+// space and did nothing — so the echo comes back null. Folding that echo into
+// the store is what turns the block into an honest "unavailable" instead of a
+// toggle that silently springs back.
+async function applyCupWarmerPrewarm(enabled, leadMinutes, okToast) {
+    try {
+        const applied = await setCupWarmerPrewarm(enabled, leadMinutes);
+        patchCupWarmerState({
+            prewarmEnabled: applied?.prewarmEnabled ?? null,
+            prewarmLeadMinutes: applied?.prewarmLeadMinutes ?? null,
+        });
+        if (applied?.prewarmEnabled == null) {
+            // A 200 is not proof the setting took: this firmware has no pre-warm.
+            ui.showToast(getTranslation("This machine's firmware doesn't support pre-warm"), 3000, 'error');
+            return false;
+        }
+        ui.showToast(okToast, 2000, 'success');
+        return true;
+    } catch (e) {
+        ui.showToast(getTranslation('Failed to set pre-warm'), 3000, 'error');
+        return false;
+    }
+}
+
+window.toggleCupWarmerPrewarm = async function(on) {
+    const prewarm = resolvePrewarm(getCupWarmerState());
+    await applyCupWarmerPrewarm(
+        on,
+        prewarm.leadMinutes,
+        getTranslation(on ? 'Pre-warm on' : 'Pre-warm off'),
+    );
+    // Re-check the schedule: switching pre-warm ON with no wake window silently
+    // does nothing, and that warning is the only thing that would tell the user.
+    if (on) refreshCupWarmerSchedules();
+    if (activeSettingsCategory === 'cupwarmer') updateSettingsContentArea('cupwarmer');
+};
+
+window.adjustCupWarmerPrewarmMinutes = function(change) {
+    const input = document.getElementById('cupWarmerPrewarmInput');
+    if (input) {
+        let v = parseInt(input.value, 10) + change;
+        v = Math.max(PREWARM_MIN_MINUTES, Math.min(PREWARM_MAX_MINUTES, v));
+        input.value = v;
+        input.dispatchEvent(new Event('change'));
+    }
+};
+
+window.setCupWarmerPrewarmMinutes = async function(value) {
+    const v = clampPrewarmMinutes(value);
+    const prewarm = resolvePrewarm(getCupWarmerState());
+    // No re-render on success: the store patch notifies, and the lead is not in
+    // the shape signature, so a focused stepper survives its own edit.
+    await applyCupWarmerPrewarm(prewarm.enabled, v, getTranslation('Pre-warm lead updated'));
+};
+
+// ── Lighting / LED strip (Bengle) ────────────────────────────────────────────
+// State = { frontStrip, backStrip, frontSwitch } × { awake, sleeping }, each a
+// 12-char 'RRRRGGGGBBBB' hex (16-bit/channel). PUT previews live on the machine;
+// commit persists to NVM; reset reloads NVM. Uses the vendored iro.js colour wheel.
+// Colour maps (8-bit↔16-bit) live in ../modules/led-color.js so node:test covers them.
+let ledState = null;           // working LedStripState, or null until loaded
+let ledCommitted = null;       // JSON snapshot at last load/commit
+let ledSelectedZone = 'front'; // 'front' | 'rear' | 'both' | 'switch'
+let ledSelectedState = 'awake';// 'awake' | 'sleeping'
+let ledPicker = null;          // iro.ColorPicker instance
+let ledPutTimer = null;        // debounce handle for the wheel-driven flush/preview
+let ledError = false;
+let ledPreviewActive = false;  // a live colour is being previewed on the strip
+let ledPaletteDirty = false;   // cross-state edits not yet PUT (deferred to a preview-end seam)
+let ledLastLit = {};           // last lit colour per 'zoneKey:state', restored on power-on
+const LED_DEFAULT_ON = 'FFFFAAAA5555'; // warm white — default colour when powering a zone on with no history
+
+const LED_PRESETS = [
+    ['Off', '#000000'], ['Warm White', '#FFAA55'], ['Soft White', '#FFD9A0'],
+    ['Daylight', '#EAF2FF'], ['Blue', '#385A92'], ['Amber', '#FF7A00'],
+    ['Red', '#FF2200'], ['Green', '#0CA581'], ['Cyan', '#00C2D1'], ['Purple', '#7A3FF2']
+];
+
+const ledZoneKeys = (zone) => zone === 'front' ? ['frontStrip']
+    : zone === 'rear' ? ['backStrip']
+    : zone === 'switch' ? ['frontSwitch']
+    : ['frontStrip', 'backStrip']; // both
+// The palette bank the machine is currently rendering on the strips: 'sleeping'
+// only when the machine is actually asleep; every other (or unknown) state runs
+// the awake palette.
+const ledMachinePaletteState = () =>
+    currentMachineState === MachineState.SLEEPING ? 'sleeping' : 'awake';
+function ledCellColor16(zoneKey, stateKey) { return ledState?.[zoneKey]?.[stateKey] || '000000000000'; }
+function ledCurrentColor16() { return ledCellColor16(ledZoneKeys(ledSelectedZone)[0], ledSelectedState); }
+function ledNormalize(data) {
+    const z = (o) => ({ awake: o?.awake || '000000000000', sleeping: o?.sleeping || '000000000000' });
+    return { frontStrip: z(data?.frontStrip), backStrip: z(data?.backStrip), frontSwitch: z(data?.frontSwitch) };
+}
+
+export function renderLedSettings() {
+    if (!window.iro) {
+        return renderErrorState(getTranslation('Lighting'), getTranslation('Colour picker failed to load'));
+    }
+    if (ledState === null && !ledError) {
+        getLedStrip()
+            .then((data) => { ledState = ledNormalize(data); ledCommitted = JSON.stringify(ledState); if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip'); })
+            .catch(() => { ledError = true; if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip'); });
+        return renderLoadingState(getTranslation('Lighting'));
+    }
+    if (ledError || !ledState) {
+        return renderErrorState(getTranslation('Lighting'), getTranslation('Failed to load lighting settings'));
+    }
+
+    const isOn = ledCurrentColor16() !== '000000000000';
+    const seg = (value, label, current, handler) => {
+        const active = current === value;
+        return `<button class="flex-1 h-[80px] rounded-[10px] font-['Inter:Bold',sans-serif] font-bold text-[26px] flex items-center justify-center cursor-pointer transition-colors duration-200 ${active ? 'bg-[var(--mimoja-blue)] text-white' : 'bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] text-[var(--text-primary)]'}"
+                    aria-pressed="${active}" onclick="window.${handler}('${value}')" data-i18n-key="${label}">${getTranslation(label)}</button>`;
+    };
+    const cell = (zoneKey, zoneLabel, stateKey) => {
+        const isActive = ledZoneKeys(ledSelectedZone).includes(zoneKey) && ledSelectedState === stateKey;
+        return `<button aria-label="${zoneLabel} ${stateKey}" data-led-cell="${zoneKey}:${stateKey}" onclick="window.ledSelectCell('${zoneKey}','${stateKey}')"
+                    class="h-[64px] rounded-[10px] border-2 ${isActive ? 'border-[var(--mimoja-blue)]' : 'border-[var(--profile-button-outline-color)]'}"
+                    style="background-color: ${ledColor16ToHex8(ledCellColor16(zoneKey, stateKey))}"></button>`;
+    };
+    const presetSwatches = LED_PRESETS.map(([name, hex]) =>
+        `<button title="${name}" aria-label="${name}" onclick="window.ledApplyPreset('${hex}')"
+            class="w-[64px] h-[64px] rounded-full border-2 border-[var(--profile-button-outline-color)]" style="background-color: ${hex}"></button>`
+    ).join('');
+
+    return `
+        <div class="content-stretch flex flex-col gap-[40px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Lighting">Lighting</p>
+            </div>
+
+            <div class="flex flex-row gap-[48px] w-full items-start flex-wrap">
+                <div class="flex flex-col gap-[28px] flex-1 min-w-[420px]">
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Zone">Zone</p>
+                        <div class="flex gap-[12px] w-full">
+                            ${seg('front', 'Front', ledSelectedZone, 'ledSelectZone')}
+                            ${seg('rear', 'Rear', ledSelectedZone, 'ledSelectZone')}
+                            ${seg('both', 'Both', ledSelectedZone, 'ledSelectZone')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="State">State</p>
+                        <div class="flex gap-[12px] w-full">
+                            ${seg('awake', 'Awake', ledSelectedState, 'ledSelectState')}
+                            ${seg('sleeping', 'Asleep', ledSelectedState, 'ledSelectState')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Current Colours">Current Colours</p>
+                        <div class="grid w-full gap-[12px] items-center" style="grid-template-columns: 120px 1fr 1fr;">
+                            <div></div>
+                            <div class="text-center text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Awake">Awake</div>
+                            <div class="text-center text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Asleep">Asleep</div>
+                            <div class="text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Front">Front</div>
+                            ${cell('frontStrip', 'Front', 'awake')}
+                            ${cell('frontStrip', 'Front', 'sleeping')}
+                            <div class="text-[var(--text-primary)] text-[22px] font-semibold" data-i18n-key="Rear">Rear</div>
+                            ${cell('backStrip', 'Rear', 'awake')}
+                            ${cell('backStrip', 'Rear', 'sleeping')}
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-[12px] w-full">
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Presets">Presets</p>
+                        <div class="flex flex-wrap gap-[14px]">${presetSwatches}</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-[20px] items-center">
+                    <div class="flex items-center justify-between gap-[20px] w-full">
+                        <span class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[26px]" data-i18n-key="Power">Power</span>
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="ledPowerToggle" class="sr-only peer" ${isOn ? 'checked' : ''} onchange="window.ledSetPower(this.checked)">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+                    <div id="led-picker-slot" style="position:relative;"><div id="led-picker" style="${isOn ? '' : 'opacity:0.35;pointer-events:none;'}"></div></div>
+                    <p class="text-[var(--text-secondary)] text-[20px]" data-i18n-key="Wheel picks colour · slider sets brightness">Wheel picks colour · slider sets brightness</p>
+                    <div class="flex items-center gap-[16px]" style="${isOn ? '' : 'opacity:0.35;'}">
+                        <div id="led-current-swatch" class="w-[56px] h-[56px] rounded-[10px] border-2 border-[var(--profile-button-outline-color)]" style="background-color: ${ledColor16ToHex8(ledCurrentColor16())}"></div>
+                        <span id="led-hex-readout" class="font-['NotoSansMono'] text-[var(--text-primary)] text-[24px]">${isOn ? ledColor16ToHex8(ledCurrentColor16()) : 'Off'}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+            <div class="flex justify-end gap-[20px] w-full">
+                <button class="border-2 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[82px] px-[48px] rounded-[67.5px] text-[24px] font-bold" onclick="window.ledReset()" data-i18n-key="Reset">Reset</button>
+                <button class="bg-[var(--mimoja-blue)] text-white h-[82px] px-[48px] rounded-[67.5px] text-[24px] font-bold" onclick="window.ledSave()" data-i18n-key="Save">Save</button>
+            </div>
+        </div>
+    `;
+}
+
+function initLedPicker() {
+    const el = document.getElementById('led-picker');
+    if (!el || !window.iro || !ledState) return;
+    el.innerHTML = '';
+    el.style.transform = '';
+    el.style.width = '';
+    el.style.height = '';
+    ledPicker = new window.iro.ColorPicker(el, {
+        width: 300,
+        color: ledColor16ToHex8(ledCurrentColor16()),
+        borderWidth: 2,
+        borderColor: 'var(--box-color)',
+        handleRadius: 18,
+        padding: 8,
+        layout: [
+            { component: window.iro.ui.Wheel, options: { wheelLightness: false } },
+            { component: window.iro.ui.Slider, options: { sliderType: 'value' } }
+        ]
+    });
+    // The whole UI is CSS-scaled (transform: scale(S)). iro reads the *scaled*
+    // getBoundingClientRect for the touch position but its unscaled config `width`
+    // for the wheel geometry, so touches land off by S (worse toward the right).
+    // Counter-scale the picker by 1/S so its rendered size == its config size and
+    // the pointer math lines up; reserve the visual footprint so siblings don't overlap.
+    let s = 1;
+    try {
+        const sc = document.getElementById('scaled-content');
+        if (sc) { const m = new DOMMatrix(getComputedStyle(sc).transform); if (m && m.a) s = m.a; }
+    } catch (e) { /* ignore — no scale */ }
+    const slot = document.getElementById('led-picker-slot');
+    if (s && Math.abs(s - 1) > 0.02 && slot) {
+        // Counter-scaling makes the picker's *visual* size exceed its layout box,
+        // so pin the picker absolutely and give its wrapper slot the visual size —
+        // the slot reserves the flow space, the picker fills it, siblings don't overlap.
+        const nat = el.getBoundingClientRect(); // natural (in-flow) size
+        slot.style.width = `${nat.width / (s * s)}px`;
+        slot.style.height = `${nat.height / (s * s)}px`;
+        el.style.position = 'absolute';
+        el.style.top = '0';
+        el.style.left = '0';
+        el.style.transformOrigin = 'top left';
+        el.style.transform = `scale(${1 / s})`;
+    }
+    ledPicker.on('input:change', (color) => {
+        const c16 = ledRgbToColor16(color.rgb);
+        ledZoneKeys(ledSelectedZone).forEach((k) => { if (ledState[k]) ledState[k][ledSelectedState] = c16; });
+        ledUpdateSwatchesDom(color.hexString);
+        ledSchedulePut();
+    });
+    ledPicker.on('input:end', () => ledCommitEdit());
+}
+
+function ledUpdateSwatchesDom(hex8) {
+    const sw = document.getElementById('led-current-swatch');
+    const hx = document.getElementById('led-hex-readout');
+    if (sw) sw.style.backgroundColor = hex8;
+    if (hx) hx.textContent = hex8.toUpperCase();
+    ledZoneKeys(ledSelectedZone).forEach((k) => {
+        const c = document.querySelector(`[data-led-cell="${k}:${ledSelectedState}"]`);
+        if (c) c.style.backgroundColor = hex8;
+    });
+}
+
+// ── LED strip write sequencing ───────────────────────────────────────────────
+// Every write that changes what the strip SHOWS (palette PUT, preview POST,
+// preview clear) is funnelled through ONE promise chain, so writes land in
+// enqueue order and can never interleave. This is what keeps a cross-state
+// preview steady: the FW unconditionally re-applies the machine-state bank to
+// the live registers on EVERY palette-register write, so any PUT
+// that lands while a cross-state preview is up repaints the strip with the
+// awake palette until the next preview write — a visible flash. The rules
+// that make that flash impossible:
+//   1. While a cross-state edit is active, NO stored-palette PUT is issued —
+//      not per move (which alternated visibly) and not at gesture end (which
+//      left a residual flash). Moves and gesture ends are PREVIEW writes only,
+//      coalesced update-in-place (never a clear between two previews); the
+//      pending palette is only marked dirty (ledCommitEdit).
+//   2. The deferred PUT flushes at the seams where the preview ENDS — target
+//      switch, Save, Reset, settings Cancel/Save, leaving the Lighting page —
+//      enqueued immediately BEFORE that seam's preview-clear (ledFlushDirty →
+//      ledPutPalette, no preview chase). The cross-state edit never touched
+//      the bank the machine is rendering, so the FW re-apply this PUT
+//      triggers paints exactly the palette the clear then writes to the live
+//      registers: the strip makes ONE transition, picked colour → final.
+//   3. Same-state edits keep the immediate PUT (ledFlushPut) — there the FW
+//      re-apply repaints the very colour just edited, so nothing can flash.
+//   4. The chain serializes all of it: a queued PUT can never slip between a
+//      preview and the eye, and a seam's clear can never run before its flush.
+let ledOpChain = Promise.resolve(); // serialized LED I/O; tail never rejected
+let ledPreviewQueued = false;       // a preview op is queued but not yet started
+let ledFlushQueued = false;         // a PUT+preview flush op is queued but not yet started
+let ledFlushPromise = Promise.resolve(); // the queued flush, for coalesced awaiters (Save)
+
+function ledEnqueue(op) {
+    const p = ledOpChain.then(op);
+    ledOpChain = p.catch(() => {}); // keep the chain alive whatever op did
+    return p;
+}
+
+// A preview colour is on the strip, or a queued op is about to put one there —
+// the exit seams must clear in either case or a late op would latch the strip.
+const ledPreviewPending = () => ledPreviewActive || ledPreviewQueued || ledFlushQueued;
+
+// POST a live preview of what the user is looking at (edited zones show the
+// bank being edited, all other zones the bank the machine is rendering).
+// Coalesced: at most one op waits in the chain, and it reads the freshest
+// palette/target state only when it actually runs.
+function ledPushPreview() {
+    if (ledPreviewQueued) return;
+    ledPreviewQueued = true;
+    ledEnqueue(async () => {
+        ledPreviewQueued = false;
+        if (!ledState) return;
+        const { front, back } = ledPreviewComposite(
+            ledState, ledZoneKeys(ledSelectedZone), ledSelectedState, ledMachinePaletteState());
+        try { await previewLedStrip(front, back); ledPreviewActive = true; }
+        catch (e) { /* preview is a nicety — non-fatal */ }
+    });
+}
+
+function ledSchedulePut() {
+    if (ledPutTimer) clearTimeout(ledPutTimer);
+    ledPutTimer = setTimeout(() => {
+        ledPutTimer = null;
+        // The user may leave the page inside the debounce window; a late write
+        // would land after the exit seam's clear and latch a preview colour.
+        if (activeSettingsCategory !== 'ledstrip') return;
+        if (ledSelectedState === ledMachinePaletteState()) {
+            ledFlushPut(); // same-state: the PUT itself repaints the strip correctly
+        } else {
+            ledPushPreview(); // cross-state: preview only — no PUT between moves
+        }
+    }, 120);
+}
+
+// Commit an edit gesture (wheel release, preset tap, power toggle).
+// Same-state: PUT now — the FW re-apply repaints the colour just edited.
+// Cross-state: NO PUT (it would flash the awake palette over the preview) --
+// mark the palette dirty and land the final position as one more
+// coalesced preview write; the preview-end seams flush the PUT later.
+function ledCommitEdit() {
+    if (ledPutTimer) { clearTimeout(ledPutTimer); ledPutTimer = null; }
+    // Same late-write guard as ledSchedulePut: with multi-touch, input:end can
+    // fire AFTER an exit seam (one finger navigates while another still holds
+    // the wheel) — a late commit would re-post a preview after that seam's
+    // clear and latch it on the strip until the next navigation event.
+    if (activeSettingsCategory !== 'ledstrip') return;
+    if (ledSelectedState === ledMachinePaletteState()) {
+        ledFlushPut();
+    } else {
+        ledPaletteDirty = true;
+        ledPushPreview();
+    }
+}
+
+// PUT the stored palette, then immediately re-assert the preview in the same
+// chain link (the FW re-applies the machine's wake-state bank on every palette
+// write, so an unchased PUT would knock a cross-state preview off the strip).
+// Returns a promise that resolves once both writes have landed (Save awaits it).
+function ledFlushPut() {
+    if (ledPutTimer) { clearTimeout(ledPutTimer); ledPutTimer = null; }
+    if (!ledState) return Promise.resolve();
+    if (ledFlushQueued) return ledFlushPromise; // the queued op reads fresh state when it runs
+    ledFlushQueued = true;
+    ledFlushPromise = ledEnqueue(async () => {
+        ledFlushQueued = false;
+        if (!ledState) return;
+        ledPaletteDirty = false; // this PUT carries the full current palette
+        // The front-switch LED can't be set independently — it mirrors the front strip.
+        ledState.frontSwitch = { awake: ledState.frontStrip.awake, sleeping: ledState.frontStrip.sleeping };
+        try { await setLedStrip(ledState); } catch (e) { /* non-fatal */ }
+        const { front, back } = ledPreviewComposite(
+            ledState, ledZoneKeys(ledSelectedZone), ledSelectedState, ledMachinePaletteState());
+        try { await previewLedStrip(front, back); ledPreviewActive = true; }
+        catch (e) { /* preview is a nicety — non-fatal */ }
+    });
+    return ledFlushPromise;
+}
+
+// PUT the stored palette with NO preview chase. Exit-seam use only: enqueue it
+// immediately BEFORE that seam's ledClearPreview(). A cross-state edit never
+// touched the bank the machine is rendering, so the FW re-apply this PUT
+// triggers paints exactly the palette the following clear writes to the live
+// registers — the strip makes one transition (preview → final), and with no
+// chased preview left in flight there is nothing to flash back from. Also the
+// pre-commit flush for Save, which needs the registers current before
+// commitLedStrip persists them.
+function ledPutPalette() {
+    if (ledPutTimer) { clearTimeout(ledPutTimer); ledPutTimer = null; }
+    if (!ledState) { ledPaletteDirty = false; return Promise.resolve(); }
+    return ledEnqueue(() => {
+        if (!ledState) return;
+        ledPaletteDirty = false;
+        // The front-switch LED can't be set independently — it mirrors the front strip.
+        ledState.frontSwitch = { awake: ledState.frontStrip.awake, sleeping: ledState.frontStrip.sleeping };
+        return setLedStrip(ledState).catch(() => { /* non-fatal */ });
+    });
+}
+
+// Flush a deferred cross-state PUT (no-op when nothing was deferred). Call at
+// every seam where the preview ends, immediately before that seam's
+// ledClearPreview() — the shared chain guarantees the flush lands first.
+function ledFlushDirty() {
+    if (ledPaletteDirty) ledPutPalette();
+}
+
+// Restore the strip to its real (wake-state) palette after previewing. Chained,
+// so it lands after any queued preview/PUT (whose chase would otherwise win),
+// and it re-drops the active flag the moment it runs. Safe to call anytime.
+function ledClearPreview() {
+    if (!ledPreviewPending()) return;
+    ledPreviewActive = false;
+    ledEnqueue(() => { ledPreviewActive = false; return clearLedStripPreview().catch(() => {}); });
+}
+
+// Browser/OS back navigation exits settings through the router's popstate
+// handler, not the Cancel/Save buttons — without this seam a cross-state
+// preview stays latched on the strip and the deferred palette PUT is
+// postponed until the next settings visit (lost entirely on an app reload).
+// Flush → clear, exactly like the Cancel/Save seams; both calls are no-ops
+// when nothing is pending, so firing on every popstate is safe. The settings
+// DOM is being torn down, so no category is active any more — dropping
+// activeSettingsCategory also disarms the late-write guards (ledSchedulePut,
+// ledCommitEdit) and lets the cup-warmer poll self-stop on its next tick.
+// Module-level: registered once, not per initializeSettings call.
+window.addEventListener('popstate', () => {
+    ledFlushDirty();
+    ledClearPreview();
+    activeSettingsCategory = null;
+});
+
+// Switching the edit target (zone or state bank) ends the current preview —
+// the strip returns to the machine's real palette until the user picks again.
+// A deferred cross-state PUT flushes first (flush → clear, one transition).
+window.ledSelectZone = function(zone) {
+    if (ledSelectedZone !== zone) { ledFlushDirty(); ledClearPreview(); }
+    ledSelectedZone = zone;
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+};
+window.ledSelectState = function(state) {
+    if (ledSelectedState !== state) { ledFlushDirty(); ledClearPreview(); }
+    ledSelectedState = state;
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+};
+window.ledSelectCell = function(zoneKey, stateKey) {
+    const zone = zoneKey === 'frontStrip' ? 'front' : zoneKey === 'backStrip' ? 'rear' : 'switch';
+    if (ledSelectedZone !== zone || ledSelectedState !== stateKey) { ledFlushDirty(); ledClearPreview(); }
+    ledSelectedZone = zone;
+    ledSelectedState = stateKey;
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+};
+window.ledApplyPreset = function(hex8) {
+    if (!ledState) return;
+    const c16 = ledRgbToColor16(ledHexToRgb(hex8));
+    ledZoneKeys(ledSelectedZone).forEach((k) => {
+        if (!ledState[k]) return;
+        const cur = ledState[k][ledSelectedState];
+        if (c16 === '000000000000' && cur && cur !== '000000000000') ledLastLit[k + ':' + ledSelectedState] = cur;
+        ledState[k][ledSelectedState] = c16;
+    });
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+    ledCommitEdit();
+};
+// Power toggle (Hue-style): Off = black (0,0,0), remembers the last lit colour;
+// On = restore that colour (or a warm-white default). Note the value slider CAN
+// reach black on its own — power is derived from the colour (never stored), so
+// a slider dragged to zero reads as Off on the next full render.
+window.ledSetPower = function(on) {
+    if (!ledState) return;
+    ledZoneKeys(ledSelectedZone).forEach((k) => {
+        if (!ledState[k]) return;
+        const key = k + ':' + ledSelectedState;
+        const cur = ledState[k][ledSelectedState];
+        if (!on) {
+            if (cur && cur !== '000000000000') ledLastLit[key] = cur;
+            ledState[k][ledSelectedState] = '000000000000';
+        } else {
+            ledState[k][ledSelectedState] = ledLastLit[key] || LED_DEFAULT_ON;
+        }
+    });
+    if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+    ledCommitEdit();
+};
+window.ledSave = async function() {
+    // Chaseless PUT, then commit, then clear — the PUT's FW re-apply and the
+    // clear paint the same (machine-state) palette: one strip transition.
+    try { await ledPutPalette(); await commitLedStrip(); ledClearPreview(); ledCommitted = JSON.stringify(ledState); ui.showToast(getTranslation('Lighting saved'), 2000, 'success'); }
+    catch (e) { ui.showToast(getTranslation('Failed to save lighting'), 3000, 'error'); }
+};
+window.ledReset = async function() {
+    try {
+        const data = await resetLedStrip();
+        ledState = ledNormalize(data);
+        ledCommitted = JSON.stringify(ledState);
+        ledPaletteDirty = false; // deferred edits are discarded with the rest
+        await ledEnqueue(() => setLedStrip(ledState)); // push reloaded NVM values back to the live registers (the seam flush, pre-clear)
+        ledClearPreview();
+        if (activeSettingsCategory === 'ledstrip') updateSettingsContentArea('ledstrip');
+        ui.showToast(getTranslation('Lighting reset'), 2000, 'success');
+    } catch (e) { ui.showToast(getTranslation('Failed to reset lighting'), 3000, 'error'); }
+};
 
 // Render Hot Water settings
 export function renderHotWaterSettings() {
@@ -3014,6 +4047,200 @@ export function renderQuickAdjustmentsSettings() {
             </div>
         </div>
     `;
+}
+
+// --- Load-cell calibration wizard (Bengle two-point) -----------------------
+// Firmware two-point cal: precision-zero on an empty platform, then latch the
+// same known mass on the LEFT half (point 1) and the RIGHT half (point 2); the
+// firmware solves both per-cell gains. Each cal REST call blocks ~15 s (10 s
+// settle + 5 s average). State is module-level; the 4-step flow re-renders the
+// settings content area on each transition (the app's "swap innerHTML" idiom).
+let calStep = 1;                 // 1=zero 2=left 3=right 4=verify
+let calWeightG = CAL_WEIGHT_DEFAULT_G; // reference mass (g)
+let calBusy = false;             // a cal/tare call is in flight
+let calError = '';               // last error message
+let calDone = { 1: false, 2: false, 3: false };
+let calWsClaimed = false;        // the step-4 readout owns the scale WS
+
+function calResetWizard() {
+    calStep = 1;
+    calBusy = false;
+    calError = '';
+    calDone = { 1: false, 2: false, 3: false };
+    calReleaseScaleWs();
+}
+
+function calRerender() {
+    updateSettingsContentArea('calib_loadcell');
+}
+
+// The scale WebSocket is a process-wide singleton (connectScaleWebSocket
+// closes any existing socket before opening a new one), so claiming it for
+// the step-4 readout steals it from app.js's main-page weight display — and
+// nothing over there re-registers it (initMainPageOnce is once-guarded).
+// Claim whenever step 4 renders; hand it back via calReleaseScaleWs() when
+// the wizard is left (page switch, settings exit, retry/finish).
+function calEnsureScaleWs() {
+    if (calWsClaimed) return;
+    calWsClaimed = true;
+    connectScaleWebSocket((data) => {
+        const el = document.getElementById('calib-live-weight');
+        if (el && data && typeof data.weight === 'number') {
+            el.textContent = `${data.weight.toFixed(1)} g`;
+        }
+    });
+}
+
+function calReleaseScaleWs() {
+    if (!calWsClaimed) return;
+    calWsClaimed = false;
+    if (typeof window.handleScaleData === 'function') {
+        connectScaleWebSocket(window.handleScaleData, window.onScaleReconnect, window.onScaleDisconnect);
+    }
+}
+
+function calStepIndicator() {
+    const labels = ['Zero', 'Left cell', 'Right cell', 'Verify'];
+    let dots = '';
+    for (let i = 1; i <= 4; i++) {
+        const isDone = calDone[i] || i < calStep;
+        const isActive = i === calStep;
+        const dotBg = isDone ? '#0ca581' : (isActive ? '#385a92' : 'var(--button-grey)');
+        const dotColor = (isDone || isActive) ? '#ffffff' : '#959595';
+        dots += `<div class="rounded-full flex items-center justify-center text-[22px] font-bold shrink-0" style="width:44px;height:44px;background:${dotBg};color:${dotColor}">${isDone ? '&#10003;' : i}</div>`;
+        if (i < 4) dots += `<div class="shrink-0" style="width:40px;height:3px;background:${i < calStep ? '#0ca581' : 'var(--button-grey)'}"></div>`;
+    }
+    return `
+        <div class="flex items-center justify-center w-full" style="gap:10px">${dots}</div>
+        <p class="text-center text-[24px] text-[#959595] w-full">Step ${calStep} of 4 &middot; ${labels[calStep - 1]}</p>`;
+}
+
+const CAL_PRIMARY_BTN = "bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold";
+const CAL_SECONDARY_BTN = "h-[72px] px-[48px] rounded-[72px] text-[24px] font-bold bg-[var(--box-color)] border-2 border-[#385a92] text-[var(--text-primary)]";
+const CAL_CARD = "border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[30px] items-center px-[60px] py-[30px] relative shrink-0 max-w-full";
+const CAL_HEADING = "font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] not-italic text-[var(--text-primary)] text-[30px] text-center";
+const CAL_BODY = "font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic text-[var(--text-primary)] text-[24px] w-full text-center";
+
+// Fixed-height status line + ONE button that swaps label/action with state
+// (see calActionState in loadcell-cal.js), so the card height stays constant
+// and the buttons never jump:
+//   idle  -> [status blank]          [Calibrate …]
+//   busy  -> [status "Calibrating…"] [Cancel] (aborts the in-flight step)
+//   error -> [status <error> (red)]  [Calibrate …]  (retry)
+//   done  -> [status "✓ Done"]       [Next]
+function calActionArea({ step, runLabel, runOnclick, nextStep, busyLabel }) {
+    const st = calActionState({ busy: calBusy, error: calError, done: calDone[step], runLabel, busyLabel });
+    let status = '&nbsp;';
+    if (st.status === 'busy') status = `<span style="color:#959595">${st.statusText}</span>`;
+    else if (st.status === 'error') status = `<span class="text-red-500">${escapeHtml(st.statusText)}</span>`;
+    else if (st.status === 'done') status = `<span style="color:#0ca581;font-weight:700">&#10003; Done</span>`;
+    const click = st.action === 'next' ? `window.calGoToStep(${nextStep})`
+        : st.action === 'cancel' ? 'window.calAbort()'
+        : runOnclick;
+    return `
+        <div class="text-center text-[22px] flex items-center justify-center px-[20px] w-full" style="min-height:36px">${status}</div>
+        <button class="${st.primary ? CAL_PRIMARY_BTN : CAL_SECONDARY_BTN}" onclick="${click}" data-i18n-key="${st.label}">${st.label}</button>`;
+}
+
+// Editable reference-mass entry (step 2): label on its own line, then a
+// minus / value / plus stepper (same component as the Fan Threshold setting).
+// Tapping the value opens the numpad (via SETTINGS_NUMPAD_CONFIGS.calibWeightInput).
+function calWeightInputBlock() {
+    return `
+        <div class="flex flex-col items-center" style="gap:12px">
+            <p class="text-[var(--text-primary)] text-[24px]" data-i18n-key="Calibration Weight Mass:">Calibration Weight Mass:</p>
+            <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0">
+                <button aria-label="Decrease weight"
+                        class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                        onclick="window.flashPlusMinusButton(this); window.calAdjustWeight(-1);">
+                    <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10.416 25H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <div class="text-center text-[var(--text-primary)] text-[24px] font-bold flex items-center justify-center" style="width:150px;">
+                    <input type="text" inputmode="numeric" pattern="[0-9]*" id="calibWeightInput"
+                           class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
+                           value="${calWeightG}" step="1" min="${CAL_WEIGHT_MIN_G}" max="${CAL_WEIGHT_MAX_G}"
+                           onchange="window.calSetWeight(this.value)">
+                    <span class="ml-2 text-nowrap text-[24px] text-[#959595]">g</span>
+                </div>
+                <button aria-label="Increase weight"
+                        class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
+                        onclick="window.flashPlusMinusButton(this); window.calAdjustWeight(1);">
+                    <svg width="36" height="36" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M24.9993 10.4165V39.5832M10.416 24.9998H39.5827" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>`;
+}
+
+// Read-only reference-mass display (step 3): the same mass, moved to the other
+// cell — not re-entered (both points must use the same known weight).
+function calWeightDisplayBlock() {
+    return `
+        <div class="flex flex-col items-center" style="gap:12px">
+            <p class="text-[var(--text-primary)] text-[24px]" data-i18n-key="Calibration Weight Mass:">Calibration Weight Mass:</p>
+            <p class="text-[var(--text-primary)] font-bold" style="font-size:30px">${calWeightG} g</p>
+        </div>`;
+}
+
+export function renderLoadCellCalibration() {
+    let body = '';
+    if (calStep === 1) {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Zero the load cells">Zero the load cells</p>
+                <p class="${CAL_BODY}" data-i18n-key="Remove the cup platform and the drip tray so the load cells are empty, then press Zero. This takes about 15 seconds (settle + average).">Remove the cup platform and the drip tray so the load cells are empty, then press Zero. This takes about 15 seconds (settle + average).</p>
+                ${calActionArea({ step: 1, runLabel: 'Zero', runOnclick: 'window.calRunZero()', nextStep: 2, busyLabel: 'Zeroing&hellip; (~15s)' })}
+            </div>`;
+    } else if (calStep === 2) {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the RIGHT cell">Calibrate the RIGHT cell</p>
+                ${calWeightInputBlock()}
+                <p class="${CAL_BODY}" data-i18n-key="Place weight on the right leg load cell.">Place weight on the right leg load cell.</p>
+                ${calActionArea({ step: 2, runLabel: 'Calibrate RIGHT', runOnclick: "window.calRunPoint('first')", nextStep: 3, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(1)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
+            </div>`;
+    } else if (calStep === 3) {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Calibrate the LEFT cell">Calibrate the LEFT cell</p>
+                ${calWeightDisplayBlock()}
+                <p class="${CAL_BODY}" data-i18n-key="Place weight on the left leg load cell.">Place weight on the left leg load cell.</p>
+                ${calActionArea({ step: 3, runLabel: 'Calibrate LEFT', runOnclick: "window.calRunPoint('second')", nextStep: 4, busyLabel: 'Calibrating&hellip; (~15s)' })}
+                <button class="${CAL_SECONDARY_BTN}" onclick="window.calGoToStep(2)" ${calBusy ? 'disabled' : ''} data-i18n-key="Back">Back</button>
+            </div>`;
+    } else {
+        body = `
+            <div class="${CAL_CARD}" style="width:760px">
+                <p class="${CAL_HEADING}" data-i18n-key="Check the calibration">Check the calibration</p>
+                <p class="${CAL_BODY}" data-i18n-key="Put the drip tray and platform back on, press Tare, then place your weight and check the reading.">Put the drip tray and platform back on, press Tare, then place your weight and check the reading.</p>
+                <button class="${CAL_SECONDARY_BTN}" onclick="window.calTare()" data-i18n-key="Tare">Tare</button>
+                <div class="flex flex-col items-center" style="gap:6px">
+                    <span id="calib-live-weight" class="text-[var(--text-primary)] font-bold leading-none" style="font-size:64px">&ndash;</span>
+                    <span class="text-[#959595] text-[22px]">Expected: ${calWeightG} g</span>
+                </div>
+                <div class="flex gap-[20px] flex-wrap justify-center">
+                    <button class="${CAL_PRIMARY_BTN}" onclick="window.calFinish()" data-i18n-key="Looks good — Finish">Looks good &mdash; Finish</button>
+                    <button class="${CAL_SECONDARY_BTN}" onclick="window.calRetry()" data-i18n-key="Retry calibration">Retry calibration</button>
+                </div>
+            </div>`;
+    }
+
+    return `
+        <div class="content-stretch flex flex-col gap-[30px] items-center relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold text-[var(--text-primary)] text-[36px] text-center w-full">
+                <p class="leading-[1.2]" data-i18n-key="Load Cell Calibration">Load Cell Calibration</p>
+            </div>
+            ${calStepIndicator()}
+            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
+            <div class="content-stretch flex flex-col items-center relative w-full">
+                ${body}
+            </div>
+            ${calStep < 4 ? `<button class="${CAL_SECONDARY_BTN}" onclick="window.calStartOver()" ${calBusy ? 'disabled' : ''} data-i18n-key="Start over">Start over</button>` : ''}
+        </div>`;
 }
 
 // Render calibration settings with additional subcategories
@@ -4121,7 +5348,9 @@ export function renderSubcategories(mainCategoryKey) {
     }
 
     let subcategoryItems = '';
-    category.subcategories.forEach((subcat) => {
+    category.subcategories
+        .filter((subcat) => !subcat.bengleOnly || isBengleMachine())
+        .forEach((subcat) => {
         const prefixMatch = subcat.name.match(/^(\d+\.\s*)/);
         const prefix = prefixMatch ? prefixMatch[1] : '';
         const label = prefix ? subcat.name.slice(prefix.length) : subcat.name;
@@ -4369,6 +5598,9 @@ async function _preloadSettingsInternal() {
         settingsCache.de1Advanced = de1AdvancedSettings;
         settingsCache.appInfo = appInfo;
         settingsCache.machineInfo = machineInfo;
+        // Keep the shared Bengle gate fresh (the machine may have changed since
+        // boot); a failed fetch keeps the last known model rather than wiping it.
+        if (machineInfo) setMachineModel(machineInfo.model);
 
         // Update loading flags
         settingsCache.reaLoading = false;
@@ -4409,6 +5641,8 @@ function getCategoryTitle(category) {
         case 'de1': return 'DE1 Settings';
         case 'fanthreshold': return 'Fan Threshold Settings';
         case 'usbchargermode': return 'USB Charger Settings';
+        case 'cupwarmer': return 'Cup Warmer';
+        case 'ledstrip': return 'Lighting';
         case 'machineinfo': return 'Machine Info';
         case 'de1advanced': return 'Machine Advanced Settings';
         default: return 'Settings';
@@ -4435,6 +5669,16 @@ export async function initializeSettings() {
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
             resetPendingChanges();
+            // Exiting settings straight from the Lighting page must not leave a
+            // preview colour latched on the strip — and a deferred cross-state
+            // palette PUT flushes first (flush → clear, one transition).
+            ledFlushDirty();
+            ledClearPreview();
+            // …and exiting from the Load Cells verify step must hand the
+            // scale WS back to the main page's live weight readout.
+            calReleaseScaleWs();
+            // …and exiting from the Cup Warmer page must stop its revalidate poll.
+            stopCupWarmerPoll();
             loadPage('index.html');
         });
     }
@@ -4454,6 +5698,16 @@ export async function initializeSettings() {
                 return;
             }
             ui.showToast('decent.app settings updated', 3000, 'success');
+            // Exiting settings straight from the Lighting page must not leave a
+            // preview colour latched on the strip — and a deferred cross-state
+            // palette PUT flushes first (flush → clear, one transition).
+            ledFlushDirty();
+            ledClearPreview();
+            // …and exiting from the Load Cells verify step must hand the
+            // scale WS back to the main page's live weight readout.
+            calReleaseScaleWs();
+            // …and exiting from the Cup Warmer page must stop its revalidate poll.
+            stopCupWarmerPoll();
             loadPage('index.html');
         });
     }
@@ -5094,6 +6348,129 @@ export async function initializeSettings() {
         }
     };
 
+    // --- Load-cell calibration wizard handlers ---
+    window.calSetWeight = function(v) {
+        const w = clampCalWeight(v);
+        if (w !== null) calWeightG = w;
+    };
+
+    window.calAdjustWeight = function(delta) {
+        calWeightG = clampCalWeight(calWeightG + delta);
+        const el = document.getElementById('calibWeightInput');
+        if (el) el.value = calWeightG;
+    };
+
+    window.calGoToStep = function(n) {
+        if (calBusy) return;
+        calError = '';
+        calStep = n;
+        calRerender();
+    };
+
+    window.calRunZero = async function() {
+        if (calBusy) return;
+        calBusy = true; calError = ''; calRerender();
+        try {
+            const r = await calibrateScale('zero');
+            if (r && r.success) {
+                calDone[1] = true;
+                ui.showToast('Load cells zeroed', 3000, 'success');
+            } else {
+                calError = (r && r.message) ? r.message : 'Zero failed';
+                ui.showToast(`Zero failed: ${calError}`, 5000, 'error');
+            }
+        } catch (error) {
+            logger.error('Load-cell zero failed:', error);
+            calError = error.message;
+            ui.showToast(`Zero failed: ${error.message}`, 5000, 'error');
+        } finally {
+            calBusy = false; calRerender();
+        }
+    };
+
+    // side = 'left' (point 1) or 'right' (point 2)
+    // The firmware auto-detects which bare cell holds the reference mass, so the
+    // two weight latches are an ORDERED pair, not left-vs-right: the FIRST latch
+    // reports 'incomplete' (one cell solved, awaiting the other); the SECOND
+    // reports 'ok' (both solved + persisted). reaprime's 'left' command accepts
+    // that first (incomplete) latch; 'right' requires the completing 'ok'. The
+    // leg shown to the user (RIGHT first, then LEFT) is only which leg to load —
+    // independent of these commands, since the firmware auto-detects the cell.
+    window.calRunPoint = async function(order) { // order: 'first' | 'second'
+        if (calBusy) return;
+        const stepNo = order === 'first' ? 2 : 3;
+        const cmd = order === 'first' ? 'left' : 'right';
+        calBusy = true; calError = ''; calRerender();
+        try {
+            const r = await calibrateScale(cmd, calWeightG);
+            if (r && r.success) {
+                calDone[stepNo] = true;
+                ui.showToast('Cell calibrated', 3000, 'success');
+            } else {
+                calError = (r && r.message) ? r.message : 'Calibration failed';
+                ui.showToast(`Calibration failed: ${calError}`, 5000, 'error');
+            }
+        } catch (error) {
+            logger.error('Load-cell point cal failed:', error);
+            calError = error.message;
+            ui.showToast(`Calibration failed: ${error.message}`, 5000, 'error');
+        } finally {
+            calBusy = false; calRerender();
+        }
+    };
+
+    // Cancel the in-flight zero/left/right step: abort → 202 no body. The
+    // blocked cal call then returns success:false message:'aborted', which
+    // the run handler surfaces in the status slot. Deliberately does not
+    // toast on success — the aborted step's own failure path reports it.
+    window.calAbort = async function() {
+        if (!calBusy) return;
+        try {
+            await calibrateScale('abort');
+        } catch (error) {
+            logger.error('Load-cell cal abort failed:', error);
+            ui.showToast(`Cancel failed: ${error.message}`, 4000, 'error');
+        }
+    };
+
+    // Abort the cal and reset the wizard to a fresh Zero. Available on steps 1-3
+    // so a completed Zero, or a failed/stuck weight point, can always be
+    // restarted without leaving the page. The abort clears the firmware's
+    // partial latch, so the re-zero starts from a clean slate. Works whether or
+    // not a step is in flight (a not-busy abort is a harmless no-op firmware-side).
+    window.calStartOver = async function() {
+        try {
+            await calibrateScale('abort');
+        } catch (error) {
+            logger.error('Load-cell cal start-over abort failed:', error);
+        }
+        calResetWizard();
+        calRerender();
+    };
+
+    // Deliberately does not set calBusy — tare is an instant trigger, unlike
+    // the ~15 s cal steps, and blocking the verify page for it is needless.
+    window.calTare = async function() {
+        try {
+            await tareScale();
+            ui.showToast('Scale tared', 2000, 'success');
+        } catch (error) {
+            logger.error('Tare failed:', error);
+            ui.showToast(`Tare failed: ${error.message}`, 4000, 'error');
+        }
+    };
+
+    window.calRetry = function() {
+        calResetWizard();
+        calRerender();
+    };
+
+    window.calFinish = function() {
+        ui.showToast('Load-cell calibration complete', 3000, 'success');
+        calResetWizard();
+        calRerender();
+    };
+
     window.startAirPurge = async function() {
         if (!confirm('Start air purge? The machine will run the air purge cycle.')) return;
         try {
@@ -5192,6 +6569,9 @@ export async function initializeSettings() {
     window.updateHotWaterSetting = updateHotWaterSetting;
     window.flashPlusMinusButton = ui.flashPlusMinusButton;
     window.retryLoadSettings = () => {
+        // One failed GET /ledStrip must not brick the Lighting page for the
+        // module's lifetime — clear the error so the re-render refetches.
+        ledError = false;
         preloadSettings().then(() => {
             if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
         });
@@ -5458,6 +6838,42 @@ export async function initializeSettings() {
         }
     };
 
+    window.adjustMilkStopTemp = function(change) {
+        const input = document.getElementById('steamMilkStopInput');
+        if (input) {
+            let newValue = Math.round(parseFloat(input.value)) + change;
+            newValue = Math.max(30, Math.min(85, newValue));
+            input.value = newValue;
+            input.dispatchEvent(new Event('change'));
+        }
+    };
+
+    // Steam-stop mode toggle (Off | Time | Milk Temp). Stages stopAtTemperature and
+    // re-renders so the correct dependent field (Duration or Milk target) is revealed.
+    window.setSteamStopMode = function(mode) {
+        // Milk Temp is unofferable without the probe (button renders disabled —
+        // this guard is belt-and-braces against a stale DOM).
+        if (mode === 'temperature' && !getMilkProbe().present) return;
+        // A hand-picked mode overrides any pending probe-loss restore, exactly
+        // like a tap on the main-page tile — without this, an Off/Time stop
+        // chosen here while the probe is away is auto-re-armed to Milk the
+        // moment the probe returns.
+        ui.clearMilkStopProbeRestore();
+        try {
+            localStorage.setItem('streamline.steamStopMode', mode);
+            // Remember the last non-temperature choice: it's what the page
+            // falls back to if the milk probe disappears.
+            if (mode !== 'temperature') localStorage.setItem('streamline.steamStopModeFallback', mode);
+        } catch (e) { /* non-fatal */ }
+        if (mode === 'temperature') {
+            const cur = settingsCache.workflow?.steamSettings?.stopAtTemperature ?? 0;
+            if (!(cur > 0)) updateSteamSetting('stopAtTemperature', 60);
+        } else if ((settingsCache.workflow?.steamSettings?.stopAtTemperature ?? 0) > 0) {
+            updateSteamSetting('stopAtTemperature', 0); // 'time'/'off' → no milk auto-stop
+        }
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
+    };
+
     const mainSeparator = document.getElementById('separator');
     const leftPanel     = document.getElementById('left-panel');
     const rightPanel    = document.getElementById('right-panel');
@@ -5564,10 +6980,16 @@ function setupSettingsSearch() {
         Object.entries(settingsTree).forEach(([key, category]) => {
             // Check if main category name matches
             const mainCategoryMatches = category.name.toLowerCase().includes(searchTerm);
-            
+
+            // Search only the subcategories visible on this machine — Bengle-only
+            // pages must not surface via search on a non-Bengle machine.
+            const visibleSubcategories = category.subcategories.filter(
+                (subcat) => !subcat.bengleOnly || isBengleMachine()
+            );
+
             // Filter subcategories that match
-            const matchingSubcategories = category.subcategories.filter(subcat => 
-                subcat.name.toLowerCase().includes(searchTerm) || 
+            const matchingSubcategories = visibleSubcategories.filter(subcat =>
+                subcat.name.toLowerCase().includes(searchTerm) ||
                 subcat.id.toLowerCase().includes(searchTerm)
             );
 
@@ -5575,7 +6997,7 @@ function setupSettingsSearch() {
             if (mainCategoryMatches || matchingSubcategories.length > 0) {
                 filteredCategories[key] = {
                     name: category.name,
-                    subcategories: matchingSubcategories.length > 0 ? matchingSubcategories : category.subcategories
+                    subcategories: matchingSubcategories.length > 0 ? matchingSubcategories : visibleSubcategories
                 };
             }
         });
@@ -5793,14 +7215,20 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
         return `<div class="p-4 text-center text-gray-500" data-i18n-key="No sub-categories.">No sub-categories.</div>`;
     }
 
+    // Bengle-only subcategories are hidden on non-Bengle machines — search
+    // results must respect the same visibility as the normal navigation.
+    const visibleSubcategories = category.subcategories.filter(
+        (subcat) => !subcat.bengleOnly || isBengleMachine()
+    );
+
     // Filter subcategories that match the search term. If none match (the
     // category surfaced via its main-name match), show all subcats — matching
     // text still gets highlighted, the rest render plainly.
-    const matchingSubcategories = category.subcategories.filter(subcat =>
+    const matchingSubcategories = visibleSubcategories.filter(subcat =>
         subcat.name.toLowerCase().includes(searchTerm) ||
         subcat.id.toLowerCase().includes(searchTerm)
     );
-    const subcategoriesToShow = matchingSubcategories.length > 0 ? matchingSubcategories : category.subcategories;
+    const subcategoriesToShow = matchingSubcategories.length > 0 ? matchingSubcategories : visibleSubcategories;
 
     let subcategoryItems = '';
     subcategoriesToShow.forEach((subcat) => {
