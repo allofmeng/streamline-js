@@ -1304,24 +1304,23 @@ export async function initializeProfileSelector() {
         || document.getElementById('profile-editor-grid');
     suppressBrowserActions(pageRoot);
 
-    // Initialize chart — wait until the element is in the DOM before calling initChart
-    await new Promise((resolve) => {
-        const tryInit = (attemptsLeft) => {
-            const chartElement = document.getElementById('plotly-chart');
-            if (chartElement) {
-                initChart();
-                resolve();
-            } else if (attemptsLeft > 0) {
-                setTimeout(() => tryInit(attemptsLeft - 1), 100);
-            } else {
-                console.warn('Chart element not found after retries');
-                resolve();
-            }
-        };
-        setTimeout(() => tryInit(3), 50);
-    });
+    // Fetching the profiles is the long pole and needs nothing from the DOM, so
+    // start it before touching the chart. This used to run second, behind an
+    // unconditional 50ms setTimeout and a Plotly init the list does not depend
+    // on -- roughly 80ms of dead time before the request was even issued here,
+    // and far worse on a tablet where Plotly init is CPU-bound.
+    const profilePromise = initProfileManager();
 
-    const profileLoadStatus = await initProfileManager();
+    // The router injects the page HTML and awaits a requestAnimationFrame before
+    // calling us (router.js), so the element is already in the DOM -- the old
+    // retry ladder was guarding a race that no longer exists.
+    if (document.getElementById('plotly-chart')) {
+        initChart();
+    } else {
+        console.warn('Chart element not found; skipping chart init');
+    }
+
+    const profileLoadStatus = await profilePromise;
     console.log('initializeProfileSelector: Profile manager initialized, status:', profileLoadStatus);
 
     if (profileLoadStatus?.profilesFrom === 'API') {
