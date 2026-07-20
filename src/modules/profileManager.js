@@ -420,76 +420,12 @@ export async function saveGrindToActiveProfile(grindValue) {
     return saveContextToActiveProfile({ grinderSetting: String(grindValue) });
 }
 
-const FAV_MAX_FONT = 22;
-const FAV_SINGLE_LINE_MIN = 18; // single-line shrink floor; below this switch to wrap
-const FAV_MIN_FONT = 14;        // overall floor (wrap mode)
-
-function fitButtonText(button) {
-    const text = button.textContent;
-    if (!text || !text.trim()) return;
-
-    const padX = 24; // px-3 = 12px each side
-    const padY = 8;
-    const maxWidth = button.offsetWidth - padX;
-    const maxHeight = button.offsetHeight - padY;
-    if (maxWidth <= 0 || maxHeight <= 0) return; // button not visible, skip measurement
-    const wordCount = text.trim().split(/\s+/).length;
-
-    const span = document.createElement('span');
-    span.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font-weight:600;line-height:1.25;overflow-wrap:anywhere;';
-    span.textContent = text;
-    document.body.appendChild(span);
-
-    let fontSize = 0;
-
-    if (wordCount <= 3) {
-        // Short names: prefer ONE line at the largest size that fits (22→18).
-        // Only fall back to wrapping if it can't fit on a single line even at 18px.
-        span.style.whiteSpace = 'nowrap';
-        for (let f = FAV_MAX_FONT; f >= FAV_SINGLE_LINE_MIN; f -= 2) {
-            span.style.fontSize = f + 'px';
-            if (span.offsetWidth <= maxWidth) {
-                fontSize = f;
-                break;
-            }
-        }
-        if (!fontSize) {
-            // Too wide for a single line — wrap at full size, drop to min if too tall.
-            span.style.whiteSpace = 'normal';
-            span.style.width = maxWidth + 'px';
-            span.style.textWrap = 'balance';
-            span.style.fontSize = FAV_MAX_FONT + 'px';
-            fontSize = span.offsetHeight <= maxHeight ? FAV_MAX_FONT : FAV_MIN_FONT;
-        }
-    } else {
-        // Longer names: try single-line shrink down to FAV_SINGLE_LINE_MIN.
-        for (let f = FAV_MAX_FONT; f >= FAV_SINGLE_LINE_MIN; f -= 2) {
-            span.style.fontSize = f + 'px';
-            if (span.offsetWidth <= maxWidth) {
-                fontSize = f;
-                break;
-            }
-        }
-
-        // If single-line didn't fit even at FAV_SINGLE_LINE_MIN, switch to wrap mode.
-        if (!fontSize) {
-            span.style.whiteSpace = 'normal';
-            span.style.width = maxWidth + 'px';
-            span.style.textWrap = 'balance';
-            fontSize = FAV_MIN_FONT;
-            for (let f = FAV_SINGLE_LINE_MIN; f >= FAV_MIN_FONT; f -= 2) {
-                span.style.fontSize = f + 'px';
-                if (span.offsetHeight <= maxHeight) {
-                    fontSize = f;
-                    break;
-                }
-            }
-        }
-    }
-
-    document.body.removeChild(span);
-    button.style.fontSize = fontSize + 'px';
-}
+// Favourite-profile button text follows skin.tcl exactly: one fixed size, wrap
+// only. skin.tcl:263 loads Inter-Bold13 -- load_font size 13, so int(0.65 * 13)
+// = 8pt = 24px at the 1920x1200 / fontm 0.65 reference -- and skin.tcl:2255 sets
+// dbutton_label width 300 canvas px = 225 here, which is the button's content
+// box. dui has no shrink-to-fit, so neither do we; long titles wrap and, past
+// what fits, clip. Size and wrap width live in index.html on the buttons.
 
 export function updateButtonUI() {
     const mainPage = document.getElementById('main-page');
@@ -519,8 +455,6 @@ export function updateButtonUI() {
                 translatedTitle = translatedTitle.split('/').pop().trim();
             }
             button.textContent = translatedTitle || 'Untitled';
-            button.style.fontSize = '';
-            fitButtonText(button);
             if (activeProfileId && profileKey === activeProfileId) {
                 button.classList.remove('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
                 button.classList.add('text-white', 'bg-[var(--mimoja-blue-v2)]');
@@ -531,7 +465,6 @@ export function updateButtonUI() {
         }
         else if (button) {
             button.textContent = '';
-            button.style.fontSize = '';
             button.classList.remove('text-white', 'bg-[var(--mimoja-blue-v2)]');
             button.classList.add('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
         }

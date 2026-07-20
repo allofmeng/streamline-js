@@ -239,8 +239,12 @@
     margin: 0;
 }
 
-/* skin.tcl:5153-5156 -- pills 340x160 at cols 261/672, rows 1078/1297,
-   Inter-HeavyBold35 (N=16, Regular), 2px outline */
+/* skin.tcl:5153-5156 -- 340x160 at cols 261/672, rows 1078/1297,
+   Inter-HeavyBold35 (N=16, Regular), 2px outline.
+   skin.tcl:5141 sets radius 100, and dui's radius is the corner circle's
+   DIAMETER (dui.tcl:8476 spans x0 -> x0+radius), so the CSS radius is 50
+   canvas px = 37.5 here. Half the height is 60, so these are rounded
+   rectangles, NOT the stadium pills the keypad keys are. */
 .numpad-modal-previous-grid {
     display: flex;
     flex-direction: column;
@@ -258,7 +262,7 @@
     width: 255px;
     height: 120px;
     padding: 0;
-    border-radius: 75px;
+    border-radius: 37.5px;
     background: #FFFFFF;
     border: 1.5px solid #121212;
     cursor: pointer;
