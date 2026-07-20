@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isScreenOffWhenSleep, setScreenOffWhenSleep as apiSetScreenOffWhenSleep, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -1697,7 +1697,7 @@ export function renderScreenSaverSettings() {
     const enabled = localStorage.getItem('screensaverEnabled') !== 'false';
     const hasCustom = screensaverImagesCache.length > 0;
     const cycleSeconds = parseInt(localStorage.getItem('screensaverCycleSeconds'), 10) || 10;
-    const screenOff = isScreenOffWhenSleep();
+    const blackSaver = isBlackScreenSaver();
     // Hide the control where REA says the platform cannot set brightness --
     // DisplayState.platformSupported.brightness. Assume supported until the first
     // snapshot lands, so the row does not flicker in on load.
@@ -1749,7 +1749,7 @@ export function renderScreenSaverSettings() {
                     </div>
                     <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                         <input type="checkbox" class="sr-only peer"
-                               ${enabled ? 'checked' : ''}
+                               ${enabled && !blackSaver ? 'checked' : ''}
                                onchange="window.setScreensaverEnabled(this.checked)">
                         <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                         <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
@@ -1805,9 +1805,9 @@ export function renderScreenSaverSettings() {
                     </div>
                     <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                         <input type="checkbox" class="sr-only peer"
-                               id="screen-off-when-sleep"
-                               ${screenOff ? 'checked' : ''}
-                               onchange="window.setScreenOffWhenSleep(this.checked)">
+                               id="black-screen-saver"
+                               ${blackSaver ? 'checked' : ''}
+                               onchange="window.setBlackScreenSaver(this.checked)">
                         <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                         <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                     </label>
@@ -4526,7 +4526,11 @@ export async function initializeSettings() {
         if (!enabled && ui.isScreensaverActive()) {
             ui.hideScreensaver();
         }
+        // The other half of the either/or: turning the image saver on means the
+        // black cover is off.
+        if (enabled) apiSetBlackScreenSaver(false);
         ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     };
 
     window.handleScreensaverCycleChange = function(value) {
@@ -4536,12 +4540,22 @@ export async function initializeSettings() {
         ui.showToast(`Cycle set to ${applied}s`, 2000, 'success');
     };
 
-    window.setScreenOffWhenSleep = function(enabled) {
-        apiSetScreenOffWhenSleep(enabled);
+    window.setBlackScreenSaver = function(enabled) {
+        apiSetBlackScreenSaver(enabled);
+        // Either/or: a black cover IS the screen saver, so switching it on turns
+        // the image saver off. Switching it off hands the image saver back.
+        localStorage.setItem('screensaverEnabled', enabled ? 'false' : 'true');
+        // Repaint a saver that is already up, so the change is visible now rather
+        // than only after the next sleep.
+        if (ui.isScreensaverActive()) {
+            ui.hideScreensaver();
+            ui.activateScreensaver();
+        }
         // "Saved" is an existing translated key in the de1 gui translation sheet;
-        // showToast does not translate, so do it here. Applied on the next sleep,
-        // not now -- changing it must not dim the screen being read.
+        // showToast does not translate, so do it here. The brightness itself is
+        // applied on the next sleep -- changing it must not dim the screen being read.
         ui.showToast(getTranslation('Saved'), 2000, 'success');
+        if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     };
 
     window.setWaterTankUnit = function(unit) {

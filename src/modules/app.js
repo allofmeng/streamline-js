@@ -518,7 +518,11 @@ function applyScreensaverAction(state) {
     const action = deriveScreensaverAction({
         machineState: state,
         screensaverActive: ui.isScreensaverActive(),
-        screensaverEnabled: localStorage.getItem('screensaverEnabled') !== 'false',
+        // Either mode raises the overlay: the image saver, or the black cover.
+        // They are mutually exclusive in settings, but both need the overlay up --
+        // the black one because tapping it is what wakes the machine.
+        screensaverEnabled: localStorage.getItem('screensaverEnabled') !== 'false'
+            || localStorage.getItem('blackScreenSaver') === 'true',
         wakePending: ui.isWakeRequestPending(),
     });
     if (action === 'show') {

@@ -1726,23 +1726,25 @@ export async function getDisplayState() {
  *  Dim enough to read as asleep, bright enough to see the screensaver. */
 const SAVER_BRIGHTNESS_DEFAULT = 10;
 
-/** Whether the screen should go as dark as it can while the machine sleeps.
- *  On by default, matching the TCL skin whose saver_brightness defaults to 0
- *  (de1plus/machine.tcl:420) and which drops to 0 on entering the saver page
- *  (de1plus/utils.tcl:485). Neither app can truly power the panel off -- REA
- *  exposes no such command and TCL only calls `borg brightness` -- so 0 is as
- *  dark as a sleeping tablet gets. */
-export function isScreenOffWhenSleep() {
-    return localStorage.getItem('screenOffWhenSleep') !== 'false';
+/** Black screen saver: a full black cover at brightness 0 instead of the image
+ *  screensaver. Mutually exclusive with it -- the settings toggles enforce that --
+ *  and OFF by default, so the image saver stays the out-of-box behaviour.
+ *
+ *  Named after the TCL setting of the same name, which is also a black page at
+ *  brightness 0 (de1plus/utils.tcl:483-485). Neither app can truly power the
+ *  panel off -- REA exposes no such command and TCL only calls `borg brightness`
+ *  -- so a black cover at 0 is as dark as a sleeping tablet gets. */
+export function isBlackScreenSaver() {
+    return localStorage.getItem('blackScreenSaver') === 'true';
 }
 
-export function setScreenOffWhenSleep(enabled) {
-    localStorage.setItem('screenOffWhenSleep', enabled ? 'true' : 'false');
+export function setBlackScreenSaver(enabled) {
+    localStorage.setItem('blackScreenSaver', enabled ? 'true' : 'false');
     return !!enabled;
 }
 
 export function getSaverBrightness() {
-    return isScreenOffWhenSleep() ? 0 : SAVER_BRIGHTNESS_DEFAULT;
+    return isBlackScreenSaver() ? 0 : SAVER_BRIGHTNESS_DEFAULT;
 }
 
 export function dimDisplay() {

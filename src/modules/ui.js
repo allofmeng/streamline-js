@@ -1,4 +1,4 @@
-import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY } from './api.js';
+import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
@@ -1091,6 +1091,21 @@ export function activateScreensaver() {
         console.error('Screensaver element not initialized');
         return;
     }
+
+    // Black screen saver: a plain black cover, no image and no cycling. It reuses
+    // this same element deliberately -- the click -> wakeFromScreensaver listener
+    // bound in initScreensaver() is what makes tapping anywhere wake the machine,
+    // exactly as it does for the image saver.
+    if (isBlackScreenSaver()) {
+        screensaverElement.style.backgroundImage = 'none';
+        screensaverElement.style.backgroundColor = '#000';
+        if (screensaverDimOverlay) screensaverDimOverlay.style.display = 'none';
+        screensaverElement.style.display = 'flex';
+        screensaverActive = true;
+        return;
+    }
+
+    screensaverElement.style.backgroundColor = '';
     screensaverCurrentIndex = 0;
     _applyScreensaverImage();
     if (screensaverDimOverlay) {
