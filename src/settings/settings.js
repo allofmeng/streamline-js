@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, getSaverBrightness, setSaverBrightness, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isScreenOffWhenSleep, setScreenOffWhenSleep as apiSetScreenOffWhenSleep, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -126,6 +126,8 @@ let settingsCache = {
 // its seeded BehaviorSubject). Source of truth for wake-lock/brightness render,
 // so we don't fall back to a stale localStorage intent.
 let displayStateCache = null;
+// The page cache can be null before its first frame; api.js keeps one from boot.
+function displayState() { return displayStateCache ?? getLastDisplayState(); }
 
 let activeSettingsCategory = null; // New global variable to track the currently active category
 
@@ -1695,11 +1697,11 @@ export function renderScreenSaverSettings() {
     const enabled = localStorage.getItem('screensaverEnabled') !== 'false';
     const hasCustom = screensaverImagesCache.length > 0;
     const cycleSeconds = parseInt(localStorage.getItem('screensaverCycleSeconds'), 10) || 10;
-    const saverBrightness = getSaverBrightness();
+    const screenOff = isScreenOffWhenSleep();
     // Hide the control where REA says the platform cannot set brightness --
     // DisplayState.platformSupported.brightness. Assume supported until the first
     // snapshot lands, so the row does not flicker in on load.
-    const brightnessSupported = displayStateCache?.platformSupported?.brightness !== false;
+    const brightnessSupported = displayState()?.platformSupported?.brightness !== false;
 
     const thumbnails = screensaverImagesCache.map((src, i) => `
         <div class="relative w-[120px] h-[80px] rounded-[10px] overflow-hidden flex-shrink-0">
@@ -1798,22 +1800,18 @@ export function renderScreenSaverSettings() {
 
             <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                 <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]" data-i18n-key="Screen brightness">Screen brightness</p>
+                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Black screen saver">Black screen saver</p>
                     </div>
-                    <input type="number"
-                           id="saver-brightness"
-                           min="0"
-                           max="100"
-                           step="1"
-                           value="${saverBrightness}"
-                           class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center"
-                           onchange="window.handleSaverBrightnessChange(this.value)">
+                    <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                        <input type="checkbox" class="sr-only peer"
+                               id="screen-off-when-sleep"
+                               ${screenOff ? 'checked' : ''}
+                               onchange="window.setScreenOffWhenSleep(this.checked)">
+                        <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                        <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                    </label>
                 </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full"
-                   data-i18n-key="Adjust screen brightness level">
-                    Adjust screen brightness level
-                </p>
             </div>
             ` : ''}
 
@@ -1825,7 +1823,12 @@ export function renderScreenSaverSettings() {
 
 // Render Brightness settings
 export function renderBrightnessSettings() {
-    const brightnessVal = displayStateCache?.brightness ?? 75; // REA live brightness
+    // requestedBrightness is the user's level; `brightness` can be capped by REA's
+    // low-battery limit. Fall back to api.js's cached frame, then to 100 (the API's
+    // "OS-managed" value) -- never to an invented 75, which used to be shown
+    // whenever displayStateCache was null and then written back on first touch.
+    const ds = displayState();
+    const brightnessVal = ds?.requestedBrightness ?? ds?.brightness ?? 100;
     return `
         <div class="content-stretch flex flex-col gap-[80px] items-start relative w-full px-[60px] py-[80px]">
             <div class="content-stretch flex items-center justify-between relative w-full">
@@ -2212,7 +2215,12 @@ export function renderResolutionSettings() {
 }
 
 export function renderMiscellaneousSettings() {
-    const brightnessVal = displayStateCache?.brightness ?? 75; // REA live brightness
+    // requestedBrightness is the user's level; `brightness` can be capped by REA's
+    // low-battery limit. Fall back to api.js's cached frame, then to 100 (the API's
+    // "OS-managed" value) -- never to an invented 75, which used to be shown
+    // whenever displayStateCache was null and then written back on first touch.
+    const ds = displayState();
+    const brightnessVal = ds?.requestedBrightness ?? ds?.brightness ?? 100;
     return `
         <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
@@ -4528,10 +4536,8 @@ export async function initializeSettings() {
         ui.showToast(`Cycle set to ${applied}s`, 2000, 'success');
     };
 
-    window.handleSaverBrightnessChange = function(value) {
-        const applied = setSaverBrightness(value);
-        const input = document.getElementById('saver-brightness');
-        if (input) input.value = applied;
+    window.setScreenOffWhenSleep = function(enabled) {
+        apiSetScreenOffWhenSleep(enabled);
         // "Saved" is an existing translated key in the de1 gui translation sheet;
         // showToast does not translate, so do it here. Applied on the next sleep,
         // not now -- changing it must not dim the screen being read.

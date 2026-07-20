@@ -41,6 +41,11 @@ let displayWebSocketReady = false;
 // Latest DisplayState frame from ws/v1/display. Null until the socket delivers
 // its first snapshot.
 let lastDisplayState = null;
+const displayListeners = new Set();
+/** Last DisplayState REA pushed, or null before the first frame. */
+export function getLastDisplayState() {
+    return lastDisplayState;
+}
 // Brightness to return to on wake, captured just before we dim.
 let brightnessBeforeDim = null;
 let updateWebSocket = null;
@@ -510,6 +515,16 @@ export function getScaleDeviceId() {
  * @param {Function} onData - Callback for display state updates
  */
 export function connectDisplayWebSocket(onData) {
+    // Every caller is a subscriber. This used to return early when the socket was
+    // already open, silently dropping the callback -- app.js connects at boot, so
+    // the settings page's callback never fired, its displayStateCache stayed null
+    // and every brightness control rendered its `?? 75` fallback instead of the
+    // real level. Replay the cached frame so a late subscriber is current at once.
+    if (onData) {
+        displayListeners.add(onData);
+        if (lastDisplayState) onData(lastDisplayState);
+    }
+
     if (displayWebSocket && displayWebSocket.readyState === WebSocket.OPEN) {
         logger.info('Display WebSocket already connected');
         return;
@@ -535,9 +550,9 @@ export function connectDisplayWebSocket(onData) {
             if (data && typeof data.requestedBrightness === 'number') {
                 lastDisplayState = data;
             }
-            if (onData) {
-                onData(data);
-            }
+            displayListeners.forEach((fn) => {
+                try { fn(data); } catch (e) { logger.error('Display listener failed:', e); }
+            });
         } catch (error) {
             logger.error('Error parsing display WebSocket message:', error);
         }
@@ -1707,20 +1722,27 @@ export async function getDisplayState() {
     }
 }
 
-/** Brightness the screensaver drops to, 0-100. Default 0 mirrors the TCL skin's
- *  saver_brightness (de1plus/machine.tcl:420), which also drops to 0 on entering
- *  the saver page (de1plus/utils.tcl:485). Neither app can truly power the panel
- *  off -- REA exposes no such command and TCL only calls `borg brightness` -- so
- *  0 is as dark as a sleeping tablet gets. */
-export function getSaverBrightness() {
-    const raw = parseInt(localStorage.getItem('saverBrightness'), 10);
-    return Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+/** Brightness used while the machine sleeps when "screen off" is switched off.
+ *  Dim enough to read as asleep, bright enough to see the screensaver. */
+const SAVER_BRIGHTNESS_DEFAULT = 10;
+
+/** Whether the screen should go as dark as it can while the machine sleeps.
+ *  On by default, matching the TCL skin whose saver_brightness defaults to 0
+ *  (de1plus/machine.tcl:420) and which drops to 0 on entering the saver page
+ *  (de1plus/utils.tcl:485). Neither app can truly power the panel off -- REA
+ *  exposes no such command and TCL only calls `borg brightness` -- so 0 is as
+ *  dark as a sleeping tablet gets. */
+export function isScreenOffWhenSleep() {
+    return localStorage.getItem('screenOffWhenSleep') !== 'false';
 }
 
-export function setSaverBrightness(value) {
-    const clamped = Math.min(100, Math.max(0, parseInt(value, 10) || 0));
-    localStorage.setItem('saverBrightness', String(clamped));
-    return clamped;
+export function setScreenOffWhenSleep(enabled) {
+    localStorage.setItem('screenOffWhenSleep', enabled ? 'true' : 'false');
+    return !!enabled;
+}
+
+export function getSaverBrightness() {
+    return isScreenOffWhenSleep() ? 0 : SAVER_BRIGHTNESS_DEFAULT;
 }
 
 export function dimDisplay() {
