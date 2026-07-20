@@ -156,6 +156,10 @@ function createModalHTML() {
     const overlay = document.createElement('dialog');
     overlay.id = 'numpad-modal-overlay';
     overlay.className = 'numpad-modal-overlay';
+    // showModal() otherwise autofocuses the first button (CANCEL) and paints a
+    // focus ring on it -- which reads as a border the TCL page doesn't have.
+    // openModal() moves focus here instead; ESC and Tab keep working.
+    overlay.tabIndex = -1;
 
     // Full-screen layout on the top-layer <dialog>: the inner canvas is a fixed
     // 1920x1200 design surface (the sizes below and in numpad-modal.css are
@@ -432,6 +436,9 @@ async function openModal(inputElement, options = {}) {
     // inside it is fitted to the viewport by scaleNumpadCanvas — no re-parenting
     // into #scaled-content, no OS-keyboard suppression.
     if (!overlay.open) overlay.showModal();
+    // Take focus off CANCEL (see the autofocus note in createModalHTML). The
+    // dialog itself holds it, so ESC still closes and Tab still works.
+    overlay.focus();
     scaleNumpadCanvas();
     document.body.style.overflow = 'hidden';
 }
