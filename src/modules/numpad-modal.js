@@ -234,13 +234,21 @@ function createModalHTML() {
     return overlay;
 }
 
-// Fit the fixed 1920x1200 design canvas to the viewport (letterboxing on other
-// aspect ratios, exactly like the pre-dialog full-screen numpad rendered).
+// Fit the fixed 1920x1200 design canvas to the viewport. Scales x and y
+// independently (same as scaling.js / the TCL skin's dui) so 8" tablets at
+// 1340x800 fill the screen instead of sitting in left/right gutters.
 function scaleNumpadCanvas() {
     const inner = document.querySelector('#numpad-modal-overlay .numpad-modal-scaled-inner');
     if (!inner) return;
-    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1200);
-    inner.style.transform = `scale(${s})`;
+    let sx = window.innerWidth / 1920;
+    let sy = window.innerHeight / 1200;
+    const MAX_STRETCH = 1.15;
+    const stretch = Math.max(sx, sy) / Math.min(sx, sy);
+    if (stretch > MAX_STRETCH) {
+        const k = MAX_STRETCH / stretch;
+        if (sx > sy) sx *= k; else sy *= k;
+    }
+    inner.style.transform = `scale(${sx}, ${sy})`;
 }
 
 function updateDisplay() {

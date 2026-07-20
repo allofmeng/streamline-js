@@ -103,17 +103,22 @@ export function initScaling() {
         const screenHeight = keyboardShrunk ? baselineHeight : rawHeight;
         if (!keyboardShrunk) baselineHeight = rawHeight;
 
-        // Calculate aspect ratios
-        const screenAspectRatio = screenWidth / screenHeight;
-        const designAspectRatio = designWidth / designHeight;
+        // Scale x and y independently, the way the TCL skin does it: dui maps its
+        // fixed 2560x1600 canvas onto the real screen with separate xscale_factor /
+        // yscale_factor (de1plus/dui.tcl), so the canvas always fills the screen.
+        // A uniform min() scale letterboxes any non-16:10 viewport -- an 8" tablet at
+        // 1340x800 (Samsung A7 Lite) or a 1280x800 panel minus browser chrome ends up
+        // both too small and guttered left/right.
+        let sx = screenWidth / designWidth;
+        let sy = screenHeight / designHeight;
 
-        let scale;
-        if (screenAspectRatio > designAspectRatio) {
-            // Screen is wider than design - scale based on height
-            scale = screenHeight / designHeight;
-        } else {
-            // Screen is taller than design - scale based on width
-            scale = screenWidth / designWidth;
+        // ponytail: clamp the stretch so round controls don't become obvious ellipses
+        // on odd aspects. Raise MAX_STRETCH if filling the screen matters more.
+        const MAX_STRETCH = 1.15;
+        const stretch = Math.max(sx, sy) / Math.min(sx, sy);
+        if (stretch > MAX_STRETCH) {
+            const k = MAX_STRETCH / stretch;
+            if (sx > sy) sx *= k; else sy *= k;
         }
 
         // Explicitly set content dimensions to original design dimensions
@@ -124,11 +129,13 @@ export function initScaling() {
         // (i.e. UI is already smaller than designed — small/tablet screens).
         // Large screens already have readable text; zooming them would clip with no benefit.
         const uiZoom = parseFloat(localStorage.getItem('uiZoom') || '1.0');
-        scale = scale * uiZoom;
+        sx *= uiZoom;
+        sy *= uiZoom;
 
         // Cap at 2.0x to prevent excessive scale on very high-DPI displays
         const maxScale = 2.0;
-        if (scale > maxScale) scale = maxScale;
+        if (sx > maxScale) sx = maxScale;
+        if (sy > maxScale) sy = maxScale;
 
         let offsetX, offsetY;
         if (uiZoom > 1.0) {
@@ -140,22 +147,24 @@ export function initScaling() {
             // On tablets this enables touch-scroll/pan to reach the chart and data panels.
             viewport.style.overflow = 'auto';
         } else {
-            // Default: center the content, clip overflow (no scrollbars)
-            const scaledWidth = designWidth * scale;
-            const scaledHeight = designHeight * scale;
-            offsetX = (screenWidth - scaledWidth) / 2;
-            offsetY = (screenHeight - scaledHeight) / 2;
+            // Default: center whatever residual gap the stretch clamp left behind
+            offsetX = (screenWidth - designWidth * sx) / 2;
+            offsetY = (screenHeight - designHeight * sy) / 2;
             viewport.style.overflow = 'hidden';
         }
 
         content.style.transformOrigin = 'top left';
-        content.style.transform = `scale(${scale}) translate(${offsetX / scale}px, ${offsetY / scale}px)`;
+        content.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${sx}, ${sy})`;
 
         viewport.style.width = `${screenWidth}px`;
         viewport.style.height = `${screenHeight}px`;
         viewport.style.margin = '0';
 
-        document.dispatchEvent(new CustomEvent('streamline:scaleupdate', { detail: { scale } }));
+        // `scale` kept for existing listeners; it is the horizontal factor, which is
+        // what pointer-coordinate math against offsetWidth needs.
+        document.dispatchEvent(new CustomEvent('streamline:scaleupdate', {
+            detail: { scale: sx, scaleX: sx, scaleY: sy }
+        }));
     }
 
     // Initial scaling with a slight delay to ensure the browser has settled the viewport dimensions
