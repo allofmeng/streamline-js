@@ -26,24 +26,28 @@
     width: 100%;
     height: 100%;
     background-color: white;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    position: relative;
     overflow: hidden;
     box-sizing: border-box;
 }
 
-/* The 1920x1200 design canvas. scaleNumpadCanvas() sets transform: scale(s). */
+/* The 1920x1200 design canvas. scaleNumpadCanvas() sets the full transform.
+   Anchored top-left rather than flex-centered: the canvas is wider than the
+   container on every tablet, and engines disagree on where an overflowing
+   centered flex item lands (Chrome centers it, some WebViews align it to the
+   start), which shifted the whole numpad right and pushed the keypad off screen. */
 .numpad-modal-scaled-inner {
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 1920px;
     height: 1200px;
-    flex-shrink: 0;
     padding: 24px;
     padding-bottom: max(24px, env(safe-area-inset-bottom));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    transform-origin: center center;
+    transform-origin: top left;
 }
 
 .numpad-modal-header {

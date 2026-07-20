@@ -248,7 +248,10 @@ function scaleNumpadCanvas() {
         const k = MAX_STRETCH / stretch;
         if (sx > sy) sx *= k; else sy *= k;
     }
-    inner.style.transform = `scale(${sx}, ${sy})`;
+    // Placed explicitly from the top-left origin — see numpad-modal.css.
+    const offsetX = (window.innerWidth - 1920 * sx) / 2;
+    const offsetY = (window.innerHeight - 1200 * sy) / 2;
+    inner.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${sx}, ${sy})`;
 }
 
 function updateDisplay() {
