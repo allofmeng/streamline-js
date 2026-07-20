@@ -455,7 +455,13 @@ function handleCancel() {
 }
 
 function handleConfirm() {
-    const finalValue = currentValue === '0' ? '' : currentValue;
+    // Confirm what is on the display. This used to blank a bare "0" to '',
+    // because handleBackspace() lands on "0" when the field is cleared and the
+    // two states are indistinguishable in currentValue. But every caller reads
+    // the result with parseFloat and drops NaN, so a deliberate 0 was silently
+    // discarded -- e.g. 0 bar is how a flow step's pressure limit is switched
+    // off, and entering it did nothing at all.
+    const finalValue = currentValue;
     console.log('[Numpad] handleConfirm called, finalValue:', finalValue, 'currentInputElement:', currentInputElement);
     
     if (currentInputElement) {
