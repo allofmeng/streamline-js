@@ -1563,8 +1563,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isWebView = isAndroidWebView || isIOSWebView || isDecentWebView;
 
         if (isWebView) {
-            const fsBtn = document.getElementById('fullscreen-toggle-btn');
-            if (fsBtn) fsBtn.style.display = 'none';
+            // A root class, not an inline style on the one button that exists right
+            // now: index.html, profile_selector.html and settings.html each carry
+            // their own #fullscreen-toggle-btn, and the router injects the sub-page
+            // ones long after this runs -- so hiding by id here only ever covered
+            // the main page. CSS on <html> covers every page, present and future.
+            // The host OS owns fullscreen in a webview, so the button is never
+            // useful there. See main.css; help-overlay.css deliberately overrides
+            // this on the main page to keep the slot laid out for the help button.
+            document.documentElement.classList.add('is-webview');
         }
 
         // Function to determine if we're in fullscreen mode

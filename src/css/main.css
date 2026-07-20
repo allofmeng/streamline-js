@@ -150,6 +150,16 @@ body {
     --button-secondary-text: #e8e8e8;
 }
 
+/* In-app webview: the host OS owns fullscreen, so the toggle is dead weight on
+   every page. index.html, profile_selector.html and settings.html each have their
+   own #fullscreen-toggle-btn and the sub-page ones are injected by the router
+   after boot, so this is a rule on <html> rather than a per-button hide.
+   help-overlay.css deliberately outranks this on the main page (two IDs beats
+   one) to keep that slot laid out but invisible for the help button. */
+.is-webview #fullscreen-toggle-btn {
+    display: none !important;
+}
+
 /* New classes for status messages */
 /* Status messages -- skin.tcl:653-657. The font names are decorative; the real
    size is load_font's numeric arg, and the weight is whichever .ttf it points
