@@ -1,4 +1,4 @@
-import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, connectShotStateWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, getMachineInfo, getMachineState, setMachineState, getReaSettings, getAppInfo } from './api.js';
+import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayModeTracking, reconnectingWebSocket, getDevices, reconnectDevice, scanForDevices,connectShotSettingsWebSocket, getDe1AdvancedSettings, updateShotSettingsCache, getDe1Settings, MachineState, getShotIds, getShots, getValueFromStore, verifyVisualizerCredentials, connectScaleDevice, tareScale, connectTimeToReadyWebSocket, connectShotStateWebSocket, sendDeviceCommand, saveScaleDeviceId, getScaleDeviceId, getDeviceWebSocket, initDeviceWebSocketWithCallback, connectDeviceWebSocket, connectDisplayWebSocket, restoreBrightnessFromStorage, getMachineInfo, getMachineState, setMachineState, getReaSettings, getAppInfo } from './api.js';
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
@@ -1408,6 +1408,12 @@ async function initMainPageOnce() {
         connectTimeToReadyWebSocket(handleTimeToReadyData);
         connectShotStateWebSocket(handleShotStateEvent);
         connectDisplayWebSocket((data) => logger.debug('Display state updated:', data));
+        // Re-apply the user's brightness. REA does not persist it, so without this
+        // a restart comes back at whatever the OS picks -- and if the app died
+        // while the saver had it at 0, the tablet stays dark. Deferred so the
+        // display socket has delivered a frame to compare against; it only pushes
+        // when the live level actually differs.
+        setTimeout(() => { restoreBrightnessFromStorage(); }, 1500);
         ensureGatewayModeTracking();
         resetDataTimeout();
         connectShotSettingsWebSocket(handleShotSettingsData);

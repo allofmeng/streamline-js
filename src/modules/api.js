@@ -1054,6 +1054,7 @@ export const STEAM_FLOW_LAST_VALUE_KEY = 'last-steam-flow';
 export const FLUSH_DURATION_LAST_VALUE_KEY = 'last-flush-duration';
 export const HOT_WATER_VOLUME_LAST_VALUE_KEY = 'last-hot-water-volume';
 export const HOT_WATER_TEMP_LAST_VALUE_KEY = 'last-hot-water-temp';
+export const BRIGHTNESS_LAST_VALUE_KEY = 'last-brightness';
 
 export async function persistLastValue(key, value) {
     try {
@@ -1773,14 +1774,55 @@ export function restoreDisplay() {
         // "hand back to OS-managed brightness", so restoring to it discarded any
         // level set on the settings slider on every sleep/wake cycle. TCL restores
         // to its app_brightness setting for the same reason (de1plus/utils.tcl:496).
+        // The remembered level is the fallback: it survives an app restart, where
+        // the in-memory capture does not.
         sendDisplayCommand({
             command: 'setBrightness',
-            brightness: brightnessBeforeDim ?? 100
+            brightness: brightnessBeforeDim ?? rememberedBrightness ?? 100
         });
         brightnessBeforeDim = null;
     } catch (error) {
         logger.error('Error restoring display:', error);
         throw error;
+    }
+}
+
+/** The user's brightness, remembered across restarts. Read once at boot by
+ *  restoreBrightnessFromStorage() so restoreDisplay() can fall back to it
+ *  synchronously. */
+let rememberedBrightness = null;
+
+/** Persist a brightness the user actually chose. Not called for the saver dim,
+ *  which is a transient state, nor for the wake restore, which replays it. */
+export function rememberBrightness(value) {
+    const v = Math.min(100, Math.max(0, parseInt(value, 10)));
+    if (!Number.isFinite(v)) return;
+    rememberedBrightness = v;
+    persistLastValue(BRIGHTNESS_LAST_VALUE_KEY, v);
+}
+
+/**
+ * Boot: re-apply the remembered brightness.
+ *
+ * REA does not persist it -- ReaSettings has no brightness field, only the
+ * lowBatteryBrightnessLimit toggle -- so after a restart the panel comes back at
+ * whatever the OS decides and the user's choice is gone. This also rescues the
+ * case where the app died while the saver had it dimmed to 0, which otherwise
+ * leaves the tablet dark with no way back except the settings slider you cannot
+ * see. Pushes only when the live level actually differs, via resyncIfDrifted.
+ */
+export async function restoreBrightnessFromStorage() {
+    try {
+        await openDB();
+        const remembered = await getSetting(BRIGHTNESS_LAST_VALUE_KEY);
+        if (remembered == null) return;
+        rememberedBrightness = remembered;
+        const live = lastDisplayState?.brightness;
+        if (live != null && live !== remembered) {
+            sendDisplayCommand({ command: 'setBrightness', brightness: remembered });
+        }
+    } catch (e) {
+        logger.warn('restoreBrightnessFromStorage failed:', e);
     }
 }
 
