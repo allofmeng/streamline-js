@@ -4430,10 +4430,12 @@ export async function initializeSettings() {
     });
 
     // Initialize WebSocket for live device state updates
+    console.time('perf:settingsWebsockets');
     initDeviceWebSocket();
 
     // Initialize WebSocket for live display state updates
     initDisplayWebSocket();
+    console.timeEnd('perf:settingsWebsockets');
 
     // Set up event listeners
     const cancelBtn = document.getElementById('cancel-settings-btn');
@@ -4540,10 +4542,14 @@ export async function initializeSettings() {
     }
 
     // Set up search functionality
+    console.time('perf:settingsSearchSetup');
     setupSettingsSearch();
+    console.timeEnd('perf:settingsSearchSetup');
 
     // Apply translations to the settings page
+    console.time('perf:settingsSetLanguage');
     setLanguage(getCurrentLanguage());
+    console.timeEnd('perf:settingsSetLanguage');
 
     // Re-translate settings content whenever language changes
     document.addEventListener('streamline:languagechange', () => {
