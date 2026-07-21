@@ -248,18 +248,11 @@ function syncBrightnessSliderFill(slider, value) {
         `linear-gradient(to right, #385a92 0%, #385a92 ${stop}%, #e8e8e8 ${stop}%, #e8e8e8 100%)`;
 }
 
-let _updateSettingsContentAreaCallCount = 0;
 function updateSettingsContentArea(category) {
-    const callNum = ++_updateSettingsContentAreaCallCount;
-    console.time(`perf:updateSettingsContentArea#${callNum}(${category})`);
     const contentArea = document.getElementById('settings-content-area');
     if (contentArea) {
-        console.time(`perf:renderSettingsContent#${callNum}`);
         contentArea.innerHTML = renderSettingsContent(category);
-        console.timeEnd(`perf:renderSettingsContent#${callNum}`);
-        console.time(`perf:translatePage#${callNum}`);
         translatePage();
-        console.timeEnd(`perf:translatePage#${callNum}`);
         // The CSS default is a fixed 75% stop, so without this the bar sits at 75%
         // on first paint no matter what the value is.
         const slider = contentArea.querySelector('#brightness-slider');
@@ -289,7 +282,6 @@ function updateSettingsContentArea(category) {
         }
         setTimeout(attachSettingsNumpad, 0);
     }
-    console.timeEnd(`perf:updateSettingsContentArea#${callNum}(${category})`);
 }
 
 // Define the tree structure for settings navigation
@@ -4425,25 +4417,18 @@ function getCategoryTitle(category) {
 
 // Initialize the settings page
 export async function initializeSettings() {
-    console.time('perf:settingsInit');
     resetPendingChanges();
     // Pre-seed cache from IDB backup for instant render, then fetch from network in background
-    console.time('perf:settingsPreSeed');
     await preSeedFromIDB();
-    console.timeEnd('perf:settingsPreSeed');
-    console.time('perf:settingsPreload');
     preloadSettings().then(() => {
-        console.timeEnd('perf:settingsPreload');
         if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     });
 
     // Initialize WebSocket for live device state updates
-    console.time('perf:settingsWebsockets');
     initDeviceWebSocket();
 
     // Initialize WebSocket for live display state updates
     initDisplayWebSocket();
-    console.timeEnd('perf:settingsWebsockets');
 
     // Set up event listeners
     const cancelBtn = document.getElementById('cancel-settings-btn');
@@ -4532,13 +4517,10 @@ export async function initializeSettings() {
     });
 
     // Initial load of settings content: Simulate a click on the first main category button
-    console.time('perf:settingsFirstPaint');
     const firstMainCategoryBtn = document.querySelector('.settings-nav-btn');
     if (firstMainCategoryBtn) {
         firstMainCategoryBtn.click();
-        console.timeEnd('perf:settingsFirstPaint');
     } else {
-        console.timeEnd('perf:settingsFirstPaint');
         // Fallback if no main category buttons are found
         const contentArea = document.getElementById('settings-content-area');
         if (contentArea) {
@@ -4550,14 +4532,10 @@ export async function initializeSettings() {
     }
 
     // Set up search functionality
-    console.time('perf:settingsSearchSetup');
     setupSettingsSearch();
-    console.timeEnd('perf:settingsSearchSetup');
 
     // Apply translations to the settings page
-    console.time('perf:settingsSetLanguage');
     setLanguage(getCurrentLanguage());
-    console.timeEnd('perf:settingsSetLanguage');
 
     // Re-translate settings content whenever language changes
     document.addEventListener('streamline:languagechange', () => {
@@ -5546,7 +5524,6 @@ export async function initializeSettings() {
             if (e.touches[0]) beginDrag(e.touches[0].clientX);
         }, { passive: true });
     }
-    console.timeEnd('perf:settingsInit');
 }
 
 // Set up search functionality for settings
