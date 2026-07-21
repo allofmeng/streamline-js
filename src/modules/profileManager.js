@@ -71,10 +71,12 @@ function validateButtonIndices() {
             logger.warn(`Removing invalid button index: ${key}`);
         }
     }
-    if (hasInvalid || Object.keys(validAssignments).length !== Object.keys(favoriteAssignments).length) {
+    const changed = hasInvalid || Object.keys(validAssignments).length !== Object.keys(favoriteAssignments).length;
+    if (changed) {
         favoriteAssignments = validAssignments;
         logger.info('Validated and normalized button assignments to valid indices (0-' + (FAV_COUNT - 1) + ')');
     }
+    return changed;
 }
 
 // Global flag to prevent duplicate execution of profile updates
@@ -237,10 +239,14 @@ export async function loadAssignments() {
         if (isValidAssignments(reaAssignments)) {
             logger.info('Loaded assignments from REA store.');
             favoriteAssignments = reaAssignments;
-            validateButtonIndices();
-            // Save validated data back to REA store AND local backup to prevent stale data on next load
-            await setValueInStore(SETTINGS_NAMESPACE, FAVORITES_KEY, favoriteAssignments);
-            await setSetting(FAVORITES_KEY, favoriteAssignments);
+            const changed = validateButtonIndices();
+            // REA already has this data — only write back (REA round trip + IDB)
+            // when validation actually changed something. Otherwise it's a
+            // pointless ~200ms round trip writing back what we just read.
+            if (changed) {
+                await setValueInStore(SETTINGS_NAMESPACE, FAVORITES_KEY, favoriteAssignments);
+                await setSetting(FAVORITES_KEY, favoriteAssignments);
+            }
             return favoriteAssignments;
         }
 
@@ -998,12 +1004,16 @@ export async function init() {
         await openDB(); // Still needed for the backup functionality
 
         profileLoadStatus = await loadAvailableProfiles();
-        await loadAssignments();
+        // Independent REA reads — no data dependency between them, so run
+        // concurrently instead of paying two sequential round trips.
+        const [, userInitialized] = await Promise.all([
+            loadAssignments(),
+            getFavoritesInitializedFlag(),
+        ]);
 
         const allEmpty = Object.values(favoriteAssignments).every(v => v === null || v === undefined);
         // If user has previously saved assignments (even all-empty via clearing slots),
         // respect that choice and skip auto-populate.
-        const userInitialized = await getFavoritesInitializedFlag();
         if (allEmpty && !userInitialized) {
             logger.info('No favorite assignments found — auto-populating from shot history.');
             await autoPopulateFavoritesFromHistory();
