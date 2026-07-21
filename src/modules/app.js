@@ -1385,6 +1385,13 @@ async function initVisualizer() {
     }
 }
 
+// Resolves as soon as history.initHistory() has populated the shots array --
+// long before the rest of initMainPageOnce() (DE1 connect, visualizer, six+
+// websockets) finishes. The router awaits this alone to repaint the chart
+// ASAP on return from a sub-page, instead of blocking on unrelated work.
+let resolveHistoryReady;
+const historyReadyPromise = new Promise(resolve => { resolveHistoryReady = resolve; });
+
 let mainPageInitialized = false;
 let mainPageInitPromise = null;
 async function initMainPageOnce() {
@@ -1393,6 +1400,7 @@ async function initMainPageOnce() {
     mainPageInitPromise = (async () => {
         logger.info('initMainPageOnce: starting.');
         await history.initHistory();
+        resolveHistoryReady();
         await profileManager.init();
         window.app.saveGrindToActiveProfile = (val) => profileManager.saveGrindToActiveProfile(val);
         window.app.saveContextToActiveProfile = (fields) => profileManager.saveContextToActiveProfile(fields);
@@ -1429,9 +1437,15 @@ async function initMainPageOnce() {
     return mainPageInitPromise;
 }
 window.app.initMainPageOnce = initMainPageOnce;
+window.app.historyReady = () => historyReadyPromise;
 // True while a shot is being recorded — lets the router skip repainting history
 // over a live chart when returning to the main page.
 window.app.isShotActive = () => shotStartTime !== null;
+// Lets the router blank the shared #plotly-chart element the instant we
+// return to the main page, before the async history repaint lands — without
+// this the profile-selector's last-plotted profile curve stays visible on
+// the shared element for the duration of that repaint.
+window.app.clearChart = () => chart.clearChart();
 
 async function prefetchSettingsToIDB() {
     try {

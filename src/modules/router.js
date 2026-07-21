@@ -77,20 +77,33 @@ function showMainPage() {
 
     window.history.pushState({ pageUrl: null }, 'Streamline', '?page=index');
 
+    // The profile selector shares the `plotly-chart` id and leaves its last
+    // plotted profile curve on the element — blank it immediately so that
+    // curve doesn't sit on screen for the duration of the async history
+    // repaint below. Skipped during a live shot; the websocket is already
+    // driving the chart and a blank flash would just fight it.
+    if (!window.app?.isShotActive?.()) {
+        window.app?.clearChart?.();
+    }
+
     // Ensure main-page data init has run — booting on a sub-page URL skips it,
     // so without this the main page would render static HTML with no data.
-    // Afterwards, repaint the current history shot: the profile selector shares
-    // the `plotly-chart` id and leaves a profile curve on the shared element,
-    // so the main-page chart must restore history on return (unless a shot is
-    // live, in which case the websocket is already driving the chart).
+    // Don't gate the chart repaint on this whole thing finishing though: it
+    // also connects DE1/scale/visualizer and six-plus websockets, none of
+    // which the chart needs, and blocking on all of it is what made the
+    // repaint (and the stale profile curve before it) take 1-2s on first
+    // return to the main page.
     if (window.app?.initMainPageOnce) {
-        window.app.initMainPageOnce()
-            .then(() => {
-                if (!window.app?.isShotActive?.()) {
-                    return import('./history.js').then(m => m.refreshCurrentShot?.());
-                }
-            })
-            .catch(e => console.error('initMainPageOnce error:', e));
+        window.app.initMainPageOnce().catch(e => console.error('initMainPageOnce error:', e));
+    }
+
+    // Repaint the current history shot as soon as its data alone is ready
+    // (unless a shot is live, in which case the websocket already drives the
+    // chart) — independent of the rest of initMainPageOnce above.
+    if (!window.app?.isShotActive?.()) {
+        window.app?.historyReady?.()
+            .then(() => import('./history.js').then(m => m.refreshCurrentShot?.()))
+            .catch(e => console.error('history repaint error:', e));
     }
 
     // Re-render favorite buttons now that they're visible — avoids stale font-size
