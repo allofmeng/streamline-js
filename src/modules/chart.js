@@ -321,6 +321,11 @@ export function finalizeLiveChart() {
 export function refreshLabelMargin() {
     const element = getChartElement();
     if (!element) return;
+    // Hidden behind another page (e.g. settings, profile selector) -- skip the
+    // Plotly.relayout below. It's a real, non-cheap layout op with zero
+    // visible effect while hidden, and every streamline:languagechange fires
+    // this unconditionally regardless of which page is actually showing.
+    if (element.offsetParent === null) return;
 
     // Find current data max across labelled traces.
     let dataMax = 0;
