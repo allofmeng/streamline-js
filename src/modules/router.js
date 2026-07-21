@@ -119,6 +119,9 @@ export async function loadPage(pageUrl) {
         return;
     }
 
+    const perfLabel = `perf:loadPage:${pageUrl}`;
+    console.time(perfLabel);
+
     const mainPage = document.getElementById('main-page');
     const subpageHost = document.getElementById('subpage-host');
 
@@ -184,4 +187,5 @@ export async function loadPage(pageUrl) {
         if (mainPage) mainPage.style.display = '';
         if (subpageHost) subpageHost.style.display = 'none';
     }
+    console.timeEnd(perfLabel);
 }

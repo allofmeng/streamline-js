@@ -4417,10 +4417,15 @@ function getCategoryTitle(category) {
 
 // Initialize the settings page
 export async function initializeSettings() {
+    console.time('perf:settingsInit');
     resetPendingChanges();
     // Pre-seed cache from IDB backup for instant render, then fetch from network in background
+    console.time('perf:settingsPreSeed');
     await preSeedFromIDB();
+    console.timeEnd('perf:settingsPreSeed');
+    console.time('perf:settingsPreload');
     preloadSettings().then(() => {
+        console.timeEnd('perf:settingsPreload');
         if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     });
 
@@ -4517,10 +4522,13 @@ export async function initializeSettings() {
     });
 
     // Initial load of settings content: Simulate a click on the first main category button
+    console.time('perf:settingsFirstPaint');
     const firstMainCategoryBtn = document.querySelector('.settings-nav-btn');
     if (firstMainCategoryBtn) {
         firstMainCategoryBtn.click();
+        console.timeEnd('perf:settingsFirstPaint');
     } else {
+        console.timeEnd('perf:settingsFirstPaint');
         // Fallback if no main category buttons are found
         const contentArea = document.getElementById('settings-content-area');
         if (contentArea) {
@@ -5524,6 +5532,7 @@ export async function initializeSettings() {
             if (e.touches[0]) beginDrag(e.touches[0].clientX);
         }, { passive: true });
     }
+    console.timeEnd('perf:settingsInit');
 }
 
 // Set up search functionality for settings
