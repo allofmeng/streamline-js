@@ -1,7 +1,7 @@
 import { logger } from './logger.js';
 
 const DB_NAME = 'shot_history';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 const SHOTS_STORE_NAME = 'shots';
 const SETTINGS_STORE_NAME = 'settings';
 const EMAILS_STORE_NAME = 'decent_emails';
@@ -64,9 +64,20 @@ export function openDB() {
         request.onupgradeneeded = (event) => {
             logger.debug('IndexedDB open request.onupgradeneeded event fired.');
             const tempDb = event.target.result;
+            const upgradeTransaction = event.target.transaction;
+            let shotsStore;
             if (!tempDb.objectStoreNames.contains(SHOTS_STORE_NAME)) {
                 logger.info('Creating shots object store');
-                tempDb.createObjectStore(SHOTS_STORE_NAME, { keyPath: 'id' });
+                shotsStore = tempDb.createObjectStore(SHOTS_STORE_NAME, { keyPath: 'id' });
+            } else {
+                shotsStore = upgradeTransaction.objectStore(SHOTS_STORE_NAME);
+            }
+            // Every shot record already carries `timestamp` -- index it so the
+            // newest cached shot can be read with one indexed cursor instead of
+            // getAllShots() (reads the whole store just to find the max).
+            if (!shotsStore.indexNames.contains('by_timestamp')) {
+                logger.info('Creating by_timestamp index on shots store');
+                shotsStore.createIndex('by_timestamp', 'timestamp');
             }
             if (!tempDb.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
                 logger.info('Creating settings object store');
@@ -158,6 +169,31 @@ export function addShots(shotsArray) {
         transaction.onerror = (event) => {
             logger.error('Error bulk-adding shots to IndexedDB:', event.target.error);
             reject('Error bulk-adding shots.');
+        };
+    });
+}
+
+// Single most-recent cached shot via the by_timestamp index -- an indexed
+// cursor, not a full-store read like getAllShots(). Used to paint the chart
+// instantly on boot from whatever's already local, before the network fetch
+// (which may reveal a newer shot) resolves.
+export function getLatestCachedShot() {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            return reject('DB not open');
+        }
+        const transaction = db.transaction([SHOTS_STORE_NAME], 'readonly');
+        const store = transaction.objectStore(SHOTS_STORE_NAME);
+        const cursorRequest = store.index('by_timestamp').openCursor(null, 'prev');
+
+        cursorRequest.onsuccess = (event) => {
+            const cursor = event.target.result;
+            resolve(cursor ? cursor.value : null);
+        };
+
+        cursorRequest.onerror = (event) => {
+            logger.error('Error getting latest cached shot from IndexedDB:', event.target.error);
+            reject('Error getting latest cached shot.');
         };
     });
 }

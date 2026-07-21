@@ -1,6 +1,6 @@
 import * as chart from './chart.js';
 import { logger } from './logger.js';
-import { openDB, getAllShots, addShot, addShots, deleteShot as idbDeleteShot, clearShots } from './idb.js';
+import { openDB, getAllShots, getLatestCachedShot, addShot, addShots, deleteShot as idbDeleteShot, clearShots } from './idb.js';
 import { API_BASE_URL } from './api.js';
 import { renderPastShot, clearShotData } from './shotData.js';
 import { getTranslation } from './i18n.js';
@@ -21,17 +21,41 @@ let totalAvailable = 0;
 // profile selector left on the shared chart element).
 let paintedShotId = null;
 
-// Paints the newest shot as fast as possible: /shots/latest (cheap, no
-// measurements) + /shots/{id} (full record) -- run in parallel with
-// loadShotHistory()'s slower 20-item list + IDB sync in initHistory(), so the
-// chart no longer waits behind fetching/caching shots it doesn't need yet
-// just to show the first one.
-async function paintNewestShotFast() {
+// Paints whatever the newest shot in the local IDB cache is, instantly --
+// an indexed cursor read, no network wait. May be stale (a shot pulled since
+// this cache was last written won't be here yet); paintNewestShotFast()
+// below confirms/corrects it against the network moments later.
+async function paintFromCacheFast() {
+    try {
+        const cached = await getLatestCachedShot();
+        if (cached?.measurements) {
+            chart.plotHistoricalShot(cached.measurements, cached.workflow);
+            paintedShotId = cached.id;
+            return cached;
+        }
+    } catch (error) {
+        logger.warn('Cache-first shot paint failed:', error);
+    }
+    return null;
+}
+
+// Confirms/corrects the newest shot against the network: /shots/latest
+// (cheap, no measurements) tells us the real newest id. If it matches what
+// paintFromCacheFast() already painted, cache was current -- no further
+// fetch or redraw needed. Otherwise fetches /shots/{id} for the full record
+// and draws it. Runs in parallel with loadShotHistory()'s slower 20-item
+// list + IDB sync in initHistory(), so the chart isn't gated behind fetching
+// shots it doesn't need yet just to confirm/show the first one.
+async function paintNewestShotFast(alreadyPaintedId = null, alreadyPaintedShot = null) {
     try {
         const latestResponse = await fetch(`${API_BASE_URL}/shots/latest`);
         if (!latestResponse.ok) return null;
         const latestSummary = await latestResponse.json();
         if (!latestSummary?.id) return null;
+
+        if (latestSummary.id === alreadyPaintedId) {
+            return alreadyPaintedShot; // cache was already correct
+        }
 
         const fullResponse = await fetch(`${API_BASE_URL}/shots/${latestSummary.id}`);
         if (!fullResponse.ok) return null;
@@ -333,10 +357,12 @@ export async function initHistory() {
         }
     };
 
-    // Kick off the fast newest-shot paint alongside the slower list+IDB sync
-    // instead of behind it -- the chart no longer waits on caching 20 shots
-    // it doesn't need yet just to show shot #0.
-    const fastPaintPromise = paintNewestShotFast();
+    // Paint instantly from whatever's cached locally, then confirm/correct it
+    // against the network in parallel with the slower list+IDB sync below --
+    // the chart no longer waits on caching 20 shots it doesn't need yet just
+    // to show shot #0.
+    const cachedShot = await paintFromCacheFast();
+    const fastPaintPromise = paintNewestShotFast(cachedShot?.id, cachedShot);
 
     await loadShotHistory();
     const fastShot = await fastPaintPromise;
