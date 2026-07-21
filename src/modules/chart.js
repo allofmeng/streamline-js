@@ -1065,14 +1065,13 @@ export function initChart() {
     const layout = theme === 'dark' ? darkLayout : lightLayout;
     applyLabelLayout(layout);
 
-    console.log('initChart: About to call Plotly.newPlot');
-    try {
-        Plotly.newPlot(element, Object.values(chartData), layout, {displayModeBar: false});
-        Plotly.relayout(element, { 'xaxis.autorange': true });
-        console.log('initChart: Plotly.newPlot completed successfully');
-    } catch (error) {
-        console.error('initChart: Error in Plotly.newPlot:', error);
-    }
+    // No Plotly.newPlot here: the CSS scaling pass (initScaling) hasn't run
+    // yet at this point during boot, so drawing now would measure the
+    // pre-scale container size and need a later resize to fix -- wasted
+    // render at boot, and nothing currently corrects it automatically. The
+    // first real draw (plotHistoricalShot / clearChart / plotProfile, all of
+    // which call Plotly.react and work fine as an initial draw) happens once
+    // there's actual data to show, by which point scaling has settled.
 
     let resizeTimeout;
     console.log('initChart: Adding resize event listener');
