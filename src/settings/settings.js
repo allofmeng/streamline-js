@@ -248,11 +248,18 @@ function syncBrightnessSliderFill(slider, value) {
         `linear-gradient(to right, #385a92 0%, #385a92 ${stop}%, #e8e8e8 ${stop}%, #e8e8e8 100%)`;
 }
 
+let _updateSettingsContentAreaCallCount = 0;
 function updateSettingsContentArea(category) {
+    const callNum = ++_updateSettingsContentAreaCallCount;
+    console.time(`perf:updateSettingsContentArea#${callNum}(${category})`);
     const contentArea = document.getElementById('settings-content-area');
     if (contentArea) {
+        console.time(`perf:renderSettingsContent#${callNum}`);
         contentArea.innerHTML = renderSettingsContent(category);
+        console.timeEnd(`perf:renderSettingsContent#${callNum}`);
+        console.time(`perf:translatePage#${callNum}`);
         translatePage();
+        console.timeEnd(`perf:translatePage#${callNum}`);
         // The CSS default is a fixed 75% stop, so without this the bar sits at 75%
         // on first paint no matter what the value is.
         const slider = contentArea.querySelector('#brightness-slider');
@@ -282,6 +289,7 @@ function updateSettingsContentArea(category) {
         }
         setTimeout(attachSettingsNumpad, 0);
     }
+    console.timeEnd(`perf:updateSettingsContentArea#${callNum}(${category})`);
 }
 
 // Define the tree structure for settings navigation
