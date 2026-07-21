@@ -1309,7 +1309,8 @@ export async function initializeProfileSelector() {
     // unconditional 50ms setTimeout and a Plotly init the list does not depend
     // on -- roughly 80ms of dead time before the request was even issued here,
     // and far worse on a tablet where Plotly init is CPU-bound.
-    const profilePromise = initProfileManager();
+    console.time('perf:initProfileManager');
+    const profilePromise = initProfileManager().finally(() => console.timeEnd('perf:initProfileManager'));
 
     // The router injects the page HTML and awaits a requestAnimationFrame before
     // calling us (router.js), so the element is already in the DOM -- the old
@@ -1332,7 +1333,9 @@ export async function initializeProfileSelector() {
     }
 
     console.log('initializeProfileSelector: Rendering profiles...');
+    console.time('perf:renderProfiles');
     renderProfiles();
+    console.timeEnd('perf:renderProfiles');
 
     // Clear cached credentials so we always get fresh data
     cachedVisualizerCredentials = null;

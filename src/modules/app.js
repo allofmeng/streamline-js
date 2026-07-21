@@ -1193,7 +1193,7 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         const hotwatersettings = workflow?.hotWaterData;
         const steamsettings = workflow?.steamSettings;
         if (hotwatersettings) {
-            ui.updateHotWaterDisplay(hotwatersettings);
+            ui.updateHotWaterDisplay({ targetHotWaterVolume: hotwatersettings.volume, targetHotWaterTemp: hotwatersettings.targetTemperature });
             // Re-push only if the DE1 disagrees with what we last set — a plain GET
             // can't tell us the device itself stayed in sync (BLE reconnect / Rea
             // restart can leave it stale), but blindly re-pushing every boot would
@@ -1205,7 +1205,7 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
                 .catch(e => logger.warn('Hot water temp resync failed:', e));
         }
         if (steamsettings) {
-            ui.updateSteamDisplay(steamsettings);
+            ui.updateSteamDisplay({ targetSteamDuration: steamsettings.duration, targetSteamFlow: steamsettings.flow });
             api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings.duration, api.setTargetSteamDuration)
                 .catch(e => logger.warn('Steam duration resync failed:', e));
             api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings.flow, api.setTargetSteamFlow)

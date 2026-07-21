@@ -11,7 +11,10 @@ set ::streamline_adjust_grind_shortpress 1
 set ::streamline_adjust_grind_longpress .1
 
 
-if {$::android != 1} {
+if {!$::has_bluetooth} {
+	# Only force "no group head controller" when there is no real Bluetooth.
+	# With real BLE (Android, iWish, macOS), honour the machine's actual GHC
+	# status so the on-screen start buttons aren't shown when a GHC is present.
 	set ::settings(ghc_is_installed) 0
 }
 
@@ -19,7 +22,7 @@ set ::off_page "off"
 set ::espresso_page "espresso"
 
 set ghc_pos_pffset 0
-if {$::settings(ghc_is_installed) == 0} { 
+if {[ghc_is_installed] == 0} {
 	set ghc_pos_pffset 217
 }
 
@@ -423,7 +426,7 @@ streamline_rectangle $::pages 1151 1274 1151 1600 $::box_line_color $::plus_minu
 
 
 
-if {$::settings(ghc_is_installed) == 0} { 
+if {[ghc_is_installed] == 0} {
 	#
 	streamline_rectangle $::pages 2319 220 2600 1274 $::box_color $::plus_minus_flash_off_color_disabled
 	streamline_rectangle $::pages 2319 220 2319 1274 $::box_line_color $::plus_minus_flash_off_color_disabled
@@ -485,7 +488,7 @@ if {[ifexists ::settings(grinder_setting)] == ""} {
 }
 
 proc streamline_init_history_files {} {
-	set ::streamline_history_files [lsort -dictionary [glob -nocomplain -tails -directory "[homedir]/history/" *.shot]]
+	set ::streamline_history_files [lsort -dictionary [glob -nocomplain -tails -directory "[data_directory]/history/" *.shot]]
 	set ::streamline_history_file_selected_number [expr {[llength $::streamline_history_files] -1}]
 }
 
@@ -526,7 +529,7 @@ proc streamline_history_most_common_profiles { {max 500} } {
 
 		unset -nocomplain past_shot_array
 		catch {
-			array set past_shot_array [encoding convertfrom utf-8 [read_file "[homedir]/history/$current_shot_filename"]]
+			array set past_shot_array [encoding convertfrom utf-8 [read_file "[data_directory]/history/$current_shot_filename"]]
 		}
 
 		if {[ifexists past_shot_array(settings)] == ""} {
@@ -535,7 +538,7 @@ proc streamline_history_most_common_profiles { {max 500} } {
 		array set profile_settings [ifexists past_shot_array(settings)]
 		if {[ifexists profile_settings(profile_filename)] != ""} {
 			# only include the most common profiles that still actually exist on disk
-			if {[file exists "[homedir]/profiles/[ifexists profile_settings(profile_filename)].tcl"] == 1} {
+			if {[file exists "[data_directory]/profiles/[ifexists profile_settings(profile_filename)].tcl"] == 1} {
 				array_incr count [ifexists profile_settings(profile_filename)]
 			}
 		}
@@ -708,13 +711,15 @@ proc scale_tare_or_reconnect {} {
 		}
 	}
 }
+
 set btns ""
+	#[list -text [translate "Mix"] -font "Inter-Bold18" -foreground $::dataline_label_color  ] \
+	#[list -text " " -font "Inter-Bold18"] \
+	#[list -text {[lindex [return_temperature_measurement_no_unit [water_mix_temperature] 1 1] 0]} -font "mono12" -foreground $::dataline_data_color   ] \
+	#[list -text {[lindex [return_temperature_measurement_no_unit [water_mix_temperature] 1 1] 1]} -font "mono12" -foreground $::dataline_data_color   ] \
+	#[list -text "    " -font "Inter-SemiBold18"] \
+
 lappend btns \
-	[list -text [translate "Mix"] -font "Inter-Bold18" -foreground $::dataline_label_color  ] \
-	[list -text " " -font "Inter-Bold18"] \
-	[list -text {[lindex [return_temperature_measurement_no_unit [water_mix_temperature] 1 1] 0]} -font "mono12" -foreground $::dataline_data_color   ] \
-	[list -text {[lindex [return_temperature_measurement_no_unit [water_mix_temperature] 1 1] 1]} -font "mono12" -foreground $::dataline_data_color   ] \
-	[list -text "    " -font "Inter-SemiBold18"] \
 	[list -text [translate "Group"] -font "Inter-Bold18" -foreground $::dataline_label_color  ] \
 	[list -text " " -font "Inter-SemiBold18"] \
 	[list -text {[lindex [return_temperature_measurement_no_unit [group_head_heater_temperature] 1 1] 0]} -font "mono12" -foreground $::dataline_data_color   ] \
@@ -752,7 +757,7 @@ if {$::settings(scale_bluetooth_address) != ""} {
 }
 
 
-add_de1_rich_text "off espresso" 690 330 [list left none] 1 1 74 $::background_color $btns
+add_de1_rich_text "off espresso" 690 330 [list left none] 1 1 70 $::background_color $btns
 
 
 set flush_btns ""
@@ -2910,7 +2915,7 @@ proc clear_favorite_profile { slot } {
 ############################################################################################################################################################################################################
 # Four GHC buttons on bottom right
 
-if {$::settings(ghc_is_installed) == 0} { 
+if {[ghc_is_installed] == 0} {
 
 	# color of the button icons
 	dui aspect set -theme streamline -type dbutton_symbol fill $::ghc_button_color
@@ -2971,7 +2976,7 @@ if {$::settings(ghc_is_installed) == 0} {
 	}
 
 
-	if {$::settings(ghc_is_installed) == 0} { 
+	if {[ghc_is_installed] == 0} {
 
 		dui add dbutton "off off_zoomed" [expr {2560 - $ghc_pos_pffset + 20}] 258 [expr {2560 - $ghc_pos_pffset + 157 + 20}] 425 -tags espresso_btn -label1 $s1 -label [translate "Coffee"]   -command {say [translate {Espresso}] $::settings(sound_button_out); start_streamline_espresso; start_espresso} -tap_pad {40 16 30 16}
 		dui add dbutton "off off_zoomed" [expr {2560 - $ghc_pos_pffset + 20}] 463 [expr {2560 - $ghc_pos_pffset + 157 + 20}] 630 -tags water_btn -label1 $s3 -label [translate "Water"]   -command {say [translate {Water}] $::settings(sound_button_out); start_water}  -tap_pad {40 16 30 16}
@@ -4152,7 +4157,7 @@ proc streamline_load_history_shot {current_shot_filename} {
 	#puts "ERROR streamline_load_history_shot"
 
 	catch {
-		array set past_shot_array [encoding convertfrom utf-8 [read_file "[homedir]/history/$current_shot_filename"]]
+		array set past_shot_array [encoding convertfrom utf-8 [read_file "[data_directory]/history/$current_shot_filename"]]
 	}
 
 	if {[ifexists past_shot_array(settings)] == ""} {
@@ -4213,34 +4218,37 @@ proc streamline_load_history_shot {current_shot_filename} {
 
 proc track_peak_low { state espresso_pressure espresso_flow espresso_temperature_basket } {
 
+	# Reads the dynamic ::streamline_<state>_* globals with [set ::var] instead of
+	# [subst "\$::var"] -- same value, but ~4.9x faster (no subst parse per read).
+	# 6 reads per call; called once per BLE sample.
 
 	# peak pressure
-	if {$espresso_pressure > [subst "\$::streamline_${state}_peak_pressure"]} {
+	if {$espresso_pressure > [set ::streamline_${state}_peak_pressure]} {
 		set ::streamline_${state}_peak_pressure $espresso_pressure
 	}
 
 	# low pressure
-	if {$espresso_pressure < [subst "\$::streamline_${state}_low_pressure"]} {
+	if {$espresso_pressure < [set ::streamline_${state}_low_pressure]} {
 		set ::streamline_${state}_low_pressure $espresso_pressure
 	}
 
 	# peak flow
-	if {$espresso_flow > [subst "\$::streamline_${state}_peak_flow"]} {
+	if {$espresso_flow > [set ::streamline_${state}_peak_flow]} {
 		set ::streamline_${state}_peak_flow $espresso_flow
 	}
 	# low flow
-	if {$espresso_flow < [subst "\$::streamline_${state}_low_flow"]} {
+	if {$espresso_flow < [set ::streamline_${state}_low_flow]} {
 		set ::streamline_${state}_low_flow $espresso_flow
 	}
 
 
 	# high temp
-	if {$espresso_temperature_basket > [subst "\$::streamline_${state}_temp_high"]} {
+	if {$espresso_temperature_basket > [set ::streamline_${state}_temp_high]} {
 		set ::streamline_${state}_temp_high $espresso_temperature_basket
 	}
 
 	# low temp
-	if {$espresso_temperature_basket < [subst "\$::streamline_${state}_temp_low"]} {
+	if {$espresso_temperature_basket < [set ::streamline_${state}_temp_low]} {
 		set ::streamline_${state}_temp_low $espresso_temperature_basket
 	}
 

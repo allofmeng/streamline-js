@@ -163,7 +163,9 @@ export async function loadAvailableProfiles() {
         await migrateKvProfilesToRest();
 
         logger.info('Attempting to load profiles from API...');
+        console.time('perf:getProfiles');
         const profilesFromApi = await getProfiles(); // This is an array of ProfileRecords
+        console.timeEnd('perf:getProfiles');
 
         // Process and populate in-memory cache
         availableProfiles = {};
