@@ -134,6 +134,34 @@ export function addShot(shot) {
     });
 }
 
+// Bulk write, one transaction/commit for the whole page instead of one
+// transaction per shot -- addShot() in a loop serializes N separate commits.
+export function addShots(shotsArray) {
+    return new Promise((resolve, reject) => {
+        if (!db) {
+            return reject('DB not open');
+        }
+        if (!shotsArray || shotsArray.length === 0) {
+            return resolve();
+        }
+        const transaction = db.transaction([SHOTS_STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(SHOTS_STORE_NAME);
+        for (const shot of shotsArray) {
+            store.put(shot);
+        }
+
+        transaction.oncomplete = () => {
+            logger.info(`${shotsArray.length} shots added to IndexedDB in one transaction`);
+            resolve();
+        };
+
+        transaction.onerror = (event) => {
+            logger.error('Error bulk-adding shots to IndexedDB:', event.target.error);
+            reject('Error bulk-adding shots.');
+        };
+    });
+}
+
 export function getAllShots() {
     return new Promise((resolve, reject) => {
         if (!db) {

@@ -1,6 +1,6 @@
 import * as chart from './chart.js';
 import { logger } from './logger.js';
-import { openDB, getAllShots, addShot, deleteShot as idbDeleteShot, clearShots } from './idb.js';
+import { openDB, getAllShots, addShot, addShots, deleteShot as idbDeleteShot, clearShots } from './idb.js';
 import { API_BASE_URL } from './api.js';
 import { renderPastShot, clearShotData } from './shotData.js';
 import { getTranslation } from './i18n.js';
@@ -14,6 +14,40 @@ const PAGE_SIZE = 20;
 let shots = [];
 let currentShotIndex = -1;
 let totalAvailable = 0;
+// id of the shot currently drawn on the chart -- lets displayShot() skip a
+// redundant redraw right after paintNewestShotFast() already drew this exact
+// shot during boot. Not touched by refreshCurrentShot(), which must always
+// force a redraw (it exists specifically to repaint over whatever the
+// profile selector left on the shared chart element).
+let paintedShotId = null;
+
+// Paints the newest shot as fast as possible: /shots/latest (cheap, no
+// measurements) + /shots/{id} (full record) -- run in parallel with
+// loadShotHistory()'s slower 20-item list + IDB sync in initHistory(), so the
+// chart no longer waits behind fetching/caching shots it doesn't need yet
+// just to show the first one.
+async function paintNewestShotFast() {
+    try {
+        const latestResponse = await fetch(`${API_BASE_URL}/shots/latest`);
+        if (!latestResponse.ok) return null;
+        const latestSummary = await latestResponse.json();
+        if (!latestSummary?.id) return null;
+
+        const fullResponse = await fetch(`${API_BASE_URL}/shots/${latestSummary.id}`);
+        if (!fullResponse.ok) return null;
+        const fullShot = { ...latestSummary, ...(await fullResponse.json()) };
+
+        if (fullShot.measurements) {
+            chart.plotHistoricalShot(fullShot.measurements, fullShot.workflow);
+            paintedShotId = fullShot.id;
+        }
+        addShot(fullShot); // fire-and-forget cache write, doesn't gate the paint
+        return fullShot;
+    } catch (error) {
+        logger.warn('Fast newest-shot paint failed:', error);
+        return null;
+    }
+}
 
 async function loadShotHistory() {
     try {
@@ -21,9 +55,9 @@ async function loadShotHistory() {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
         totalAvailable = data.total ?? 0;
-        for (const shot of data.items ?? []) {
-            await addShot(shot);
-        }
+        // One transaction/commit for the whole page instead of one per shot --
+        // addShot() in a loop was serializing up to PAGE_SIZE IDB round trips.
+        await addShots(data.items ?? []);
         logger.info(`${data.items?.length ?? 0} shots fetched from API.`);
     } catch (error) {
         logger.warn('Could not fetch shots from API, loading from cache:', error);
@@ -131,7 +165,13 @@ async function displayShot(index) {
     }
 
     if (shots[currentShotIndex].measurements) {
-        chart.plotHistoricalShot(shots[currentShotIndex].measurements, shots[currentShotIndex].workflow);
+        // Skip the redraw if paintNewestShotFast() already drew this exact
+        // shot moments ago during boot -- same data, avoid a pointless second
+        // Plotly.react().
+        if (paintedShotId !== shot.id) {
+            chart.plotHistoricalShot(shots[currentShotIndex].measurements, shots[currentShotIndex].workflow);
+            paintedShotId = shot.id;
+        }
         renderPastShot(shots[currentShotIndex]);
     }
 
@@ -270,7 +310,6 @@ export async function initHistory() {
         logger.error('Failed to open IndexedDB:', error);
         return;
     }
-    await loadShotHistory();
 
     setupHistoryLongPress();
 
@@ -293,6 +332,20 @@ export async function initHistory() {
             displayShot(currentShotIndex - 1);
         }
     };
+
+    // Kick off the fast newest-shot paint alongside the slower list+IDB sync
+    // instead of behind it -- the chart no longer waits on caching 20 shots
+    // it doesn't need yet just to show shot #0.
+    const fastPaintPromise = paintNewestShotFast();
+
+    await loadShotHistory();
+    const fastShot = await fastPaintPromise;
+
+    // Reuse the already-fetched full record so displayShot() below skips its
+    // own network fetch (and the paintedShotId guard skips the redraw too).
+    if (fastShot && shots.length > 0 && shots[0].id === fastShot.id) {
+        shots[0] = fastShot;
+    }
 
     if (shots.length > 0) {
         displayShot(0);
