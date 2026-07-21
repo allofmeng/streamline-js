@@ -1321,6 +1321,16 @@ export async function initializeProfileSelector() {
         console.warn('Chart element not found; skipping chart init');
     }
 
+    // availableProfiles is module state in profileManager.js and isn't cleared
+    // until the fetch above actually resolves (see loadAvailableProfiles), so
+    // on a return visit within the same session it still holds last visit's
+    // data right now. Paint immediately from that instead of waiting on the
+    // network round trip -- this is what was making the chart take 1-2s to
+    // appear on every nav in/out. Reconciled below once the real fetch lands.
+    if (Object.keys(availableProfiles).length > 0) {
+        renderProfiles();
+    }
+
     const profileLoadStatus = await profilePromise;
     console.log('initializeProfileSelector: Profile manager initialized, status:', profileLoadStatus);
 
