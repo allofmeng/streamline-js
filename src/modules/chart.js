@@ -1,6 +1,7 @@
 import { logger } from './logger.js';
 import { getTranslation } from './i18n.js';
 import { hasMachineGFlow, createScaleFlowResolver } from './historical-gflow.js';
+import { EXP_TOP_FLOOR, computeExpandedTopYMax, computeExpandedTempRange } from './chart-autoscale.js';
 
 // Maps internal trace key → i18n key used for the chart label.
 const LABEL_KEYS = {
@@ -112,6 +113,47 @@ const baseChartData = {
 
 // Create chartData with initial values
 const chartData = JSON.parse(JSON.stringify(baseChartData));
+
+// ============================================================================
+// Expanded (full-screen) live charts.
+// Tapping the main chart opens a full-screen overlay with two stacked plots:
+//   TOP    (2/3 height) = Pressure / Flow / their targets / GFlow, on one axis
+//                         with a damped auto Y-max (grows to fit up to ~20+ ml/s,
+//                         never snaps around) so fast flows are visible.
+//   BOTTOM (1/3 height) = Group + Mix temperature vs their targets, on a
+//                         +5/−10 °C band around every GROUP target seen this
+//                         shot (target 80 -> 70..85; if it then drops to 70 the
+//                         band widens to 60..85), hard-capped at 105 °C. Every
+//                         other line (group actual, mix actual, mix target)
+//                         only widens the band so it never clips; only the
+//                         group target anchors it — the mix "target" is really
+//                         the DE1's servo setpoint and would wreck the band.
+// Fed from the SAME live frames as the main chart, plus a rebuild from chartData
+// when a historical shot is loaded — so it always mirrors what's on screen.
+// The band/axis maths live in chart-autoscale.js (DOM-free, node-tested).
+// ============================================================================
+let expandedOpen = false;      // overlay currently visible
+let expandedInited = false;    // Plotly.newPlot done since last open (containers were 0-size)
+let expandedTopYMax = EXP_TOP_FLOOR;  // damped, monotonic-within-shot top-axis max
+let helpBtnPrevDisplay = '';   // help FAB display value to restore when overlay closes
+// Bumped whenever expandedSeries mutates; drives layout.datarevision. The
+// series arrays are mutated in place, so Plotly.react's reference-equality
+// diff would otherwise treat every re-render as a data no-op and the overlay
+// froze at whatever existed at tap time.
+let expandedDataRev = 0;
+
+// Live series in REAL units (bar / ml·s⁻¹ / g·s⁻¹ / °C), cleared per shot.
+const expandedSeries = {
+    pressure:       { x: [], y: [] },
+    flow:           { x: [], y: [] },
+    targetPressure: { x: [], y: [] },
+    targetFlow:     { x: [], y: [] },
+    gflow:          { x: [], y: [] },
+    groupTemp:      { x: [], y: [] },
+    mixTemp:        { x: [], y: [] },
+    targetTemp:     { x: [], y: [] },
+    targetMixTemp:  { x: [], y: [] },
+};
 
 const baseLayout = {
     plot_bgcolor: '#0d0e14',
@@ -430,6 +472,7 @@ function flushChart() {
             'xaxis.dtick': dtickValue
         });
         appliedRangeMax = rangeMax;
+        if (expandedOpen) renderExpandedCharts();
         return;
     }
 
@@ -449,11 +492,223 @@ function flushChart() {
         traces.map((_, i) => i)
     );
     appliedRangeMax = rangeMax;
+    if (expandedOpen) renderExpandedCharts();
 }
 
 function scheduleChartFlush() {
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(flushChart);
+}
+
+// ---- Expanded (full-screen) charts -----------------------------------------
+
+function resetExpandedData() {
+    for (const k in expandedSeries) { expandedSeries[k].x = []; expandedSeries[k].y = []; }
+    expandedTopYMax = EXP_TOP_FLOOR;
+    expandedDataRev++; // a cleared overlay must also redraw
+}
+
+// Append one live frame (real units). `time` is seconds since shot start.
+function pushExpandedFrame(time, data, gflowY) {
+    const push = (s, v) => {
+        if (typeof v === 'number' && isFinite(v)) { s.x.push(time); s.y.push(v); }
+    };
+    push(expandedSeries.pressure, data.pressure);
+    push(expandedSeries.flow, data.flow);
+    push(expandedSeries.targetPressure, data.targetPressure);
+    push(expandedSeries.targetFlow, data.targetFlow);
+    if (typeof gflowY === 'number' && isFinite(gflowY)) {
+        expandedSeries.gflow.x.push(time); expandedSeries.gflow.y.push(gflowY);
+    }
+    push(expandedSeries.groupTemp, data.groupTemperature);
+    push(expandedSeries.mixTemp, data.mixTemperature);
+    // Only record a target once the machine reports one (>0) — avoids a spurious
+    // 0 °C target dragging the band down.
+    if (typeof data.targetGroupTemperature === 'number' && data.targetGroupTemperature > 0) {
+        expandedSeries.targetTemp.x.push(time);
+        expandedSeries.targetTemp.y.push(data.targetGroupTemperature);
+    }
+    if (typeof data.targetMixTemperature === 'number' && data.targetMixTemperature > 0) {
+        expandedSeries.targetMixTemp.x.push(time);
+        expandedSeries.targetMixTemp.y.push(data.targetMixTemperature);
+    }
+    expandedDataRev++;
+}
+
+// Mirror the current chartData (populated by a historical-shot load) into the
+// expanded series. chartData stores temperatures scaled to /10 of °C, so ×10
+// recovers real °C. `mixSeries` / `mixTargetSeries` carry the Mix Temp and Mix
+// Target lines (real °C) separately: the main chart deliberately has no mix
+// traces, so they must not enter chartData (that would corrupt the main chart's
+// extendTraces index map).
+function rebuildExpandedFromChartData(mixSeries = null, mixTargetSeries = null) {
+    resetExpandedData();
+    const copy = (dst, src) => { dst.x = (src.x || []).slice(); dst.y = (src.y || []).slice(); };
+    copy(expandedSeries.pressure, chartData.pressure);
+    copy(expandedSeries.flow, chartData.flow);
+    copy(expandedSeries.targetPressure, chartData.targetPressure);
+    copy(expandedSeries.targetFlow, chartData.targetFlow);
+    copy(expandedSeries.gflow, chartData.weight);
+    expandedSeries.groupTemp.x = (chartData.groupTemperature.x || []).slice();
+    expandedSeries.groupTemp.y = (chartData.groupTemperature.y || []).map(v => v * 10);
+    expandedSeries.targetTemp.x = (chartData.targetTemperature.x || []).slice();
+    expandedSeries.targetTemp.y = (chartData.targetTemperature.y || []).map(v => v * 10);
+    if (mixSeries) {
+        expandedSeries.mixTemp.x = mixSeries.x.slice();
+        expandedSeries.mixTemp.y = mixSeries.y.slice();
+    }
+    if (mixTargetSeries) {
+        expandedSeries.targetMixTemp.x = mixTargetSeries.x.slice();
+        expandedSeries.targetMixTemp.y = mixTargetSeries.y.slice();
+    }
+    expandedDataRev++;
+    if (expandedOpen) renderExpandedCharts();
+}
+
+function expandedAxisColors(theme) {
+    const dark = theme === 'dark';
+    return {
+        paper: dark ? '#0d0e14' : '#ffffff',
+        grid: dark ? '#3D4255' : '#E0E0E0',
+        line: dark ? '#606579' : '#959595',
+        font: dark ? '#9aa0b3' : '#606579',
+    };
+}
+
+function expandedLayout(theme, yRange, isTemp) {
+    const c = expandedAxisColors(theme);
+    return {
+        paper_bgcolor: c.paper,
+        plot_bgcolor: c.paper,
+        font: { color: c.font, size: 18 },
+        // Overlay geometry. The legend is the chart's key and it is read at
+        // arm's length from the machine, so it runs at font 26 rather than the
+        // 15 used in the embedded charts. margin.t 88 is explicit room for that
+        // taller legend row plus clear air above it (stated outright, so
+        // Plotly's margin auto-expand does not have to guess and shift the plot
+        // area between renders). The top chart's margin.b 48 is the matched
+        // pair to the larger legend: the two chart containers touch, so the
+        // temperature chart's legend sits directly under the top chart's x-axis
+        // tick labels and at the old 20 it overlapped them. Shrinking either
+        // value on its own brings the overlap back.
+        margin: { l: 70, r: 28, t: 88, b: isTemp ? 52 : 48, pad: 0 },
+        xaxis: {
+            gridcolor: c.grid, linecolor: c.line, tickcolor: c.line,
+            fixedrange: true, autorange: true, zeroline: false,
+            title: isTemp ? { text: 'seconds', font: { size: 15 } } : undefined,
+        },
+        yaxis: {
+            gridcolor: c.grid, linecolor: c.line, tickcolor: c.line,
+            fixedrange: true, range: yRange, zeroline: false,
+            ticksuffix: isTemp ? '°' : '',
+        },
+        showlegend: true,
+        // y 1.07 with yanchor 'bottom': the gap below the legend is (y - 1) x the
+        // plot height, so 1.07 keeps the legend close to the chart it labels now
+        // that it is taller. The air above it comes from margin.t instead.
+        legend: { orientation: 'h', y: 1.07, yanchor: 'bottom', x: 0, xanchor: 'left', font: { size: 26 } },
+        autosize: true,
+        // Data arrays are mutated in place, so Plotly.react's reference diff
+        // sees "unchanged" — datarevision is Plotly's documented remedy and is
+        // what makes the overlay LIVE. (newPlot ignores it harmlessly.)
+        datarevision: expandedDataRev,
+    };
+}
+
+function expandedTopTraces() {
+    const s = expandedSeries;
+    return [
+        { x: s.pressure.x, y: s.pressure.y, name: 'Pressure (bar)', mode: 'lines', line: { color: '#17c29a', width: 3 }, hoverinfo: 'skip' },
+        { x: s.flow.x, y: s.flow.y, name: 'Flow (ml/s)', mode: 'lines', line: { color: '#0358cf', width: 3 }, hoverinfo: 'skip' },
+        { x: s.gflow.x, y: s.gflow.y, name: 'GFlow (g/s)', mode: 'lines', line: { color: '#C7A58D', width: 3 }, hoverinfo: 'skip' },
+        { x: s.targetPressure.x, y: s.targetPressure.y, name: 'Target Pressure', mode: 'lines', line: { color: '#8fd3bf', dash: 'dot', width: 2 }, hoverinfo: 'skip' },
+        { x: s.targetFlow.x, y: s.targetFlow.y, name: 'Target Flow', mode: 'lines', line: { color: '#7fa8ec', dash: 'dot', width: 2 }, hoverinfo: 'skip' },
+    ];
+}
+
+function expandedTempTraces() {
+    const s = expandedSeries;
+    const traces = [
+        { x: s.groupTemp.x, y: s.groupTemp.y, name: 'Group °C', mode: 'lines', line: { color: '#ff97a1', width: 3 }, hoverinfo: 'skip' },
+        // Amber, CVD-validated against the group pink (worst ΔE 14.7, ≥12 req);
+        // solid 3px = "actual" convention (targets are the dotted ones).
+        { x: s.mixTemp.x, y: s.mixTemp.y, name: 'Mix °C', mode: 'lines', line: { color: '#d9822b', width: 3 }, hoverinfo: 'skip' },
+        // Two targets now, so "Target °C" would be ambiguous — say which is which.
+        { x: s.targetTemp.x, y: s.targetTemp.y, name: 'Group Target °C', mode: 'lines', line: { color: '#f0b8bd', dash: 'dot', width: 2 }, hoverinfo: 'skip' },
+    ];
+    // Mix target: the amber lightened toward white the same way the group target
+    // is a lightened group pink, thin + dashed = the "target, not measurement"
+    // convention. Dashed (not dotted) so the two pale target lines stay apart on
+    // form as well as hue. Older shots have no targetMixTemperature — omit the
+    // trace entirely rather than draw an empty/zero line.
+    if (s.targetMixTemp.y.length) {
+        traces.push({
+            x: s.targetMixTemp.x, y: s.targetMixTemp.y, name: 'Mix Target °C', mode: 'lines',
+            line: { color: '#e8b480', dash: 'dash', width: 2 }, hoverinfo: 'skip',
+        });
+    }
+    return traces;
+}
+
+function renderExpandedCharts() {
+    if (!expandedOpen) return;
+    const topEl = document.getElementById('expanded-flow-chart');
+    const tempEl = document.getElementById('expanded-temp-chart');
+    if (!topEl || !tempEl) return;
+    const theme = localStorage.getItem('theme') || 'light';
+    const cfg = { displayModeBar: false, responsive: true, staticPlot: false };
+    expandedTopYMax = computeExpandedTopYMax(
+        [expandedSeries.pressure.y, expandedSeries.flow.y, expandedSeries.targetPressure.y,
+         expandedSeries.targetFlow.y, expandedSeries.gflow.y],
+        expandedTopYMax
+    );
+    const topLayout = expandedLayout(theme, [0, expandedTopYMax], false);
+    const tempLayout = expandedLayout(theme,
+        computeExpandedTempRange(expandedSeries.targetTemp.y, expandedSeries.groupTemp.y,
+                                 expandedSeries.mixTemp.y, expandedSeries.targetMixTemp.y), true);
+    if (!expandedInited) {
+        Plotly.newPlot(topEl, expandedTopTraces(), topLayout, cfg);
+        Plotly.newPlot(tempEl, expandedTempTraces(), tempLayout, cfg);
+        expandedInited = true;
+    } else {
+        Plotly.react(topEl, expandedTopTraces(), topLayout, cfg);
+        Plotly.react(tempEl, expandedTempTraces(), tempLayout, cfg);
+    }
+}
+
+export function isExpandedChartOpen() { return expandedOpen; }
+
+export function openExpandedChart() {
+    const overlay = document.getElementById('expanded-chart-overlay');
+    if (!overlay) return;
+    expandedOpen = true;
+    expandedInited = false; // containers were display:none (0-size) — force a fresh plot
+    overlay.style.display = 'flex';
+    // The help FAB floats above everything (z-8000, outside the scaled container);
+    // tuck it away for a clean full-screen view, remembering its prior state.
+    const help = document.getElementById('help-overlay-btn');
+    if (help) { helpBtnPrevDisplay = help.style.display; help.style.display = 'none'; }
+    // Plot after the browser has laid the containers out at real size.
+    requestAnimationFrame(() => {
+        renderExpandedCharts();
+        requestAnimationFrame(() => {
+            const t = document.getElementById('expanded-flow-chart');
+            const b = document.getElementById('expanded-temp-chart');
+            try { if (t) Plotly.Plots.resize(t); if (b) Plotly.Plots.resize(b); } catch (e) { /* not yet plotted */ }
+        });
+    });
+}
+
+export function closeExpandedChart() {
+    expandedOpen = false;
+    const overlay = document.getElementById('expanded-chart-overlay');
+    if (overlay) overlay.style.display = 'none';
+    const help = document.getElementById('help-overlay-btn');
+    if (help) help.style.display = helpBtnPrevDisplay;
+    const t = document.getElementById('expanded-flow-chart');
+    const b = document.getElementById('expanded-temp-chart');
+    try { if (t) Plotly.purge(t); if (b) Plotly.purge(b); } catch (e) { /* nothing to purge */ }
+    expandedInited = false;
 }
 
 export function setCurrentProfile(profile) {
@@ -603,6 +858,8 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
     // animation frame in flushChart(). A step marker forces a full react.
     pendingTime = time;
     if (stepMarkerAdded) pendingReact = true;
+    // Mirror this frame into the expanded (full-screen) charts, in real units.
+    pushExpandedFrame(time, data, weightY);
     scheduleChartFlush();
 }
 
@@ -632,6 +889,7 @@ function resetChartState() {
     pendingReact = false;
     appliedRangeMax = null;
     isLiveShot = false;
+    resetExpandedData();
 
     // Clear shapes and annotations from BOTH layouts
     // This prevents issues when theme is switched between shots
@@ -715,6 +973,14 @@ export function plotHistoricalShot(measurements, workflow = null) {
     const useMachineGFlow = hasMachineGFlow(measurements);
     const resolveScaleFlow = createScaleFlowResolver(SMOOTHING_FACTOR);
 
+    // Mix Temp + Mix Target for the EXPANDED overlay only (real °C, NOT
+    // /10-scaled): the main chart deliberately has no mix traces, so these must
+    // stay out of chartData/tempChartData (extendTraces index map [0..5] would
+    // corrupt). Shots recorded before the field existed simply leave histMixTarget
+    // empty, and the trace is then omitted.
+    const histMix = { x: [], y: [] };
+    const histMixTarget = { x: [], y: [] };
+
     let historicalCurrentProfileFrame = -1; // Track current profileFrame for historical data
     let histLastTargetPressure = null;      // for the vertical-jump anchor at step boundaries
     let histLastTargetFlow = null;
@@ -764,6 +1030,14 @@ export function plotHistoricalShot(measurements, workflow = null) {
                         if (useMachineGFlow && typeof machineData.weightFlow === 'number' && isFinite(machineData.weightFlow)) {
                             tempChartData.weight.x.push(time);
                             tempChartData.weight.y.push(machineData.weightFlow);
+                        }
+                        if (typeof machineData.mixTemperature === 'number' && isFinite(machineData.mixTemperature)) {
+                            histMix.x.push(time); histMix.y.push(machineData.mixTemperature); // real °C
+                        }
+                        // >0 gate mirrors the live path: a reported 0 °C target is
+                        // "no target", not a real setpoint, and would drag the band down.
+                        if (typeof machineData.targetMixTemperature === 'number' && machineData.targetMixTemperature > 0) {
+                            histMixTarget.x.push(time); histMixTarget.y.push(machineData.targetMixTemperature); // real °C
                         }
                     }
 
@@ -826,6 +1100,14 @@ export function plotHistoricalShot(measurements, workflow = null) {
                             tempChartData.weight.x.push(time);
                             tempChartData.weight.y.push(machineData.weightFlow);
                         }
+                        if (typeof machineData.mixTemperature === 'number' && isFinite(machineData.mixTemperature)) {
+                            histMix.x.push(time); histMix.y.push(machineData.mixTemperature); // real °C
+                        }
+                        // >0 gate mirrors the live path: a reported 0 °C target is
+                        // "no target", not a real setpoint, and would drag the band down.
+                        if (typeof machineData.targetMixTemperature === 'number' && machineData.targetMixTemperature > 0) {
+                            histMixTarget.x.push(time); histMixTarget.y.push(machineData.targetMixTemperature); // real °C
+                        }
                     }
                 }
             }
@@ -854,6 +1136,8 @@ export function plotHistoricalShot(measurements, workflow = null) {
     });
     // x arrays are built in time order, so the last element is the max — no
     // need to spread the whole array through Math.max.
+    // Mirror the loaded shot into the expanded (full-screen) charts too.
+    rebuildExpandedFromChartData(histMix, histMixTarget);
     let maxTime = 0;
     for (const traceName in tempChartData) {
         const x = tempChartData[traceName].x;

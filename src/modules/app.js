@@ -2,7 +2,7 @@ import { connectWebSocket, getWorkflow, connectScaleWebSocket, ensureGatewayMode
 import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
-import { initI18n, getTranslation, fitTelemetry } from './i18n.js';
+import { initI18n, getTranslation, fitTelemetry, fitTextToWidth } from './i18n.js';
 import * as history from './history.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
@@ -12,6 +12,9 @@ import { initWaterTankSocket } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
 import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
+import { setMachineModel, isBengleMachine } from './machine.js';
+import { resolveMilkProbePresence } from './steam-mode.js';
+import { isCupWarmerOn, readCupWarmerTarget, resolvePrewarm, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { initTimePicker } from './time-picker-modal.js';
 import { openDB, setSetting } from './idb.js';
@@ -538,6 +541,28 @@ function applyScreensaverAction(state) {
     if (!isMachineAsleep(state)) ui.clearWakeRequest();
 }
 
+// ── Milk probe (Bengle) ──────────────────────────────────────────────────────
+// Fed one snapshot milkTemperature per frame (contract: 0/absent = no probe or
+// no reading). Presence survives brief 0-glitches and drops only after a
+// sustained absence (resolveMilkProbePresence, steam-mode.js). The main-screen
+// steam tile consumes this through ui.setMilkProbePresent (Milk-mode gating +
+// probe-loss un-arm); the settings steam page through window.app.getMilkProbe
+// (render-time state) and window.onMilkProbeUpdate (live ticks + presence flips).
+let milkProbeState = { present: false, lastPositiveMs: null };
+let latestMilkTemp = 0; // last positive reading while present; 0 when absent
+function updateMilkProbeFromSnapshot(tempC) {
+    milkProbeState = resolveMilkProbePresence(milkProbeState, tempC, Date.now());
+    if (typeof tempC === 'number' && isFinite(tempC) && tempC > 0) {
+        latestMilkTemp = tempC;
+    } else if (!milkProbeState.present) {
+        latestMilkTemp = 0;
+    }
+    ui.setMilkProbePresent(milkProbeState.present); // no-op until presence flips
+    ui.updateMilkTelemetry(milkProbeState.present, latestMilkTemp); // top-row Milk °C field, per frame
+    window.onMilkProbeUpdate?.(milkProbeState.present, latestMilkTemp);
+}
+window.app.getMilkProbe = () => ({ present: milkProbeState.present, temperature: latestMilkTemp });
+
 function handleData(data) {
     if (!data?.state) {
         logger.warn('Received WebSocket message with missing state:', data);
@@ -729,6 +754,7 @@ function handleData(data) {
     });
     ui.updateSleepButton(state);
     ui.updateTemperatures({ mix: data.mixTemperature, group: data.groupTemperature, steam: data.steamTemperature });
+    updateMilkProbeFromSnapshot(data.milkTemperature);
 
     // Update Chart and Shot Data Table
     if (MachineState.ESPRESSO.includes(state)) {
@@ -750,7 +776,13 @@ function handleData(data) {
                     historyLabelEl.textContent = getTranslation('NEWEST');
                 }
             }
-            chart.updateChart(shotStartTime, data, latestScaleWeight, latestScaleWeightFlow);
+            // Bengle: use the machine's true gravimetric flow (GFlow) straight from
+            // the snapshot — no local delta+EMA smoothing. Non-Bengle keeps the
+            // external-scale path (ScaleSnapshot server-smoothed g/s → EMA fallback).
+            // `?? null` (not || 0): 0 is a real GFlow value; only an ABSENT field
+            // may fall through to the chart's local EMA.
+            const chartWeightFlow = isBengleMachine() ? (data.weightFlow ?? null) : latestScaleWeightFlow;
+            chart.updateChart(shotStartTime, data, latestScaleWeight, chartWeightFlow);
             shotData.updateShotData(data, latestScaleWeight);
         }
     } else {
@@ -1204,8 +1236,36 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
             api.resyncIfDrifted(api.HOT_WATER_TEMP_LAST_VALUE_KEY, hotwatersettings.targetTemperature, api.setTargetHotWaterTemp)
                 .catch(e => logger.warn('Hot water temp resync failed:', e));
         }
+
+        // Resolve the machine model BEFORE the first updateSteamDisplay:
+        // Bengle-only steam UI (an armed milk stop persisted in the workflow)
+        // must be able to restore visually on boot, so the Bengle gate has to
+        // be set before the steam display first renders.
+        let machineInfo = null;
+        try {
+            machineInfo = await getMachineInfo();
+        } catch (e) {
+            logger.warn('Could not fetch machine info; Bengle gating stays off:', e);
+        }
+        setMachineModel(machineInfo?.model ?? null);
+
+        // Bengle-only header quick-toggle for the cup warmer. Fails closed: a
+        // failed machine-info fetch leaves the gate off and the button hidden.
+        if (isBengleMachine()) initCupWarmerToggle();
+
         if (steamsettings) {
-            ui.updateSteamDisplay({ targetSteamDuration: steamsettings.duration, targetSteamFlow: steamsettings.flow });
+            // Workflow steamSettings speaks {flow, duration, ...} while
+            // updateSteamDisplay speaks {targetSteamFlow, targetSteamDuration},
+            // so map flow explicitly. This boot paint is the ONLY feed of the
+            // persisted flow into the tile: the shot-settings WS carries no
+            // steam flow field, and the old "restore selected preset" push in
+            // setSteamFlowPresetsFromMachineModel is gone (it was
+            // resetting the stored flow, not painting it).
+            ui.updateSteamDisplay({
+                ...steamsettings,
+                ...(typeof steamsettings.flow === 'number' && isFinite(steamsettings.flow)
+                    ? { targetSteamFlow: steamsettings.flow } : {}),
+            });
             api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings.duration, api.setTargetSteamDuration)
                 .catch(e => logger.warn('Steam duration resync failed:', e));
             api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings.flow, api.setTargetSteamFlow)
@@ -1215,14 +1275,13 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
         // presets based on machine model (group-head size).
         try {
-            const machineInfo = await getMachineInfo();
             if (machineInfo && machineInfo.GHC === false) {
                 isNonGhcMachine = true;
                 ui.showGhcControls();
             }
-            await ui.setSteamFlowPresetsFromMachineModel(machineInfo?.model);
+            await ui.setSteamFlowPresetsFromMachineModel(machineInfo?.model ?? null);
         } catch (e) {
-            logger.warn('Could not fetch machine info for GHC check / steam preset init:', e);
+            logger.warn('Could not init GHC controls / steam presets:', e);
             // Fall back to standard presets so the UI still works offline
             await ui.setSteamFlowPresetsFromMachineModel(null);
         }
@@ -1243,6 +1302,107 @@ async function isShotBlockedByNoScale() {
     }
     ui.showToast('No scale connected — shot blocked', 4000, 'error');
     return true;
+}
+
+// ── Bengle cup-warmer quick toggle (header button) ───────────────────────────
+// Reflects/toggles the warmer live via /machine/cupWarmer (temperature 0 = off).
+// Uses the same target the Settings → Cup Warmer page stores in localStorage.
+//
+// On/off state is NOT kept here: this button and the Settings → Cup Warmer
+// page both render from the ONE shared snapshot in ./cup-warmer.js (the old
+// boot-seeded local boolean was one of three diverging copies — audit I1 /
+// bench checklist 2b). initCupWarmerToggle runs from loadInitialData on boot
+// AND on every machine (re)connect/wake, so a reconnect invalidates the
+// snapshot and re-seeds it fresh; the subscription below repaints the button
+// whenever anyone (this button, the Settings page, its ~5 s poll) updates the
+// store — #main-page is display-toggled, never rebuilt, so the element and
+// this one subscription live for the whole session.
+async function initCupWarmerToggle() {
+    invalidateCupWarmerState(); // (re)connect: drop any stale snapshot before re-seeding
+    const btn = document.getElementById('cupwarmer-toggle-btn');
+    if (!btn) return;
+    btn.style.display = '';
+    try {
+        const data = await api.getCupWarmer();
+        setCupWarmerState(data || { temperature: 0 });
+    } catch (e) {
+        // Model already said Bengle — keep the button. The snapshot stays null
+        // (renders as "off") and the Settings page refetches on entry.
+    }
+    if (!btn.dataset.wired) { // idempotent: init runs again on reconnect flows
+        btn.dataset.wired = '1';
+        btn.addEventListener('click', toggleCupWarmerFromHeader);
+    }
+    startCupWarmerHeaderPoll();
+}
+
+// The whole point of a scheduled pre-warm is that the FIRMWARE starts the mat on
+// its own — typically at 06:30, with the tablet sitting on the main page and
+// nobody touching it. Nothing else on that page ever refetches the cup warmer
+// (the ~5 s poll belongs to the Settings page), so without this the button would
+// only ever learn about a pre-warm on a reconnect: the "Pre-warming" label would
+// essentially never appear in the one scenario it exists for.
+//
+// A minute is the right cadence — the firmware's lead time is minute-granular —
+// and it costs one GET/min. On firmware without the registers the app latches the
+// failed register read per connection, so this does not re-enter a read-timeout
+// ladder every tick. The revalidate folds into the SHARED store, so when the
+// Settings page is open its faster poll simply supersedes this one.
+let cupWarmerHeaderPollTimer = null;
+const CUP_WARMER_HEADER_POLL_MS = 60_000;
+function startCupWarmerHeaderPoll() {
+    if (cupWarmerHeaderPollTimer !== null) return; // idempotent across reconnects
+    cupWarmerHeaderPollTimer = setInterval(async () => {
+        try {
+            const data = await api.getCupWarmer();
+            if (data) setCupWarmerState(data);
+        } catch (e) {
+            // Transient/disconnected: keep the last snapshot rather than
+            // inventing an "off". A reconnect re-seeds it via initCupWarmerToggle.
+        }
+    }, CUP_WARMER_HEADER_POLL_MS);
+}
+onCupWarmerStateChange(() => updateCupWarmerButton());
+function updateCupWarmerButton() {
+    const btn = document.getElementById('cupwarmer-toggle-btn');
+    if (!btn) return;
+    const state = getCupWarmerState();
+    const on = isCupWarmerOn(state?.temperature);
+    // A scheduled pre-warm runs the mat BY ITSELF — at 06:30, with the machine
+    // still asleep and the boilers cold. The button would just light up with no
+    // explanation, which reads as a bug. MatPreheatActive is the firmware saying
+    // "that was me", so we say so on the button. It is null on firmware without
+    // the register, and a null is never fabricated into a `true` — old firmware
+    // simply keeps the plain "Warmer" label.
+    const prewarming = resolvePrewarm(state).active;
+    const labelKey = prewarming ? 'Pre-warming' : 'Warmer';
+    if (btn.dataset.i18nKey !== labelKey) {
+        // Swap the i18n KEY too, not just the text: translatePage() rewrites
+        // textContent from the key on every language change, and would otherwise
+        // silently revert the label (the #sleep-button precedent in ui.js).
+        btn.setAttribute('data-i18n-key', labelKey);
+        btn.textContent = getTranslation(labelKey);
+        fitTextToWidth(btn); // "Pre-warming" is much longer than "Warmer" in a fixed box
+    }
+    btn.setAttribute('aria-label', getTranslation(
+        prewarming ? 'Cup warmer pre-warming for a scheduled wake' : 'Toggle Cup Warmer',
+    ));
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.style.backgroundColor = on ? 'var(--mimoja-blue)' : '';
+    btn.style.color = on ? '#ffffff' : '';
+}
+async function toggleCupWarmerFromHeader() {
+    const target = readCupWarmerTarget(localStorage.getItem(CUP_WARMER_TARGET_KEY));
+    const next = !isCupWarmerOn(getCupWarmerState()?.temperature);
+    try {
+        await api.setCupWarmer(next ? target : 0);
+        // Store notify repaints this button and any open Settings page; merging
+        // keeps the last currentTemperature reading visible there.
+        patchCupWarmerState({ temperature: next ? target : 0 });
+        ui.showToast(next ? 'Cup warmer on' : 'Cup warmer off', 2000, 'success');
+    } catch (e) {
+        ui.showToast('Failed to set cup warmer', 3000, 'error');
+    }
 }
 
 // Delegated listener on document — survives all DOM replacements, no re-wiring needed
@@ -1537,12 +1697,33 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// Tap the main chart (or its expand button) to open the full-screen live charts;
+// Back button / Escape closes it. Bound once at startup.
+function wireExpandedChart() {
+    const open = () => { try { chart.openExpandedChart(); } catch (e) { console.error('openExpandedChart', e); } };
+    const close = () => { try { chart.closeExpandedChart(); } catch (e) { console.error('closeExpandedChart', e); } };
+
+    const expandBtn = document.getElementById('chart-expand-btn');
+    if (expandBtn) expandBtn.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+
+    const chartEl = document.getElementById('plotly-chart');
+    if (chartEl) chartEl.addEventListener('click', open);
+
+    const backBtn = document.getElementById('expanded-chart-back');
+    if (backBtn) backBtn.addEventListener('click', close);
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && chart.isExpandedChartOpen && chart.isExpandedChartOpen()) close();
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         setDebug(true);
         logger.info('App DOMContentLoaded: Starting initialization.');
 
         chart.initChart();
+        wireExpandedChart();
         logger.info('App DOMContentLoaded: Chart initialized.');
 
         await initI18n();

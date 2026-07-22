@@ -1,6 +1,8 @@
-import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
+import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, setStopAtTemperature, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
+import { isBengleMachine, isBengleModel } from './machine.js';
+import { STEAM_FLOW_PRESETS_BY_MODEL, MILK_STOP_PRESETS, resolveSteamFlowPresetsForModel, resolveSteamTileMode, milkTelemetryText, steamFlowHighlightIndex } from './steam-mode.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
@@ -58,17 +60,19 @@ const DEFAULT_HOT_WATER_VOL_PRESETS = [50, 100, 150, 200];
 
 let currentSteamDuration = 0;
 let currentSteamFlow = 1.5;
-let steamMode = 'time'; // 'time' or 'flow'
+let steamMode = 'time'; // 'time' | 'flow' | 'temperature' (temperature = milk auto-stop, Bengle only)
+let currentMilkStop = 60; // milk auto-stop target °C (workflow.stopAtTemperature)
+let milkProbePresent = false; // live probe presence, fed by app.js (setMilkProbePresent)
+let milkStopArmed = false;    // workflow stopAtTemperature > 0, as last seen/written
+let milkStopLostToProbe = false; // an armed Milk stop was un-armed by probe loss; restore it on probe return
 let steamTimePresets = [15, 30, 45, 60];
 let steamFlowPresets = [0.5, 1.0, 1.5, 2.0];
+let milkStopPresets = [...MILK_STOP_PRESETS]; // Milk-mode stop-target presets (°C), see steam-mode.js
 const DEFAULT_STEAM_TIME_PRESETS = [15, 30, 45, 60];
 const STEAM_TIME_PRESETS_KEY = 'steam-time-presets-user';
-// Machine-model-specific defaults for steam flow (ml/s). Resolved at boot via setSteamFlowPresetsFromMachineModel().
-const STEAM_FLOW_PRESETS_BY_MODEL = {
-    standard: [0.4, 0.5, 0.6, 0.8],  // DE1Pro, DE1XL, Bengle (default)
-    midGroup: [0.5, 0.8, 1.0, 1.2],  // Bengle 10A, DE1 XXL
-    highGroup: [0.8, 1.0, 1.2, 1.5], // Bengle 15A
-};
+const DEFAULT_MILK_STOP_PRESETS = [...MILK_STOP_PRESETS];
+// Machine-model-specific steam-flow preset groups live in steam-mode.js
+// (pure, node-tested). Resolved at boot via setSteamFlowPresetsFromMachineModel().
 let DEFAULT_STEAM_FLOW_PRESETS = [...STEAM_FLOW_PRESETS_BY_MODEL.standard];
 const STEAM_FLOW_PRESETS_KEY = 'steam-flow-presets-user';
 const STEAM_FLOW_PRESET_INDEX_KEY = 'steam-flow-preset-selected-index';
@@ -560,11 +564,85 @@ export function flashElement(element) {
     }
 }
 
+// ── Milk-probe gating for the steam tile (Bengle) ───────────────────────────
+// app.js feeds live probe presence here (same debounced tracker the settings
+// steam page consumes). The tile's mode pair follows availability — Milk|Flow
+// with the probe, Time|Flow without — and a probe loss un-arms an active milk
+// stop and lands the tile on the user's recorded Time/Off fallback, exactly
+// like the settings page. The shared skin-local keys keep both views agreeing.
+
+// Last non-temperature stop mode the user chose ('time'|'off') — recorded by
+// the settings page; what both views fall back to when the probe disappears.
+function readSteamStopFallback() {
+    try { return localStorage.getItem('streamline.steamStopModeFallback'); } catch (e) { return null; }
+}
+
+// Land the resolved stop mode on the fallback so the settings page (which
+// derives its mode from stopAtTemperature + this key) agrees with the tile.
+// A stop displaced by probe LOSS is restored by the tile itself on probe
+// return (setMilkProbePresent), which re-records 'temperature' then too.
+function recordSteamStopMode(mode) {
+    try { localStorage.setItem('streamline.steamStopMode', mode); } catch (e) { /* non-fatal */ }
+}
+
+// A stop mode the user picks BY HAND overrides any pending probe-loss restore.
+// The tile's toggle clears the marker inline (toggleSteamMode); the settings
+// page's stop-mode buttons (setSteamStopMode) call this — otherwise an Off/Time
+// stop chosen explicitly in Settings while the probe is away would be
+// overridden by the auto-re-arm when the probe returns.
+export function clearMilkStopProbeRestore() {
+    milkStopLostToProbe = false;
+}
+
+// Show the tile's mode pair: "Milk | Flow" while the milk stop is offerable,
+// else "Time | Flow" (non-Bengle, or Bengle with the probe absent/unplugged).
+function updateSteamModeOptions(milkAvailable) {
+    const timeEl = document.getElementById('steam-mode-time');
+    const milkEl = document.getElementById('steam-mode-milk');
+    if (timeEl) timeEl.style.display = milkAvailable ? 'none' : '';
+    if (milkEl) milkEl.style.display = milkAvailable ? '' : 'none';
+}
+
+export function setMilkProbePresent(present) {
+    if (present === milkProbePresent) return;
+    milkProbePresent = present;
+    if (!isBengleMachine()) return; // milk stop is Bengle-only; the tile pair is Time|Flow regardless
+    const fallback = readSteamStopFallback();
+    if (!present && (milkStopArmed || steamMode === 'temperature')) {
+        // Probe gone → the temperature stop can never trigger: un-arm it on the
+        // machine and record the fallback as the stop mode, so the settings
+        // page lands there too. Remember the displacement — probe return
+        // restores the stop the loss took away (below); a mode the user picks
+        // by hand in the meantime clears the marker (toggleSteamMode on the
+        // tile, setSteamStopMode in Settings via clearMilkStopProbeRestore).
+        milkStopArmed = false;
+        milkStopLostToProbe = true;
+        setStopAtTemperature(0).catch(e => logger.error(e));
+        recordSteamStopMode(fallback === 'off' ? 'off' : 'time');
+    }
+    if (present && milkStopLostToProbe) {
+        // Probe back → restore the Milk stop its loss displaced, exactly as a
+        // tap on the tile would: re-arm on the machine and re-record the mode.
+        // The resolver then pins 'temperature' and the shared display update
+        // below repaints the VALUE in the same breath — the tile must never
+        // sit on Milk while still showing the fallback's seconds.
+        milkStopLostToProbe = false;
+        milkStopArmed = true;
+        setStopAtTemperature(currentMilkStop).catch(e => logger.error(e));
+        recordSteamStopMode('temperature');
+    }
+    steamMode = resolveSteamTileMode(steamMode, present, milkStopArmed, fallback);
+    updateSteamModeOptions(present);
+    updateSteamDisplay({ targetSteamDuration: currentSteamDuration, targetSteamFlow: currentSteamFlow });
+    updateSteamPresetDisplay();
+}
+
 export function updateSteamDisplay(data) {
     const durationEl = document.getElementById('steam-duration-value');
     const flowEl = document.getElementById('steam-flow-value');
     const modeTimeEl = document.getElementById('steam-mode-time');
     const modeFlowEl = document.getElementById('steam-mode-flow');
+    const modeMilkEl = document.getElementById('steam-mode-milk');
 
     if (!durationEl || !flowEl || !modeTimeEl || !modeFlowEl) return;
 
@@ -574,24 +652,47 @@ export function updateSteamDisplay(data) {
     if (data.targetSteamFlow !== undefined) {
         currentSteamFlow = data.targetSteamFlow;
     }
+    // Milk auto-stop rides workflow.steamSettings.stopAtTemperature (0 = off).
+    // A non-zero target means an armed milk stop — but the tile only shows
+    // Milk mode while the stop is actually usable (Bengle + probe present);
+    // an armed value arriving with no probe stays gated off the display.
+    if (data.stopAtTemperature !== undefined) {
+        milkStopArmed = data.stopAtTemperature > 0;
+        if (milkStopArmed) currentMilkStop = Math.round(data.stopAtTemperature);
+        steamMode = resolveSteamTileMode(
+            steamMode, isBengleMachine() && milkProbePresent, milkStopArmed, readSteamStopFallback());
+    }
 
-    durationEl.textContent = `${currentSteamDuration}s`;
     flowEl.textContent = `${currentSteamFlow.toFixed(1)}`;
+    const ACTIVE = 'text-[var(--mimoja-blue-v2)]';
+    const INACTIVE = 'text-[var(--low-contrast-white)]';
+    if (modeMilkEl) modeMilkEl.className = INACTIVE;
 
-    if (steamMode === 'time') {
+    if (steamMode === 'temperature') {
+        durationEl.textContent = `${currentMilkStop}°C`;
         durationEl.classList.remove('text-[20px]');
         durationEl.classList.add('text-[26px]', 'font-bold', 'text-[var(--text-primary)]');
         flowEl.classList.remove('text-[26px]', 'font-bold');
         flowEl.classList.add('text-[20px]');
-        modeTimeEl.className = 'text-[var(--mimoja-blue-v2)]';
-        modeFlowEl.className = 'text-[var(--low-contrast-white)]';
+        if (modeMilkEl) modeMilkEl.className = ACTIVE;
+        modeTimeEl.className = INACTIVE;
+        modeFlowEl.className = INACTIVE;
+    } else if (steamMode === 'time') {
+        durationEl.textContent = `${currentSteamDuration}s`;
+        durationEl.classList.remove('text-[20px]');
+        durationEl.classList.add('text-[26px]', 'font-bold', 'text-[var(--text-primary)]');
+        flowEl.classList.remove('text-[26px]', 'font-bold');
+        flowEl.classList.add('text-[20px]');
+        modeTimeEl.className = ACTIVE;
+        modeFlowEl.className = INACTIVE;
     } else { // flow mode
+        durationEl.textContent = `${currentSteamDuration}s`;
         flowEl.classList.remove('text-[20px]');
         flowEl.classList.add('text-[26px]', 'font-bold', 'text-[var(--text-primary)]');
         durationEl.classList.remove('text-[26px]', 'font-bold');
         durationEl.classList.add('text-[20px]');
-        modeFlowEl.className = 'text-[var(--mimoja-blue-v2)]';
-        modeTimeEl.className = 'text-[var(--low-contrast-white)]';
+        modeFlowEl.className = ACTIVE;
+        modeTimeEl.className = INACTIVE;
     }
 }
 
@@ -600,6 +701,8 @@ function scheduleSteamApi() {
     steamApiDebounce = setTimeout(() => {
         if (steamMode === 'time') {
             setTargetSteamDuration(currentSteamDuration).catch(e => logger.error(e));
+        } else if (steamMode === 'temperature') {
+            setStopAtTemperature(currentMilkStop).catch(e => logger.error(e));
         } else {
             setTargetSteamFlow(currentSteamFlow).catch(e => logger.error(e));
         }
@@ -607,10 +710,12 @@ function scheduleSteamApi() {
 }
 
 function syncSteamPresets() {
-    if (steamMode === 'time') {
+    if (steamMode === 'temperature') {
+        syncPresetHighlight(document.getElementById('steam-milk-presets'), t => t === `${currentMilkStop}°c`);
+    } else if (steamMode === 'time') {
         syncPresetHighlight(document.getElementById('steam-presets'), t => t === `${currentSteamDuration}s`);
     } else {
-        syncPresetHighlight(document.getElementById('steam-flow-presets'), t => t === currentSteamFlow.toFixed(1));
+        highlightSteamFlowPreset(steamFlowHighlightIndex(steamFlowPresets, currentSteamFlow));
     }
 }
 
@@ -619,6 +724,8 @@ function incrementSteam() {
     if (steamPlusBtn) { flashPlusMinusButton(steamPlusBtn); }
     if (steamMode === 'time') {
         currentSteamDuration += 1;
+    } else if (steamMode === 'temperature') {
+        if (currentMilkStop < 85) currentMilkStop += 1;
     } else {
         if (currentSteamFlow < 2.5) {
             currentSteamFlow += 0.1;
@@ -636,6 +743,8 @@ function decrementSteam() {
         if (currentSteamDuration > 0) {
             currentSteamDuration -= 1;
         }
+    } else if (steamMode === 'temperature') {
+        if (currentMilkStop > 30) currentMilkStop -= 1;
     } else {
         if (currentSteamFlow > 0.4) {
             currentSteamFlow -= 0.1;
@@ -649,8 +758,27 @@ function decrementSteam() {
 function updateSteamPresetDisplay() {
     const timePresetContainer = document.getElementById('steam-presets');
     const flowPresetContainer = document.getElementById('steam-flow-presets');
+    const milkPresetContainer = document.getElementById('steam-milk-presets');
     if (!timePresetContainer || !flowPresetContainer) return;
 
+    if (steamMode === 'temperature') {
+        // Milk stop-target presets — same presentation as the Time presets.
+        // Only reachable with milk available (Bengle + probe present): the
+        // tile-mode resolver never lands on 'temperature' otherwise.
+        timePresetContainer.classList.add('hidden');
+        flowPresetContainer.classList.add('hidden');
+        if (!milkPresetContainer) return;
+        milkPresetContainer.classList.remove('hidden');
+        Array.from(milkPresetContainer.children).forEach((button, index) => {
+            if (milkStopPresets[index] !== undefined) {
+                button.textContent = `${milkStopPresets[index]}°c`;
+            }
+        });
+        syncPresetHighlight(milkPresetContainer, t => t === `${currentMilkStop}°c`);
+        return;
+    }
+
+    milkPresetContainer?.classList.add('hidden');
     if (steamMode === 'flow') {
         timePresetContainer.classList.add('hidden');
         flowPresetContainer.classList.remove('hidden');
@@ -660,8 +788,9 @@ function updateSteamPresetDisplay() {
                 button.textContent = `${presets[index].toFixed(1)}`;
             }
         });
-        const flowTarget = currentSteamFlow.toFixed(1);
-        syncPresetHighlight(flowPresetContainer, t => t === flowTarget);
+        // Highlight derives from the current flow VALUE (steam-mode.js, pure,
+        // node-tested); a hand-dialed non-preset flow honestly shows none.
+        highlightSteamFlowPreset(steamFlowHighlightIndex(presets, currentSteamFlow));
     } else { // time mode
         timePresetContainer.classList.remove('hidden');
         flowPresetContainer.classList.add('hidden');
@@ -675,13 +804,6 @@ function updateSteamPresetDisplay() {
         const timeTarget = `${currentSteamDuration}s`;
         syncPresetHighlight(timePresetContainer, t => t === timeTarget);
     }
-}
-
-function resolveSteamFlowPresetsForModel(model) {
-    const m = String(model || '').toLowerCase();
-    if (m.includes('15a')) return STEAM_FLOW_PRESETS_BY_MODEL.highGroup;
-    if (m.includes('10a') || m.includes('xxl')) return STEAM_FLOW_PRESETS_BY_MODEL.midGroup;
-    return STEAM_FLOW_PRESETS_BY_MODEL.standard;
 }
 
 async function persistSteamFlowPresets() {
@@ -857,6 +979,18 @@ function highlightSteamFlowPreset(index) {
 }
 
 export async function setSteamFlowPresetsFromMachineModel(model) {
+    // On a Bengle WITH the milk probe the main-screen steam-stop is by milk
+    // temperature: replace the "Time" toggle label with "Milk". (Duration stays
+    // settable in Settings.) Probe presence usually reports a beat after this
+    // runs, so the labels/mode are re-resolved on the presence flip too
+    // (setMilkProbePresent). The shared gate in machine.js was set from the
+    // same machine info at boot, before the first updateSteamDisplay; this
+    // uses the model arg directly so the label always matches the presets
+    // resolved below.
+    const bengle = isBengleModel(model);
+    const milkAvailable = bengle && milkProbePresent;
+    updateSteamModeOptions(milkAvailable);
+    steamMode = resolveSteamTileMode(steamMode, milkAvailable, milkStopArmed, readSteamStopFallback());
     try {
         await openDB();
         const baseline = resolveSteamFlowPresetsForModel(model);
@@ -881,25 +1015,60 @@ export async function setSteamFlowPresetsFromMachineModel(model) {
             ? storedIndex
             : 1; // second leftmost
 
-        updateSteamPresetDisplay();
-        highlightSteamFlowPreset(selectedSteamFlowPresetIndex);
-
-        const initialValue = steamFlowPresets[selectedSteamFlowPresetIndex];
-        if (typeof initialValue === 'number' && !isNaN(initialValue)) {
-            currentSteamFlow = initialValue;
-            updateSteamDisplay({ targetSteamFlow: initialValue });
-            try { await setTargetSteamFlow(initialValue); }
-            catch (e) { logger.warn('Could not push initial steam flow preset to machine:', e); }
+        // NO value-push on a routine boot. The persisted workflow flow is
+        // the source of truth; restoring the last-tapped preset's VALUE here
+        // (and PUTting it to the workflow) is exactly what silently reset a
+        // hand-dialed flow on every app load. The tapped index is persisted
+        // for preset UX only — it has no write authority over the flow, and
+        // the highlight below derives from the flow value instead.
+        //
+        // The one exception is a genuine machine-model change — one KNOWN
+        // model to a DIFFERENT known model: the stored flow was tuned for the
+        // old group head, so re-baseline it to the selected preset of the new
+        // group. At most once per switch, never on a routine boot, and never
+        // from the offline fallback (model == null is "unknown", not a model
+        // change — rebasing there would re-open the boot clobber whenever
+        // machine info transiently fails).
+        const modelChanged = Boolean(storedModel) && Boolean(model) && storedModel !== String(model);
+        if (modelChanged) {
+            const rebaseValue = steamFlowPresets[selectedSteamFlowPresetIndex];
+            if (typeof rebaseValue === 'number' && !isNaN(rebaseValue)) {
+                currentSteamFlow = rebaseValue;
+                updateSteamDisplay({ targetSteamFlow: rebaseValue });
+                try { await setTargetSteamFlow(rebaseValue); }
+                catch (e) { logger.warn('Could not push model-change steam-flow re-baseline:', e); }
+            }
         }
-        logger.info(`Steam flow presets initialized for model "${model}":`, steamFlowPresets, 'selected index:', selectedSteamFlowPresetIndex);
+
+        // Highlight is derived from the current flow value (a flow matching
+        // no preset shows no highlight) — never from the persisted tap index.
+        updateSteamPresetDisplay();
+        logger.info(`Steam flow presets initialized for model "${model}":`, steamFlowPresets, 'selected index:', selectedSteamFlowPresetIndex, modelChanged ? '(model changed — flow re-baselined)' : '');
     } catch (e) {
         logger.error('Failed to init steam flow presets from machine model:', e);
     }
 }
 
 function toggleSteamMode() {
-    steamMode = steamMode === 'time' ? 'flow' : 'time';
+    // Milk is only in the cycle while it's usable (Bengle + probe present);
+    // without the probe the tile cycles Time|Flow like a non-Bengle.
+    const modes = (isBengleMachine() && milkProbePresent) ? ['temperature', 'flow'] : ['time', 'flow'];
+    steamMode = modes[(modes.indexOf(steamMode) + 1) % modes.length];
+    milkStopLostToProbe = false; // a hand-picked mode overrides any probe-loss restore
     logger.info(`Steam mode switched to: ${steamMode}`);
+    // Milk auto-stop is active iff we're in temperature mode (writes the target
+    // or 0 to workflow.stopAtTemperature — same model as the Settings page).
+    // The skin-local stop-mode record moves with it so the settings page shows
+    // the same choice.
+    if (steamMode === 'temperature') {
+        milkStopArmed = true;
+        setStopAtTemperature(currentMilkStop).catch(e => logger.error(e));
+        recordSteamStopMode('temperature');
+    } else {
+        milkStopArmed = false;
+        setStopAtTemperature(0).catch(e => logger.error(e));
+        recordSteamStopMode(readSteamStopFallback() === 'off' ? 'off' : 'time');
+    }
     updateSteamDisplay({ targetSteamDuration: currentSteamDuration, targetSteamFlow: currentSteamFlow });
     updateSteamPresetDisplay();
 }
@@ -1212,6 +1381,7 @@ export function initUI(callbacks) {
     const steamModeToggle = document.getElementById('steam-mode-toggle');
     const steamPresets = document.getElementById('steam-presets');
     const steamFlowPresetsEl = document.getElementById('steam-flow-presets');
+    const steamMilkPresetsEl = document.getElementById('steam-milk-presets');
     const machineStateEl = document.getElementById('machine-status');
     if (tempPresets) {
         loadTempPresets(tempPresets); // async restore of user edits
@@ -1518,6 +1688,70 @@ export function initUI(callbacks) {
                         persistSteamTimePresets();
                         flashElement(button);
                         showToast(`Preset reverted to ${defaultValue}s`, 2000, 'info');
+                    } },
+                ]);
+            };
+
+            setupPressAndHold(button, clickCallback, longPressCallback);
+        });
+    }
+
+    if (steamMilkPresetsEl) {
+        updateSteamPresetDisplay();
+
+        Array.from(steamMilkPresetsEl.children).forEach((button, index) => {
+            button.classList.add('no-select', 'has-context-menu');
+            const clickCallback = () => {
+                const newValue = milkStopPresets[index];
+                if (newValue === undefined) return;
+
+                // Same write path as the tile's +/- and mode toggle: the milk
+                // stop rides workflow.steamSettings.stopAtTemperature. Feeding
+                // the value back through updateSteamDisplay keeps the armed
+                // flag and displayed target in step, exactly as a workflow
+                // echo would.
+                setStopAtTemperature(newValue).catch(e => logger.error(e));
+                updateSteamDisplay({ stopAtTemperature: newValue });
+
+                syncPresetHighlight(steamMilkPresetsEl, t => t === button.textContent.trim());
+                flashElement(document.getElementById('steam-duration-value'));
+            };
+
+            const longPressCallback = () => {
+                const valueEl = document.getElementById('steam-duration-value');
+                const currentValue = parseFloat(valueEl.textContent);
+                const presetValue = milkStopPresets[index];
+                const defaultValue = DEFAULT_MILK_STOP_PRESETS[index];
+                // Milk-stop writes are clamped to 30–85 °C everywhere (tile
+                // +/- and the settings page) — preset edits follow the same rule.
+                const clampMilkStop = (num) => Math.max(30, Math.min(85, Math.round(num)));
+                openContextMenu(button, [
+                    { label: getTranslation('Apply {value}').replace('{value}', `${presetValue}°c`), onSelect: clickCallback },
+                    { label: getTranslation('Enter value'), onSelect: () => {
+                        openNumpadModal(makeNumpadMockInput(presetValue), {
+                            fieldType: 'milk-stop',
+                            config: { title: 'MILK STOP', unit: '°c', defaultValue: '60', min: 30, max: 85 },
+                            onConfirm: (newVal) => {
+                                const num = parseFloat(newVal);
+                                if (isNaN(num)) return;
+                                milkStopPresets[index] = clampMilkStop(num);
+                                updateSteamPresetDisplay();
+                                flashElement(button);
+                                showToast(`Preset saved as ${milkStopPresets[index]}°c`, 2000, 'success');
+                            },
+                        });
+                    } },
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', valueEl.textContent), disabled: isNaN(currentValue), onSelect: () => {
+                        milkStopPresets[index] = clampMilkStop(currentValue);
+                        updateSteamPresetDisplay();
+                        flashElement(button);
+                        flashElement(valueEl);
+                    } },
+                    { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue}°c`), danger: true, onSelect: () => {
+                        milkStopPresets[index] = defaultValue;
+                        updateSteamPresetDisplay();
+                        flashElement(button);
+                        showToast(`Preset reverted to ${defaultValue}°c`, 2000, 'info');
                     } },
                 ]);
             };
@@ -2267,6 +2501,25 @@ export function updateTemperatures({ mix, group, steam }) {
     }
     if (steamTempEl) {
         steamTempEl.textContent = `${steam.toFixed(0)}°c`;
+    }
+}
+
+// Live milk-probe temperature in the top telemetry row (right after Weight).
+// Fed per snapshot frame by app.js alongside the presence tracker. The field
+// only exists while the probe is present — milkTelemetryText returns null
+// (hide entirely, no dashes) for absent probes and unusable readings.
+export function updateMilkTelemetry(present, tempC) {
+    const container = document.getElementById('milk-info-container');
+    if (!container) return;
+    const text = milkTelemetryText(present, tempC);
+    container.style.display = text === null ? 'none' : '';
+    // On Bengle the live Milk reading replaces Mix in the telemetry row; when the
+    // probe reading drops out -- or on a DE1, which never shows Milk -- Mix returns.
+    const mixEl = document.getElementById('mix-info-container');
+    if (mixEl) mixEl.style.display = text === null ? '' : 'none';
+    if (text !== null) {
+        const el = document.getElementById('data-milk-temp');
+        if (el) el.textContent = text;
     }
 }
 

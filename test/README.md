@@ -23,6 +23,10 @@ manifest invariants.
    test lives inside a DOM-coupled module, extract the pure part into its own
    module and import it from both places — do not import the DOM-coupled
    module here.
+   module is testable iff importing it touches no browser global. Example:
+   `src/modules/machine.js`. If the helper you want to test lives inside a
+   DOM-coupled module, extract the pure part into its own module and import it
+   from both places — do not import the DOM-coupled module here.
 2. **Name test files `test/<topic>.test.mjs`.** The `.mjs` extension makes
    Node treat the test itself as an ES module; the sources under `src/` are
    declared ESM by `src/package.json` (`{"type": "module"}`) so they can be
@@ -44,3 +48,13 @@ test('the skin id is the one reaprime keys the install dir on', () => {
 Good candidates as more pure logic is extracted: chart expanded-view autoscale
 (`niceCeil`, temp-band maths), colour conversions, steam-mode and label
 resolvers.
+import { isBengleModel } from '../src/modules/machine.js';
+
+test('model gate is a case-insensitive substring match', () => {
+    assert.equal(isBengleModel('Bengle 15A'), true);
+});
+```
+
+Planned coverage as the Bengle pages land: chart expanded-view autoscale
+(`niceCeil`, temp-band maths), LED 16-bit↔8-bit colour maps, steam-mode
+resolvers, the Bengle model gate.

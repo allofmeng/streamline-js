@@ -2,6 +2,7 @@ import * as ui from './ui.js';
 import { logger ,setDebug} from './logger.js';
 import { createSocketSlot } from './socket-slot.js';
 import { openDB, getSetting, setSetting } from './idb.js';
+import { buildCalibrateBody, calResponseHasBody } from './loadcell-cal.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
 export const REA_PORT = 8080;
@@ -175,6 +176,35 @@ export async function tareScale() {
 // a socket or double-deliver frames.
 const snapshotSocketSlot = createSocketSlot('machine snapshot');
 const shotSettingsSocketSlot = createSocketSlot('shot settings');
+/**
+ * Drive one step of the Bengle integrated-scale two-point load-cell
+ * calibration (Bengle machines only; 404 elsewhere).
+ * @param {'zero'|'left'|'right'|'abort'} command
+ * @param {number} [grams] known reference mass — required for 'left'/'right'.
+ * @returns {Promise<object>} the ScaleCalResult (`{success, finalStep,
+ *   pointStatus, message?}`) for zero/left/right; `{success:true}` for abort.
+ * This call blocks while the firmware settles + averages (~15 s per step).
+ */
+export async function calibrateScale(command, grams) {
+    try {
+        logger.info(`Scale calibration: ${command}${grams != null ? ` @ ${grams}g` : ''}`);
+        const response = await fetch(`${API_BASE_URL}/machine/scale/calibrate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildCalibrateBody(command, grams)),
+        });
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Scale calibration (${command}) failed. Status: ${response.status}, Body: ${errorBody}`);
+        }
+        // zero/left/right -> 200 with a ScaleCalResult; abort -> 202 no body.
+        if (!calResponseHasBody(command)) return { success: true };
+        return await response.json();
+    } catch (error) {
+        logger.error('Error calibrating scale:', error);
+        throw error;
+    }
+}
 
 export function connectWebSocket(onData, onReconnect) {
     reconnectingWebSocket = snapshotSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/snapshot`, [], {
@@ -1129,6 +1159,16 @@ export async function setTargetSteamFlow(flow) {
     return result;
 }
 
+// Milk-probe auto-stop target °C (0 = off). Bengle: the steam auto-stops when
+// the milk reaches this temperature.
+export async function setStopAtTemperature(celsius) {
+    return updateWorkflow({
+        steamSettings: {
+            stopAtTemperature: parseFloat(celsius)
+        }
+    });
+}
+
 export async function getReaSettings() {
     if (reatsettingscache.data && reatsettingscache.timestamp) {
         const now = Date.now();
@@ -1169,6 +1209,109 @@ export async function getMachineState() {
         throw new Error(`Failed to get machine state: ${response.statusText}`);
     }
     return response.json();
+}
+
+// ── Bengle: cup warmer ──────────────────────────────────────────────────────
+// GET returns { temperature, currentTemperature?, prewarmEnabled?,
+// prewarmLeadMinutes?, prewarmActive? }. `temperature` is the SETPOINT in °C
+// (0 = off) — the field name reads like a measurement but it is a MatSetPoint
+// read-back. `currentTemperature` is the live mat temperature in °C, null when
+// the firmware has no valid reading, and ABSENT entirely on older reaprime
+// builds. PUT accepts { temperature } (0–80). 404 on a non-Bengle. There is no
+// separate enable field (firmware CupWarmerMode is not exposed), so temperature
+// 0 is the "off" signal.
+//
+// The three `prewarm*` fields are the FIRMWARE-owned scheduled pre-warm; all
+// three are null on firmware without the registers ("unavailable" — see
+// cup-warmer.js). `prewarmActive` is read-only status and is ignored in a PUT.
+export async function getCupWarmer() {
+    const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`);
+    if (!response.ok) throw new Error(`Failed to get cup warmer (status ${response.status})`);
+    return response.json();
+}
+
+export async function setCupWarmer(temperature) {
+    const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temperature }),
+    });
+    if (!response.ok) throw new Error(`Failed to set cup warmer (status ${response.status})`);
+    return true;
+}
+
+/**
+ * Write the scheduled pre-warm pair (MatPreheatEnable + MatPreheatLeadMin).
+ * They are ONE firmware register pair and the API writes them together, so both
+ * are always sent — passing only one would leave the other at whatever the
+ * machine happens to hold.
+ *
+ * `leadMinutes` must be 0–120 (the caller clamps; out of range is a 400).
+ *
+ * Returns the machine's ECHO — { prewarmEnabled, prewarmLeadMinutes } read back
+ * AFTER the write — because a write to firmware that lacks these registers lands
+ * in unmapped space and is silently inert. Both come back `null` there, which is
+ * how the caller learns the write did nothing. Never treat a 200 alone as proof
+ * the setting took.
+ */
+export async function setCupWarmerPrewarm(enabled, leadMinutes) {
+    const response = await fetch(`${API_BASE_URL}/machine/cupWarmer`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prewarmEnabled: enabled, prewarmLeadMinutes: leadMinutes }),
+    });
+    if (!response.ok) throw new Error(`Failed to set cup warmer pre-warm (status ${response.status})`);
+    return response.json();
+}
+
+// ── Bengle: LED strip ───────────────────────────────────────────────────────
+// State = { frontStrip, backStrip, frontSwitch }, each { awake, sleeping } as a
+// 12-char hex 'RRRRGGGGBBBB'. PUT pushes live (no NVM); commit persists to NVM;
+// reset reloads NVM and returns the refreshed state. 404 on a non-Bengle.
+export async function getLedStrip() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip`);
+    if (!response.ok) throw new Error(`Failed to get LED strip (status ${response.status})`);
+    return response.json();
+}
+
+export async function setLedStrip(state) {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+    });
+    if (!response.ok) throw new Error(`Failed to set LED strip (status ${response.status})`);
+    return true;
+}
+
+export async function commitLedStrip() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/commit`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Failed to commit LED strip (status ${response.status})`);
+    return true;
+}
+
+export async function resetLedStrip() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/reset`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Failed to reset LED strip (status ${response.status})`);
+    return response.json();
+}
+
+// Live preview: show `front`/`back` (12-char hex) on the strip now, regardless
+// of awake/sleep, without changing the stored palette. clear -> restore awake.
+export async function previewLedStrip(front, back) {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ front, back }),
+    });
+    if (!response.ok) throw new Error(`Failed to preview LED (status ${response.status})`);
+    return true;
+}
+
+export async function clearLedStripPreview() {
+    const response = await fetch(`${API_BASE_URL}/machine/ledStrip/preview/clear`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Failed to clear LED preview (status ${response.status})`);
+    return true;
 }
 
 export async function getAppInfo() {
