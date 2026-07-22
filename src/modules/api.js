@@ -442,11 +442,33 @@ export function connectProfileGeneratedWebSocket(onData) {
 }
 
 let deviceWebSocket = null; // Module-level variable to track device WebSocket connection
+// Latest devices frame, so a late subscriber (e.g. Settings opened after boot)
+// is current at once instead of waiting for the next message.
+let lastDeviceData = null;
+let deviceLastErrorTimestamp = null;
+const deviceDataListeners = new Set();
+const deviceReconnectListeners = new Set();
+const deviceDisconnectListeners = new Set();
+const deviceErrorListeners = new Set();
 
 export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onError) {
-    if (deviceWebSocket) {
-        logger.info('Closing existing device WebSocket before creating a new one.');
-        deviceWebSocket.close();
+    // Every caller is a subscriber (mirrors connectDisplayWebSocket). This used to
+    // close and replace the whole connection per call, so app.js connecting at boot
+    // then Settings connecting again on first open silently evicted app.js's
+    // callback -- machineLink's onLinkUp (and therefore setMachineModel) never fired
+    // again for the rest of the session, so a live machine swap left Bengle-only UI
+    // (e.g. the header cup-warmer button) stuck showing the old machine's gate.
+    if (onData) {
+        deviceDataListeners.add(onData);
+        if (lastDeviceData) onData(lastDeviceData);
+    }
+    if (onReconnect) deviceReconnectListeners.add(onReconnect);
+    if (onDisconnect) deviceDisconnectListeners.add(onDisconnect);
+    if (onError) deviceErrorListeners.add(onError);
+
+    if (deviceWebSocket && deviceWebSocket.readyState === WebSocket.OPEN) {
+        logger.info('Device WebSocket already connected');
+        return;
     }
 
     deviceWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/devices`, [], {
@@ -454,25 +476,28 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
         reconnectInterval: 3000,
     });
 
-    let lastErrorTimestamp = null;
-
     deviceWebSocket.onopen = () => {
         logger.info('Device WebSocket (re)connected.');
-        if (onReconnect) {
-            onReconnect();
-        }
+        deviceReconnectListeners.forEach((fn) => {
+            try { fn(); } catch (e) { logger.error('Device reconnect listener failed:', e); }
+        });
     };
 
     deviceWebSocket.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
+            lastDeviceData = data;
             const err = data.connectionStatus?.error;
-            if (err && err.timestamp !== lastErrorTimestamp) {
-                lastErrorTimestamp = err.timestamp;
+            if (err && err.timestamp !== deviceLastErrorTimestamp) {
+                deviceLastErrorTimestamp = err.timestamp;
                 logger.warn('Device connection error:', err);
-                if (onError) onError(err);
+                deviceErrorListeners.forEach((fn) => {
+                    try { fn(err); } catch (e) { logger.error('Device error listener failed:', e); }
+                });
             }
-            onData(data);
+            deviceDataListeners.forEach((fn) => {
+                try { fn(data); } catch (e) { logger.error('Device data listener failed:', e); }
+            });
             logger.debug('Device data:', data);
         } catch (error) {
             logger.error('Error parsing Device WebSocket message:', error);
@@ -481,9 +506,9 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
 
     deviceWebSocket.onclose = () => {
         logger.info('Device WebSocket disconnected.');
-        if (onDisconnect) {
-            onDisconnect();
-        }
+        deviceDisconnectListeners.forEach((fn) => {
+            try { fn(); } catch (e) { logger.error('Device disconnect listener failed:', e); }
+        });
     };
 
     deviceWebSocket.onerror = (error) => {

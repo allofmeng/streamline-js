@@ -3,6 +3,7 @@ import { initScaling } from './scaling.js';
 import * as chart from './chart.js';
 import * as ui from './ui.js';
 import { initI18n, getTranslation, fitTelemetry, fitTextToWidth } from './i18n.js';
+import { initUnits, formatTemp, fromDisplayTemp } from './units.js';
 import * as history from './history.js';
 import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
@@ -85,15 +86,19 @@ function initMobileValueInputs() {
                 dispatchEvent: (event) => {
                     if (event.type === 'change' || event.type === 'input') {
                         const newVal = mockInput.value;
-                        el.textContent = type === 'temperature' ? `${newVal}°c` : 
-                                        type === 'grind' ? newVal : 
+                        // temperature / hot-water-temp: newVal is in the active display
+                        // unit (the numpad was seeded from el.textContent) — convert to
+                        // Celsius before writing/displaying so the writer always gets Celsius.
+                        const tempC = fromDisplayTemp(parseFloat(newVal));
+                        el.textContent = type === 'temperature' ? formatTemp(tempC, 0) :
+                                        type === 'grind' ? newVal :
                                         type === 'steam-duration' ? `${newVal}s` :
                                         type === 'steam-flow' ? newVal :
                                         type === 'flush' ? `${newVal}s` :
                                         type === 'hot-water-vol' ? `${newVal}ml` :
-                                        type === 'hot-water-temp' ? `${newVal}°c` :
+                                        type === 'hot-water-temp' ? formatTemp(tempC, 0) :
                                         `${newVal}g`;
-                                        
+
                         if (type === 'dose-in') {
                             window.app.ui.updateDoseValue('in', newVal);
                             window.app.ui.updateDrinkRatio();
@@ -101,7 +106,7 @@ function initMobileValueInputs() {
                             window.app.ui.updateDoseValue('out', newVal);
                             window.app.ui.updateDrinkRatio();
                         } else if (type === 'temperature') {
-                            window.app.ui.updateTemperatureValue(parseFloat(newVal));
+                            window.app.ui.updateTemperatureValue(tempC);
                         } else if (type === 'steam-duration') {
                             // The numpad blanks a bare "0" to '' — treat empty/NaN as 0.
                             // 0 = steam heater off: the middleware gates steamEnabled on
@@ -130,9 +135,8 @@ function initMobileValueInputs() {
                             window.app.ui.updateHotWaterDisplay({ targetHotWaterVolume: v });
                             window.app.api.setTargetHotWaterVolume(v).catch(e => logger.error('setTargetHotWaterVolume failed:', e));
                         } else if (type === 'hot-water-temp') {
-                            const v = parseFloat(newVal);
-                            window.app.ui.updateHotWaterDisplay({ targetHotWaterTemp: v });
-                            window.app.api.setTargetHotWaterTemp(v).catch(e => logger.error('setTargetHotWaterTemp failed:', e));
+                            window.app.ui.updateHotWaterDisplay({ targetHotWaterTemp: tempC });
+                            window.app.api.setTargetHotWaterTemp(tempC).catch(e => logger.error('setTargetHotWaterTemp failed:', e));
                         } else if (type === 'grind') {
                             window.app.ui.updateGrindValue(newVal);
                         }
@@ -1251,7 +1255,16 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
 
         // Bengle-only header quick-toggle for the cup warmer. Fails closed: a
         // failed machine-info fetch leaves the gate off and the button hidden.
-        if (isBengleMachine()) initCupWarmerToggle();
+        // Also re-runs on a live machine swap (loadInitialData fires again via
+        // machineLink.onLinkUp) -- hide it explicitly when the newly connected
+        // machine isn't a Bengle, since the button starts hidden but nothing
+        // else re-hides it once shown.
+        if (isBengleMachine()) {
+            initCupWarmerToggle();
+        } else {
+            const cupWarmerBtn = document.getElementById('cupwarmer-toggle-btn');
+            if (cupWarmerBtn) cupWarmerBtn.style.display = 'none';
+        }
 
         if (steamsettings) {
             // Workflow steamSettings speaks {flow, duration, ...} while
@@ -1727,6 +1740,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         logger.info('App DOMContentLoaded: Chart initialized.');
 
         await initI18n();
+        await initUnits();
         ui.initUI({ onWeightClick: handleWeightClick }); // also inits the screensaver
         initScaling();
         initNumpadModal();

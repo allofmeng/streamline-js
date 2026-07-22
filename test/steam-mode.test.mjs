@@ -10,6 +10,7 @@ import {
     applyMilkProbeGate,
     resolveSteamTileMode,
     milkTelemetryText,
+    milkTelemetryValue,
     steamFlowHighlightIndex,
 } from '../src/modules/steam-mode.js';
 
@@ -224,6 +225,22 @@ test('milk telemetry: unusable readings hide the field — never a fake value or
     assert.equal(milkTelemetryText(true, Infinity), null);
     assert.equal(milkTelemetryText(true, undefined), null);
     assert.equal(milkTelemetryText(true, '60'), null);
+});
+
+// ── milkTelemetryValue ──────────────────────────────────────────────────────
+// Same gating as milkTelemetryText, but the raw Celsius number (or null) —
+// ui.js formats it via units.js so the reading honors the C/F preference.
+
+test('milk telemetry value: present probe with a positive reading returns the raw °C number', () => {
+    assert.equal(milkTelemetryValue(true, 43.25), 43.25);
+    assert.equal(milkTelemetryValue(true, 4), 4);
+});
+
+test('milk telemetry value: absent probe or unusable reading returns null', () => {
+    assert.equal(milkTelemetryValue(false, 43.2), null);
+    assert.equal(milkTelemetryValue(true, 0), null);
+    assert.equal(milkTelemetryValue(true, NaN), null);
+    assert.equal(milkTelemetryValue(true, undefined), null);
 });
 
 // ── steamFlowHighlightIndex ─────────────────────────────────────────────────

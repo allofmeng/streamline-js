@@ -2,13 +2,14 @@ import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotW
 import { openDB, getSetting, setSetting } from './idb.js';
 import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { isBengleMachine, isBengleModel } from './machine.js';
-import { STEAM_FLOW_PRESETS_BY_MODEL, MILK_STOP_PRESETS, resolveSteamFlowPresetsForModel, resolveSteamTileMode, milkTelemetryText, steamFlowHighlightIndex } from './steam-mode.js';
+import { STEAM_FLOW_PRESETS_BY_MODEL, MILK_STOP_PRESETS, resolveSteamFlowPresetsForModel, resolveSteamTileMode, milkTelemetryValue, steamFlowHighlightIndex } from './steam-mode.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
 import * as chart from './chart.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, getTranslation } from './i18n.js';
 import { getTotalTime as getShotTotalTime } from './shotData.js';
+import { formatTemp, fromDisplayTemp, displayStepToCelsius, boundToDisplay, getTempUnit } from './units.js';
 
 
 function initLanguageSwitcher() {
@@ -50,6 +51,8 @@ export function formatTimeAbbreviated(seconds) {
     return `${Math.round(seconds)}s`;
 }
 
+let currentBrewTempC = 93; // brew temp tile, tracked so +/- steps survive a unit toggle
+let brewTempApiDebounce = null;
 let currentHotWaterVolume = 0;
 let currentHotWaterTemp = 0;
 let hotWaterMode = 'volume'; // 'volume' or 'temperature'
@@ -345,12 +348,12 @@ export function updateHotWaterDisplay(data) {
     }
 
     volEl.textContent = `${currentHotWaterVolume}ml`;
-    tempEl.textContent = `${currentHotWaterTemp}°C`;
+    tempEl.textContent = formatTemp(currentHotWaterTemp, 0);
 
     const hwTarget = hotWaterMode === 'volume'
         ? `${currentHotWaterVolume}ml`
-        : `${currentHotWaterTemp}°c`;
-    syncPresetHighlight(document.getElementById('hotwater-presets'), t => t.toLowerCase() === hwTarget.toLowerCase());
+        : formatTemp(currentHotWaterTemp, 0);
+    syncPresetHighlight(document.getElementById('hotwater-presets'), t => t === hwTarget);
 
     if (hotWaterMode === 'volume') {
         volEl.classList.remove('text-[20px]');
@@ -390,7 +393,7 @@ function incrementHotWater() {
         }
     } else {
         if (currentHotWaterTemp < 100) {
-            currentHotWaterTemp += 1;
+            currentHotWaterTemp = Math.min(100, currentHotWaterTemp + displayStepToCelsius(1));
         }
     }
     updateHotWaterDisplay({ targetHotWaterVolume: currentHotWaterVolume, targetHotWaterTemp: currentHotWaterTemp });
@@ -407,7 +410,7 @@ function decrementHotWater() {
         }
     } else {
         if (currentHotWaterTemp > 0) {
-            currentHotWaterTemp -= 1;
+            currentHotWaterTemp = Math.max(0, currentHotWaterTemp - displayStepToCelsius(1));
         }
     }
     updateHotWaterDisplay({ targetHotWaterVolume: currentHotWaterVolume, targetHotWaterTemp: currentHotWaterTemp });
@@ -419,11 +422,12 @@ function updateHotWaterPresetDisplay() {
     if (!presetContainer) return;
 
     const presets = hotWaterMode === 'temperature' ? hotWaterTempPresets : hotWaterVolPresets;
-    const unit = hotWaterMode === 'temperature' ? '°c' : 'ml';
 
     Array.from(presetContainer.children).forEach((button, index) => {
         if (presets[index] !== undefined) {
-            button.textContent = `${presets[index]}${unit}`;
+            button.textContent = hotWaterMode === 'temperature'
+                ? formatTemp(presets[index], 0)
+                : `${presets[index]}ml`;
         }
     });
 }
@@ -669,7 +673,7 @@ export function updateSteamDisplay(data) {
     if (modeMilkEl) modeMilkEl.className = INACTIVE;
 
     if (steamMode === 'temperature') {
-        durationEl.textContent = `${currentMilkStop}°C`;
+        durationEl.textContent = formatTemp(currentMilkStop, 0);
         durationEl.classList.remove('text-[20px]');
         durationEl.classList.add('text-[26px]', 'font-bold', 'text-[var(--text-primary)]');
         flowEl.classList.remove('text-[26px]', 'font-bold');
@@ -711,7 +715,7 @@ function scheduleSteamApi() {
 
 function syncSteamPresets() {
     if (steamMode === 'temperature') {
-        syncPresetHighlight(document.getElementById('steam-milk-presets'), t => t === `${currentMilkStop}°c`);
+        syncPresetHighlight(document.getElementById('steam-milk-presets'), t => t === formatTemp(currentMilkStop, 0));
     } else if (steamMode === 'time') {
         syncPresetHighlight(document.getElementById('steam-presets'), t => t === `${currentSteamDuration}s`);
     } else {
@@ -725,7 +729,7 @@ function incrementSteam() {
     if (steamMode === 'time') {
         currentSteamDuration += 1;
     } else if (steamMode === 'temperature') {
-        if (currentMilkStop < 85) currentMilkStop += 1;
+        if (currentMilkStop < 85) currentMilkStop = Math.min(85, currentMilkStop + displayStepToCelsius(1));
     } else {
         if (currentSteamFlow < 2.5) {
             currentSteamFlow += 0.1;
@@ -744,7 +748,7 @@ function decrementSteam() {
             currentSteamDuration -= 1;
         }
     } else if (steamMode === 'temperature') {
-        if (currentMilkStop > 30) currentMilkStop -= 1;
+        if (currentMilkStop > 30) currentMilkStop = Math.max(30, currentMilkStop - displayStepToCelsius(1));
     } else {
         if (currentSteamFlow > 0.4) {
             currentSteamFlow -= 0.1;
@@ -771,10 +775,10 @@ function updateSteamPresetDisplay() {
         milkPresetContainer.classList.remove('hidden');
         Array.from(milkPresetContainer.children).forEach((button, index) => {
             if (milkStopPresets[index] !== undefined) {
-                button.textContent = `${milkStopPresets[index]}°c`;
+                button.textContent = formatTemp(milkStopPresets[index], 0);
             }
         });
-        syncPresetHighlight(milkPresetContainer, t => t === `${currentMilkStop}°c`);
+        syncPresetHighlight(milkPresetContainer, t => t === formatTemp(currentMilkStop, 0));
         return;
     }
 
@@ -873,28 +877,38 @@ async function loadFlushPresets(flushPresetsEl) {
     }
 }
 
-// Brew temperature presets — same DOM-based shape as flush.
+// Brew temperature presets — canonical Celsius array (mirrors hotWaterTempPresets),
+// seeded from the static index.html markup below before any unit-aware rendering runs.
+let brewTempPresets = [75, 80, 85, 92];
+const DEFAULT_BREW_TEMP_PRESETS = [75, 80, 85, 92];
 const TEMP_PRESETS_KEY = 'brew-temp-presets-user';
 
-async function persistTempPresets(tempPresetsEl) {
+function updateTempPresetDisplay() {
+    const presetContainer = document.getElementById('temp-presets');
+    if (!presetContainer) return;
+    Array.from(presetContainer.children).forEach((button, index) => {
+        if (brewTempPresets[index] !== undefined) {
+            button.textContent = formatTemp(brewTempPresets[index], 0);
+        }
+    });
+}
+
+async function persistTempPresets() {
     try {
-        const values = Array.from(tempPresetsEl.children).map(b => parseFloat(b.textContent));
-        await setSetting(TEMP_PRESETS_KEY, values);
+        await setSetting(TEMP_PRESETS_KEY, [...brewTempPresets]);
     } catch (e) {
         logger.warn('Failed to persist brew temp presets:', e);
     }
 }
 
-async function loadTempPresets(tempPresetsEl) {
+async function loadTempPresets() {
     try {
         await openDB();
         const stored = await getSetting(TEMP_PRESETS_KEY);
-        const buttons = Array.from(tempPresetsEl.children);
-        if (Array.isArray(stored) && stored.length === buttons.length) {
-            buttons.forEach((btn, i) => {
-                if (typeof stored[i] === 'number' && !isNaN(stored[i])) btn.textContent = `${stored[i]}°c`;
-            });
+        if (Array.isArray(stored) && stored.length === brewTempPresets.length) {
+            brewTempPresets = stored.map(Number);
         }
+        updateTempPresetDisplay();
     } catch (e) {
         logger.warn('Failed to load brew temp presets:', e);
     }
@@ -1384,14 +1398,14 @@ export function initUI(callbacks) {
     const steamMilkPresetsEl = document.getElementById('steam-milk-presets');
     const machineStateEl = document.getElementById('machine-status');
     if (tempPresets) {
-        loadTempPresets(tempPresets); // async restore of user edits
+        updateTempPresetDisplay();
+        loadTempPresets(); // async restore of user edits, re-renders once loaded
 
-        for (const button of tempPresets.children) {
+        Array.from(tempPresets.children).forEach((button, index) => {
             button.classList.add('no-select', 'has-context-menu');
-            button.dataset.defaultValue = button.textContent;
             const clickCallback = () => {
-                const newValue = parseFloat(button.textContent);
-                if (isNaN(newValue)) return;
+                const newValue = brewTempPresets[index];
+                if (newValue === undefined) return;
 
                 updateTemperatureValue(newValue);
                 updateTemperatureDisplay(newValue);
@@ -1403,37 +1417,44 @@ export function initUI(callbacks) {
 
             const longPressCallback = () => {
                 const tempValueEl = document.getElementById('temp-value');
+                const currentValueC = fromDisplayTemp(parseFloat(tempValueEl.textContent));
+                const presetValue = brewTempPresets[index];
+                const defaultValue = DEFAULT_BREW_TEMP_PRESETS[index];
                 openContextMenu(button, [
-                    { label: getTranslation('Apply {value}').replace('{value}', button.textContent), onSelect: clickCallback },
+                    { label: getTranslation('Apply {value}').replace('{value}', formatTemp(presetValue, 0)), onSelect: clickCallback },
                     { label: getTranslation('Enter value'), onSelect: () => {
-                        const current = parseFloat(button.textContent);
-                        openNumpadModal(makeNumpadMockInput(isNaN(current) ? '' : current), {
+                        openNumpadModal(makeNumpadMockInput(boundToDisplay(presetValue)), {
                             fieldType: 'temperature',
                             onConfirm: (newVal) => {
-                                button.textContent = `${newVal}°c`;
+                                const num = fromDisplayTemp(parseFloat(newVal));
+                                if (isNaN(num)) return;
+                                brewTempPresets[index] = num;
+                                updateTempPresetDisplay();
                                 flashElement(button);
-                                showToast(`Preset saved as ${button.textContent}`, 2000, 'success');
-                                persistTempPresets(tempPresets);
+                                showToast(`Preset saved as ${formatTemp(num, 0)}`, 2000, 'success');
+                                persistTempPresets();
                             },
                         });
                     } },
-                    { label: getTranslation('Save current ({value}) here').replace('{value}', tempValueEl.textContent), onSelect: () => {
-                        button.textContent = tempValueEl.textContent;
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', tempValueEl.textContent), disabled: isNaN(currentValueC), onSelect: () => {
+                        brewTempPresets[index] = currentValueC;
+                        updateTempPresetDisplay();
                         flashElement(button);
                         flashElement(tempValueEl);
-                        persistTempPresets(tempPresets);
+                        persistTempPresets();
                     } },
-                    { label: getTranslation('Revert to {value}').replace('{value}', button.dataset.defaultValue), danger: true, onSelect: () => {
-                        button.textContent = button.dataset.defaultValue;
+                    { label: getTranslation('Revert to {value}').replace('{value}', formatTemp(defaultValue, 0)), danger: true, onSelect: () => {
+                        brewTempPresets[index] = defaultValue;
+                        updateTempPresetDisplay();
                         flashElement(button);
-                        showToast(`Preset reverted to ${button.dataset.defaultValue}`, 2000, 'info');
-                        persistTempPresets(tempPresets);
+                        showToast(`Preset reverted to ${formatTemp(defaultValue, 0)}`, 2000, 'info');
+                        persistTempPresets();
                     } },
                 ]);
             };
 
             setupPressAndHold(button, clickCallback, longPressCallback);
-        }
+        });
     }
 
     if (drinkOutPresets) {
@@ -1592,25 +1613,27 @@ export function initUI(callbacks) {
             const longPressCallback = () => {
                 const isTempMode = hotWaterMode === 'temperature';
                 const valueEl = document.getElementById(isTempMode ? 'hot-water-temp-value' : 'hot-water-vol-value');
-                const currentValue = parseFloat(valueEl.textContent);
+                const currentValue = isTempMode ? fromDisplayTemp(parseFloat(valueEl.textContent)) : parseFloat(valueEl.textContent);
                 const presetValue = (isTempMode ? hotWaterTempPresets : hotWaterVolPresets)[index];
                 const defaultValue = (isTempMode ? DEFAULT_HOT_WATER_TEMP_PRESETS : DEFAULT_HOT_WATER_VOL_PRESETS)[index];
-                const unit = isTempMode ? '°c' : 'ml';
+                const unit = isTempMode ? '' : 'ml';
                 const fieldType = isTempMode ? 'hot-water-temp' : 'hot-water-vol';
+                const fmt = (v) => isTempMode ? formatTemp(v, 0) : `${v}${unit}`;
                 openContextMenu(button, [
-                    { label: getTranslation('Apply {value}').replace('{value}', `${presetValue}${unit}`), onSelect: clickCallback },
+                    { label: getTranslation('Apply {value}').replace('{value}', fmt(presetValue)), onSelect: clickCallback },
                     { label: getTranslation('Enter value'), onSelect: () => {
-                        openNumpadModal(makeNumpadMockInput(presetValue), {
+                        openNumpadModal(makeNumpadMockInput(isTempMode ? boundToDisplay(presetValue) : presetValue), {
                             fieldType,
                             onConfirm: (newVal) => {
-                                const num = parseFloat(newVal);
-                                if (isNaN(num)) return;
+                                const raw = parseFloat(newVal);
+                                if (isNaN(raw)) return;
+                                const num = isTempMode ? fromDisplayTemp(raw) : raw;
                                 if (isTempMode) hotWaterTempPresets[index] = num;
                                 else hotWaterVolPresets[index] = num;
                                 updateHotWaterPresetDisplay();
                                 persistHotWaterPresets();
                                 flashElement(button);
-                                showToast(`Preset saved as ${num}${unit}`, 2000, 'success');
+                                showToast(`Preset saved as ${fmt(num)}`, 2000, 'success');
                             },
                         });
                     } },
@@ -1622,13 +1645,13 @@ export function initUI(callbacks) {
                         flashElement(button);
                         flashElement(valueEl);
                     } },
-                    { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue}${unit}`), danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', fmt(defaultValue)), danger: true, onSelect: () => {
                         if (isTempMode) hotWaterTempPresets[index] = defaultValue;
                         else hotWaterVolPresets[index] = defaultValue;
                         updateHotWaterPresetDisplay();
                         persistHotWaterPresets();
                         flashElement(button);
-                        showToast(`Preset reverted to ${defaultValue}${unit}`, 2000, 'info');
+                        showToast(`Preset reverted to ${fmt(defaultValue)}`, 2000, 'info');
                     } },
                 ]);
             };
@@ -1719,39 +1742,39 @@ export function initUI(callbacks) {
 
             const longPressCallback = () => {
                 const valueEl = document.getElementById('steam-duration-value');
-                const currentValue = parseFloat(valueEl.textContent);
+                const currentValueC = fromDisplayTemp(parseFloat(valueEl.textContent));
                 const presetValue = milkStopPresets[index];
                 const defaultValue = DEFAULT_MILK_STOP_PRESETS[index];
                 // Milk-stop writes are clamped to 30–85 °C everywhere (tile
                 // +/- and the settings page) — preset edits follow the same rule.
                 const clampMilkStop = (num) => Math.max(30, Math.min(85, Math.round(num)));
                 openContextMenu(button, [
-                    { label: getTranslation('Apply {value}').replace('{value}', `${presetValue}°c`), onSelect: clickCallback },
+                    { label: getTranslation('Apply {value}').replace('{value}', formatTemp(presetValue, 0)), onSelect: clickCallback },
                     { label: getTranslation('Enter value'), onSelect: () => {
-                        openNumpadModal(makeNumpadMockInput(presetValue), {
+                        openNumpadModal(makeNumpadMockInput(boundToDisplay(presetValue)), {
                             fieldType: 'milk-stop',
-                            config: { title: 'MILK STOP', unit: '°c', defaultValue: '60', min: 30, max: 85 },
+                            config: { title: 'MILK STOP', unit: getTempUnit() === 'F' ? '°F' : '°c', defaultValue: '60', min: boundToDisplay(30), max: boundToDisplay(85) },
                             onConfirm: (newVal) => {
-                                const num = parseFloat(newVal);
+                                const num = fromDisplayTemp(parseFloat(newVal));
                                 if (isNaN(num)) return;
                                 milkStopPresets[index] = clampMilkStop(num);
                                 updateSteamPresetDisplay();
                                 flashElement(button);
-                                showToast(`Preset saved as ${milkStopPresets[index]}°c`, 2000, 'success');
+                                showToast(`Preset saved as ${formatTemp(milkStopPresets[index], 0)}`, 2000, 'success');
                             },
                         });
                     } },
-                    { label: getTranslation('Save current ({value}) here').replace('{value}', valueEl.textContent), disabled: isNaN(currentValue), onSelect: () => {
-                        milkStopPresets[index] = clampMilkStop(currentValue);
+                    { label: getTranslation('Save current ({value}) here').replace('{value}', valueEl.textContent), disabled: isNaN(currentValueC), onSelect: () => {
+                        milkStopPresets[index] = clampMilkStop(currentValueC);
                         updateSteamPresetDisplay();
                         flashElement(button);
                         flashElement(valueEl);
                     } },
-                    { label: getTranslation('Revert to {value}').replace('{value}', `${defaultValue}°c`), danger: true, onSelect: () => {
+                    { label: getTranslation('Revert to {value}').replace('{value}', formatTemp(defaultValue, 0)), danger: true, onSelect: () => {
                         milkStopPresets[index] = defaultValue;
                         updateSteamPresetDisplay();
                         flashElement(button);
-                        showToast(`Preset reverted to ${defaultValue}°c`, 2000, 'info');
+                        showToast(`Preset reverted to ${formatTemp(defaultValue, 0)}`, 2000, 'info');
                     } },
                 ]);
             };
@@ -1889,17 +1912,22 @@ export function initUI(callbacks) {
 
     if (tempValueEl) {
         makeEditable(tempValueEl, (newValue) => {
-            let value = Math.round(newValue); // Ensure it's an integer
-            if (value > 105) {
-                alert('Brew temperature is limited to 105°C.');
-                value = 105;
+            // newValue is whatever the inline editor was seeded with — the
+            // currently DISPLAYED number, so it's in the active unit.
+            let value = Math.round(newValue);
+            const maxDisplay = boundToDisplay(105);
+            const minDisplay = boundToDisplay(0);
+            if (value > maxDisplay) {
+                alert(`Brew temperature is limited to ${formatTemp(105, 0)}.`);
+                value = maxDisplay;
             }
-            if (value < 0) {
-                alert('Brew temperature must be at least 0°C.');
-                value = 0;
+            if (value < minDisplay) {
+                alert(`Brew temperature must be at least ${formatTemp(0, 0)}.`);
+                value = minDisplay;
             }
-            tempValueEl.textContent = `${value}°c`;
-            updateTemperatureValue(value);
+            currentBrewTempC = fromDisplayTemp(value);
+            tempValueEl.textContent = formatTemp(currentBrewTempC, 0);
+            updateTemperatureValue(currentBrewTempC);
         });
     }
 
@@ -1955,16 +1983,19 @@ export function initUI(callbacks) {
 
     if (hotWaterTempValueEl) {
         makeEditable(hotWaterTempValueEl, (newValue) => {
+            // newValue is the displayed number, so it's in the active unit.
             let value = newValue;
-            if (value > 100) {
-                alert('Hot water temperature is limited to 100°C.');
-                value = 100;
+            const maxDisplay = boundToDisplay(100);
+            const minDisplay = boundToDisplay(0);
+            if (value > maxDisplay) {
+                alert(`Hot water temperature is limited to ${formatTemp(100, 0)}.`);
+                value = maxDisplay;
             }
-            if (value < 0) {
-                alert('Hot water temperature must be at least 0°C.');
-                value = 0;
+            if (value < minDisplay) {
+                alert(`Hot water temperature must be at least ${formatTemp(0, 0)}.`);
+                value = minDisplay;
             }
-            currentHotWaterTemp = value;
+            currentHotWaterTemp = fromDisplayTemp(value);
             setTargetHotWaterTemp(currentHotWaterTemp).catch(e => logger.error(e));
             updateHotWaterDisplay({ targetHotWaterTemp: currentHotWaterTemp });
         });
@@ -2023,7 +2054,14 @@ export function initUI(callbacks) {
     }
 
     setupValueAdjuster('drink-out-minus', 'drink-out-plus', 'drink-out-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('out', val); updateDrinkRatio(); }, syncDrinkOutPresets);
-    setupValueAdjuster('temp-minus', 'temp-plus', 'temp-value', 1, 0, (val) => `${val}°c`, updateTemperatureValue, (fmt) => syncPresetHighlight(document.getElementById('temp-presets'), t => t === fmt));
+    {
+        const tempMinusBtn = document.getElementById('temp-minus');
+        const tempPlusBtn = document.getElementById('temp-plus');
+        if (tempMinusBtn && tempPlusBtn) {
+            tempMinusBtn.addEventListener('click', decrementBrewTemp);
+            tempPlusBtn.addEventListener('click', incrementBrewTemp);
+        }
+    }
     setupValueAdjuster('dose-in-minus', 'dose-in-plus', 'dose-in-value', 1, 0, (val) => `${val}g`, (val) => { updateDoseValue('in', val); updateDrinkRatio(); }, syncDrinkOutPresets);
     setupValueAdjuster('grind-minus', 'grind-plus', 'grind-value', () => grindStep, 0, (val) => grindStep === 1 ? String(Math.round(val)) : val.toFixed(1), updateGrindValue);
     setupValueAdjuster('flush-minus', 'flush-plus', 'flush-value', 1, 0, (val) => `${val}s`, (val) => {
@@ -2488,40 +2526,62 @@ function createStepAdvanceHandler() {
         // window.advanceStep ? window.advanceStep() : null;
     };
 }
+// Last-seen values, so a unit-preference toggle can re-render instantly
+// instead of waiting for the next WebSocket frame.
+let lastTemperatures = null;
+let lastMilkTelemetry = null;
+
 export function updateTemperatures({ mix, group, steam }) {
+    lastTemperatures = { mix, group, steam };
     const mixTempEl = document.getElementById('data-mix-temp');
     const groupTempEl = document.getElementById('data-group-temp');
     const steamTempEl = document.getElementById('data-steam-temp');
 
     if (mixTempEl) {
-        mixTempEl.textContent = `${mix.toFixed(1)}°c`;
+        mixTempEl.textContent = formatTemp(mix, 1);
     }
     if (groupTempEl) {
-        groupTempEl.textContent = `${group.toFixed(1)}°c`;
+        groupTempEl.textContent = formatTemp(group, 1);
     }
     if (steamTempEl) {
-        steamTempEl.textContent = `${steam.toFixed(0)}°c`;
+        steamTempEl.textContent = formatTemp(steam, 0);
     }
 }
 
 // Live milk-probe temperature in the top telemetry row (right after Weight).
 // Fed per snapshot frame by app.js alongside the presence tracker. The field
-// only exists while the probe is present — milkTelemetryText returns null
+// only exists while the probe is present — milkTelemetryValue returns null
 // (hide entirely, no dashes) for absent probes and unusable readings.
 export function updateMilkTelemetry(present, tempC) {
+    lastMilkTelemetry = { present, tempC };
     const container = document.getElementById('milk-info-container');
     if (!container) return;
-    const text = milkTelemetryText(present, tempC);
-    container.style.display = text === null ? 'none' : '';
+    const value = milkTelemetryValue(present, tempC);
+    container.style.display = value === null ? 'none' : '';
     // On Bengle the live Milk reading replaces Mix in the telemetry row; when the
     // probe reading drops out -- or on a DE1, which never shows Milk -- Mix returns.
     const mixEl = document.getElementById('mix-info-container');
-    if (mixEl) mixEl.style.display = text === null ? '' : 'none';
-    if (text !== null) {
+    if (mixEl) mixEl.style.display = value === null ? '' : 'none';
+    if (value !== null) {
         const el = document.getElementById('data-milk-temp');
-        if (el) el.textContent = text;
+        if (el) el.textContent = formatTemp(value, 1);
     }
 }
+
+// Re-render every temperature-bearing control in the newly chosen unit,
+// without waiting for the next WebSocket frame or user interaction. Each
+// tracked value (currentBrewTempC, currentHotWaterTemp, currentMilkStop,
+// the preset arrays) stays Celsius-canonical — only the re-render changes.
+document.addEventListener('streamline:unitchange', () => {
+    if (lastTemperatures) updateTemperatures(lastTemperatures);
+    if (lastMilkTelemetry) updateMilkTelemetry(lastMilkTelemetry.present, lastMilkTelemetry.tempC);
+    updateTemperatureDisplay(currentBrewTempC);
+    updateTempPresetDisplay();
+    updateHotWaterDisplay({});
+    updateHotWaterPresetDisplay();
+    updateSteamDisplay({});
+    updateSteamPresetDisplay();
+});
 
 export function updateWeight(weight, classUpdates = {}) {
     const { dataWeight, weightText } = classUpdates;
@@ -2574,12 +2634,37 @@ export function updateDrinkOut(doseOut) {
 }
 
 export function updateTemperatureDisplay(temperature) {
+    currentBrewTempC = parseFloat(temperature);
     const tempValueEl = document.getElementById('temp-value');
+    const target = formatTemp(currentBrewTempC, 0);
     if (tempValueEl) {
-        tempValueEl.textContent = `${parseFloat(temperature).toFixed(0)}°c`;
+        tempValueEl.textContent = target;
     }
-    const target = `${parseFloat(temperature).toFixed(0)}°c`;
     syncPresetHighlight(document.getElementById('temp-presets'), t => t === target);
+}
+
+// Brew temp +/- steppers. Hand-rolled rather than the generic
+// setupValueAdjuster (used by dose/drink/grind/flush): those read the
+// displayed number straight off the DOM and treat it as the model value,
+// which breaks once the display can show °F — the model must stay Celsius
+// while the button step feels like "1 degree" in whichever unit is showing.
+function scheduleBrewTempApi() {
+    clearTimeout(brewTempApiDebounce);
+    brewTempApiDebounce = setTimeout(() => updateTemperatureValue(currentBrewTempC), API_DEBOUNCE_MS);
+}
+
+function incrementBrewTemp(e) {
+    flashPlusMinusButton(e.currentTarget);
+    currentBrewTempC = Math.min(105, currentBrewTempC + displayStepToCelsius(1));
+    updateTemperatureDisplay(currentBrewTempC);
+    scheduleBrewTempApi();
+}
+
+function decrementBrewTemp(e) {
+    flashPlusMinusButton(e.currentTarget);
+    currentBrewTempC = Math.max(0, currentBrewTempC - displayStepToCelsius(1));
+    updateTemperatureDisplay(currentBrewTempC);
+    scheduleBrewTempApi();
 }
 
 export function updateFlushDisplay(duration) {

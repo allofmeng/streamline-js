@@ -1,6 +1,7 @@
 import { getValueFromStore, setValueInStore, getShots } from './api.js';
 import { flashElement } from './ui.js';
 import { getTranslation } from './i18n.js';
+import { getTempUnit, boundToDisplay } from './units.js';
 
 const fieldDisplayElementIds = {
     'dose-in': 'dose-in-value',
@@ -386,11 +387,22 @@ async function openModal(inputElement, options = {}) {
     currentInputElement = inputElement;
     currentFieldType = options.fieldType || 'dose-in';
 
-    const config = options.config || fieldConfig[currentFieldType] || fieldConfig['dose-in'];
+    let config = options.config || fieldConfig[currentFieldType] || fieldConfig['dose-in'];
+    // 'temperature' / 'hot-water-temp' are Celsius-canonical fields shown in
+    // whichever unit the user picked in Settings — resolve unit/bounds here so
+    // every caller (main-page presets, mobile tap-to-edit) gets it for free.
+    if (currentFieldType === 'temperature' || currentFieldType === 'hot-water-temp') {
+        config = {
+            ...config,
+            unit: getTempUnit() === 'F' ? '°F' : '°c',
+            defaultValue: String(boundToDisplay(Number(config.defaultValue))),
+            label: `Input value between ${boundToDisplay(70)}–${boundToDisplay(110)}`,
+        };
+    }
     currentConfig = config;
     const inputValue = inputElement.value || inputElement.getAttribute('data-default') || config.defaultValue;
     // Remove any existing units for editing
-    currentValue = inputValue.replace(/[g°c]/g, '').trim() || config.defaultValue;
+    currentValue = inputValue.replace(/[g°cF]/g, '').trim() || config.defaultValue;
     originalValue = currentValue;
     
     isFirstInput = true;

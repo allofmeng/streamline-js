@@ -1,4 +1,5 @@
 import { logger } from './logger.js';
+import { getTempUnit, celsiusToFahrenheit } from './units.js';
 
 // Holds the raw data for the current shot
 let currentShot = {};
@@ -57,6 +58,18 @@ function getPhaseData(dataArray, startIndex, endIndex) {
     return dataArray.slice(startIndex, endIndex + 1);
 }
 
+// Raw Celsius sample arrays are always what's stored (see push sites below);
+// convert to the display unit only right before formatting.
+function toDisplayTemps(celsiusValues) {
+    if (getTempUnit() !== 'F') return celsiusValues;
+    return celsiusValues.map(celsiusToFahrenheit);
+}
+
+function updateTempHeader() {
+    const header = document.getElementById('shot-data-temp-header');
+    if (header) header.textContent = getTempUnit() === 'F' ? '°F' : '°C';
+}
+
 // --- CORE LOGIC ---
 
 export function clearShotData() {
@@ -79,7 +92,18 @@ export function clearShotData() {
             updateText(element, '-');
         }
     }
+    updateTempHeader();
 }
+
+// Re-render the shot-data table's temperature column in the newly chosen
+// unit, without waiting for the next sample.
+document.addEventListener('streamline:unitchange', () => {
+    if (currentShot.timestamps && currentShot.timestamps.length > 0) {
+        calculateAndRender(currentShot);
+    } else {
+        updateTempHeader();
+    }
+});
 
 function calculateAndRender(shotData) {
     try {
@@ -87,6 +111,8 @@ function calculateAndRender(shotData) {
             logger.warn('calculateAndRender called with invalid or empty shotData. Aborting render.');
             return;
         }
+
+        updateTempHeader();
 
         // Get fresh element references each time to avoid stale references
         const elements = getElements();
@@ -122,7 +148,7 @@ function calculateAndRender(shotData) {
         updateText(elements.pi.time, `${Math.round(piTime)}`);
         updateText(elements.pi.weight, piWeight !== null ? `${piWeight.toFixed(1)}g` : '0.0');
         updateText(elements.pi.volume, `${piVolume.toFixed(0)}`);
-        updateText(elements.pi.temp, `${formatRange(piTemps, 0)}`);
+        updateText(elements.pi.temp, `${formatRange(toDisplayTemps(piTemps), 0)}`);
         updateText(elements.pi.flow, `${formatStartPeakEnd(piFlows, 1)} `);
         updateText(elements.pi.pressure, `${formatStartPeakEnd(piPressures, 1)}`);
 
@@ -130,7 +156,7 @@ function calculateAndRender(shotData) {
             updateText(elements.ex.time, `${Math.round(exTime)}`);
             updateText(elements.ex.weight, exWeight !== null ? `${exWeight.toFixed(1)}g` : '0.0');
             updateText(elements.ex.volume, `${exVolume.toFixed(0)}`);
-            updateText(elements.ex.temp, `${formatRange(exTemps, 0)}`);
+            updateText(elements.ex.temp, `${formatRange(toDisplayTemps(exTemps), 0)}`);
             updateText(elements.ex.flow, `${formatStartPeakEnd(exFlows, 1)} `);
             updateText(elements.ex.pressure, `${formatStartPeakEnd(exPressures, 1)}`);
         }

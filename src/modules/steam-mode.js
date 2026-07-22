@@ -111,18 +111,32 @@ export function applyMilkProbeGate(mode, probePresent, fallbackMode) {
 }
 
 /**
- * Text for the main page's top-telemetry-row Milk field (live milk probe
- * temperature, shown after Weight). The field only EXISTS while the probe is
- * present: null means hide it entirely — no dashes, no placeholder. A present
- * probe with no usable reading yet (0 / non-finite / garbage) also hides it,
- * so the row never shows a fake temperature.
+ * Validates the main page's top-telemetry-row Milk field reading (live milk
+ * probe temperature, shown after Weight). The field only EXISTS while the
+ * probe is present: null means hide it entirely — no dashes, no placeholder.
+ * A present probe with no usable reading yet (0 / non-finite / garbage) also
+ * hides it, so the row never shows a fake temperature.
  * @param {boolean} present  debounced probe presence (resolveMilkProbePresence)
  * @param {*} tempC  latest positive reading (any type — non-finite = unusable)
+ * @returns {number|null}  the raw Celsius reading, or null to hide the field
+ */
+export function milkTelemetryValue(present, tempC) {
+    if (!present || typeof tempC !== 'number' || !isFinite(tempC) || tempC <= 0) return null;
+    return tempC;
+}
+
+/**
+ * Text for the main page's top-telemetry-row Milk field, always in °C.
+ * Kept for callers that don't need unit-aware formatting; ui.js's live
+ * telemetry row uses milkTelemetryValue() + units.js formatTemp() instead so
+ * it can honor the user's C/F preference.
+ * @param {boolean} present
+ * @param {*} tempC
  * @returns {string|null}  e.g. "43.2°c", or null to hide the field
  */
 export function milkTelemetryText(present, tempC) {
-    if (!present || typeof tempC !== 'number' || !isFinite(tempC) || tempC <= 0) return null;
-    return `${tempC.toFixed(1)}°c`;
+    const v = milkTelemetryValue(present, tempC);
+    return v === null ? null : `${v.toFixed(1)}°c`;
 }
 
 /**

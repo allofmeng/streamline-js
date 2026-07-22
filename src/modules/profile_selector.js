@@ -1366,7 +1366,7 @@ export async function initializeProfileSelector() {
                     version: '2',
                     beverage_type: 'espresso',
                     target_weight: 0,
-                    tank_temperature: 93,
+                    tank_temperature: 0,
                     target_volume: 0,
                     target_volume_count_start: 0,
                     author: '',

@@ -2,6 +2,7 @@ import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
+import { getTempUnit, setTempUnit, formatTemp, fromDisplayTemp, boundToDisplay } from '../modules/units.js';
 import { loadPage } from '../modules/router.js'; // Singular and correctly formatted import
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
@@ -55,6 +56,23 @@ const SETTINGS_NUMPAD_CONFIGS = {
     steamMilkStopInput:      { title: 'STOP AT MILK TEMP', unit: '°C',   min: 30,  max: 85,   fieldType: 'settings-steam-milk-stop' },
 };
 
+// Settings-page numeric temperature inputs hold their number in the ACTIVE
+// display unit (like every other field on the page) — Celsius only exists at
+// the API boundary. These three helpers are the boundary: render a stored
+// Celsius value into the box, read the box back out to Celsius, and label it.
+function tempInputValue(celsius) {
+    return boundToDisplay(celsius);
+}
+function tempInputToCelsius(raw) {
+    return fromDisplayTemp(parseFloat(raw));
+}
+function tempUnitLabel() {
+    return getTempUnit() === 'F' ? '°F' : '°C';
+}
+// Inline onchange="..." attributes execute in the global scope, not this
+// module's — expose the Celsius conversion the same way updateXSetting is.
+window.tempInputToCelsius = tempInputToCelsius;
+
 let _settingsNumpadSelected = null;
 let _settingsNumpadTimer = null;
 
@@ -75,19 +93,26 @@ function attachSettingsNumpad() {
             e.preventDefault();
             e.stopPropagation();
 
-            const currentVal = String(parseFloat(input.value) || config.min);
+            // Temperature fields' min/max are stored in Celsius (the config table is
+            // static); the box itself and the numpad both operate in the active
+            // display unit, so resolve them here rather than baking one unit in.
+            const liveConfig = config.unit === '°C'
+                ? { ...config, unit: tempUnitLabel(), min: tempInputValue(config.min), max: tempInputValue(config.max) }
+                : config;
+
+            const currentVal = String(parseFloat(input.value) || liveConfig.min);
             const mockEl = {
                 value: currentVal,
                 getAttribute: () => currentVal,
                 dispatchEvent: () => {}
             };
             openModal(mockEl, {
-                fieldType: config.fieldType,
-                config,
+                fieldType: liveConfig.fieldType,
+                config: liveConfig,
                 onConfirm: (val) => {
                     const num = parseFloat(val);
                     if (!isNaN(num)) {
-                        const clamped = Math.max(config.min ?? -Infinity, Math.min(config.max ?? Infinity, num));
+                        const clamped = Math.max(liveConfig.min ?? -Infinity, Math.min(liveConfig.max ?? Infinity, num));
                         input.value = clamped;
                         input.dispatchEvent(new Event('change'));
                     }
@@ -287,6 +312,9 @@ function updateSettingsContentArea(category) {
         if (category === 'fontsize') {
             setTimeout(initFontSizeSettings, 0);
         }
+        if (category === 'tempunit') {
+            setTimeout(initTempUnitSettings, 0);
+        }
         if (category === 'feedback') {
             setTimeout(() => window.updateDecentAccountUI?.(), 0);
         }
@@ -385,6 +413,7 @@ const settingsTree = {
             { id: 'wakelock', name: 'Wake Lock', settingsCategory: 'wakelock' },
             { id: 'presence', name: 'Presence Detection', settingsCategory: 'presence' },
             { id: 'fontsize', name: 'Display Size', settingsCategory: 'fontsize' },
+            { id: 'tempunit', name: 'Temperature', settingsCategory: 'tempunit', i18nKey: 'Temperature' },
             { id: 'screensaver', name: 'Screen Saver', settingsCategory: 'screensaver' },
             { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' }
         ]
@@ -633,6 +662,8 @@ export function renderSettingsContent(category) {
             return renderUnitsSettings();
         case 'fontsize':
             return renderFontSizeSettings();
+        case 'tempunit':
+            return renderTempUnitSettings();
         case 'resolution':
             return renderResolutionSettings();
         case 'machineadvancedsettings':
@@ -878,27 +909,6 @@ export function renderReaSettingsForm(settings) {
                 </div>
             </div>
 
-            <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
-
-            <div class="flex flex-col items-start relative w-full max-w-full">
-                <div class="flex flex-col gap-[30px] items-start relative w-full max-w-full">
-                    <div class="flex items-center justify-between relative w-full max-w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Scale Power Management">Scale Power Management</p>
-                        </div>
-                        <select class="bg-[#385a92] border-2 border-[#385a92] border-solid h-[62.88px] rounded-[2617.374px] w-[250px] text-white text-[24px] p-2 max-w-[250px]"
-                                onchange="window.updateReaSetting('scalePowerMode', this.value)">
-                            <option value="disabled" ${(settings.scalePowerMode || 'disabled') === 'disabled' ? 'selected' : ''} data-i18n-key="Disabled">Disabled</option>
-                            <option value="displayOff" ${settings.scalePowerMode === 'displayOff' ? 'selected' : ''} data-i18n-key="Display Off">Display Off</option>
-                            <option value="disconnect" ${settings.scalePowerMode === 'disconnect' ? 'selected' : ''} data-i18n-key="Disconnect">Disconnect</option>
-                        </select>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full max-w-full break-words pr-[270px]" data-i18n-key="Controls automatic scale power management when the machine sleeps. Display Off turns off the scale display. Disconnect disconnects the scale completely.">
-                        Controls automatic scale power management when the machine sleeps. Display Off turns off the scale display. Disconnect disconnects the scale completely.
-                    </p>
-                </div>
-            </div>
-
             ${settings.webUiPath ? `
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
             <div class="flex flex-col items-start relative w-full max-w-full">
@@ -946,7 +956,7 @@ export function renderFlushSettingsForm(settings) {
                         <p id="flush-temp-label" class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Temperature for flush cycles">
                             Temperature for flush cycles
                         </p>
-                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">5 – 95 °C</span>
+                        <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">${tempInputValue(5)} – ${tempInputValue(95)} ${tempUnitLabel()}</span>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
                         <button id="flush-temp-minus" aria-label="Decrease flush temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -958,10 +968,10 @@ export function renderFlushSettingsForm(settings) {
                         <div class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none flex items-center justify-center"
                              style="width: 130px;">
                             <input type="text" inputmode="numeric" pattern="[0-9]*" id="flushTempInput" aria-labelledby="flush-temp-label" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                   value="${settings.flushTemp !== undefined ? settings.flushTemp : ''}"
-                                   step="5" min="5" max="95"
-                                   onchange="window.updateDe1Setting('flushTemp', parseFloat(this.value))">
-                            <span class="ml-2" aria-hidden="true">°C</span>
+                                   value="${settings.flushTemp !== undefined ? tempInputValue(settings.flushTemp) : ''}"
+                                   step="5" min="${tempInputValue(5)}" max="${tempInputValue(95)}"
+                                   onchange="window.updateDe1Setting('flushTemp', window.tempInputToCelsius(this.value))">
+                            <span class="ml-2" aria-hidden="true">${tempUnitLabel()}</span>
                         </div>
                         <button id="flush-temp-plus" aria-label="Increase flush temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustFlushTemp(5);">
@@ -1362,8 +1372,8 @@ export function renderDe1AdvancedSettingsForm(settings) {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Heater Idle Temp (°C)">Heater Idle Temp (°C)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">0 – 95 °C</span>
+                            <p class="leading-[1.2]" data-i18n-key="Heater idle temperature">Heater idle temperature</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)] whitespace-nowrap">${tempInputValue(0)} – ${tempInputValue(95)} ${tempUnitLabel()}</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease heater idle temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -1374,10 +1384,10 @@ export function renderDe1AdvancedSettingsForm(settings) {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" id="heaterIdleTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${settings.heaterIdleTemp !== undefined ? settings.heaterIdleTemp : ''}"
-                                       step="1" min="0" max="95"
-                                       onchange="window.updateDe1AdvancedSetting('heaterIdleTemp', parseFloat(this.value))">
-                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                                       value="${settings.heaterIdleTemp !== undefined ? tempInputValue(settings.heaterIdleTemp) : ''}"
+                                       step="1" min="${tempInputValue(0)}" max="${tempInputValue(95)}"
+                                       onchange="window.updateDe1AdvancedSetting('heaterIdleTemp', window.tempInputToCelsius(this.value))">
+                                <span class="ml-1 text-nowrap text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">${tempUnitLabel()}</span>
                             </div>
                             <button aria-label="Increase heater idle temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                     onclick="window.flashPlusMinusButton(this); window.adjustHeaterIdleTemp(1);">
@@ -1839,8 +1849,9 @@ export function renderScreenSaverSettings() {
 
             <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                 <div class="content-stretch flex items-center justify-between relative w-full">
-                    <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative ${screensaverImagesCache.length > 1 ? 'text-[#385a92]' : 'text-[var(--text-secondary)] opacity-50'} text-[30px]">
-                        <p class="leading-[1.2]">Time Between Images (s)</p>
+                    <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative ${screensaverImagesCache.length > 1 ? 'text-[#385a92]' : 'text-[var(--text-secondary)] opacity-50'} text-[30px]">
+                        <p class="leading-[1.2]" data-i18n-key="Change image every:">Change image every:</p>
+                        <span class="text-[20px] font-normal opacity-60">(2 – 600s)</span>
                     </div>
                     <input type="number"
                            id="screensaver-cycle-seconds"
@@ -1852,11 +1863,10 @@ export function renderScreenSaverSettings() {
                            class="w-[140px] h-[62px] px-[20px] rounded-[12px] border-2 border-[#385a92] bg-[var(--box-color)] text-[var(--text-primary)] text-[24px] text-center disabled:opacity-40 disabled:cursor-not-allowed"
                            onchange="window.handleScreensaverCycleChange(this.value)">
                 </div>
+                ${screensaverImagesCache.length > 1 ? '' : `
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full">
-                    ${screensaverImagesCache.length > 1
-                        ? 'Seconds between image swaps (2 – 600).'
-                        : 'Add more than one image to enable cycling.'}
-                </p>
+                    Add more than one image to enable cycling.
+                </p>`}
             </div>
 
             ${brightnessSupported ? `
@@ -2141,11 +2151,16 @@ async function loadPresenceSettingsAsync() {
         // These presence fields (sleep timeout, keep-awake) are injected here,
         // asynchronously, AFTER updateSettingsContentArea's one-shot attach has
         // already run -- so re-attach the settings numpad now that they exist,
-        // otherwise they fall through to the OS keyboard.
+        // otherwise they fall through to the OS keyboard. Same reason for the
+        // translatePage() call: this content lands after the page's one-shot
+        // translation pass, so every data-i18n-key here would otherwise sit
+        // untranslated regardless of the selected language.
         attachSettingsNumpad();
+        translatePage();
     } catch (error) {
         console.error('Error rendering presence settings:', error);
         container.innerHTML = `<div class="text-error text-[20px]" data-i18n-key="Failed to load presence settings">Failed to load presence settings</div>`;
+        translatePage();
     }
 }
 
@@ -2250,6 +2265,39 @@ function initFontSizeSettings() {
         // scaling.js only re-reads uiZoom inside its resize handler — kick it
         // so the new size applies immediately instead of after the next reload.
         window.dispatchEvent(new Event('resize'));
+    });
+}
+
+export function renderTempUnitSettings() {
+    const current = getTempUnit();
+    return `
+        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Temperature">Temperature</p>
+            </div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Temperature">Temperature</p>
+                        </div>
+                        <select id="temp-unit-select" class="bg-[#385a92] border-2 border-[#385a92] border-solid h-[62.88px] rounded-[2617.374px] w-[200px] text-white text-[24px] p-2">
+                            <option value="C"${current === 'C' ? ' selected' : ''}>Celsius (°C)</option>
+                            <option value="F"${current === 'F' ? ' selected' : ''}>Fahrenheit (°F)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function initTempUnitSettings() {
+    const select = document.getElementById('temp-unit-select');
+    if (!select) return;
+    select.addEventListener('change', (e) => {
+        setTempUnit(e.target.value);
     });
 }
 
@@ -2593,8 +2641,8 @@ export function renderSteamSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Heater Target Temperature (°C)">Heater Target Temperature (°C)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">0 – 170 °C</span>
+                            <p class="leading-[1.2]" data-i18n-key="Steam temperature">Steam temperature</p>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${tempInputValue(0)} – ${tempInputValue(170)} ${tempUnitLabel()}</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease steam temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2605,9 +2653,9 @@ export function renderSteamSettings() {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${targetTemp}" step="1" min="0" max="170"
-                                       onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
-                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                                       value="${tempInputValue(targetTemp)}" step="1" min="${tempInputValue(0)}" max="${tempInputValue(170)}"
+                                       onchange="window.updateSteamSetting('targetTemperature', Math.round(window.tempInputToCelsius(this.value)))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">${tempUnitLabel()}</span>
                             </div>
                             <button aria-label="Increase steam temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                     onclick="window.flashPlusMinusButton(this); window.adjustSteamTemp(1);">
@@ -2710,7 +2758,7 @@ export function renderSteamSettings() {
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Stop at Milk Temperature (°C)">Stop at Milk Temperature (°C)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">30 – 85 °C</span>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${tempInputValue(30)} – ${tempInputValue(85)} ${tempUnitLabel()}</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2721,9 +2769,9 @@ export function renderSteamSettings() {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamMilkStopInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${milkTarget}" step="1" min="30" max="85"
-                                       onchange="window.updateSteamSetting('stopAtTemperature', Math.max(30, Math.min(85, Math.round(parseFloat(this.value)) || 30)))">
-                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                                       value="${tempInputValue(milkTarget)}" step="1" min="${tempInputValue(30)}" max="${tempInputValue(85)}"
+                                       onchange="window.updateSteamSetting('stopAtTemperature', Math.max(30, Math.min(85, Math.round(window.tempInputToCelsius(this.value)) || 30)))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">${tempUnitLabel()}</span>
                             </div>
                             <button aria-label="Increase milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                     onclick="window.flashPlusMinusButton(this); window.adjustMilkStopTemp(1);">
@@ -2993,13 +3041,13 @@ export function renderCupWarmerSettings() {
             <div class="content-stretch flex items-center justify-between relative w-full">
                 <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                     <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
-                    <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">30 – 80 °C</span>
+                    <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${tempInputValue(30)} – ${tempInputValue(80)} ${tempUnitLabel()}</span>
                 </div>
                 <div class="flex gap-[20px] h-[72px] items-center">
                     <button aria-label="Decrease cup warmer temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerTemp(-1);">${minusSvg}</button>
                     <div class="flex items-center justify-center" style="width: 130px;">
-                        <input type="text" inputmode="numeric" pattern="[0-9]*" id="cupWarmerTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full" value="${target}" step="1" min="30" max="80" onchange="window.setCupWarmerTarget(parseFloat(this.value))">
-                        <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                        <input type="text" inputmode="numeric" pattern="[0-9]*" id="cupWarmerTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full" value="${tempInputValue(target)}" step="1" min="${tempInputValue(30)}" max="${tempInputValue(80)}" onchange="window.setCupWarmerTarget(window.tempInputToCelsius(this.value))">
+                        <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">${tempUnitLabel()}</span>
                     </div>
                     <button aria-label="Increase cup warmer temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center" onclick="window.flashPlusMinusButton(this); window.adjustCupWarmerTemp(1);">${plusSvg}</button>
                 </div>
@@ -3012,7 +3060,7 @@ export function renderCupWarmerSettings() {
                     <p class="font-['Inter:Regular',sans-serif] font-normal text-[var(--text-primary)] text-[22px] leading-[1.3]" data-i18n-key="Live temperature of the cup-warming plate">Live temperature of the cup-warming plate</p>
                 </div>
                 ${currentTempText !== null
-                    ? `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-bold leading-[1.2] whitespace-nowrap">${currentTempText}&nbsp;°C</p>`
+                    ? `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-bold leading-[1.2] whitespace-nowrap">${formatTemp(cupWarmer.currentTemperature, 1)}</p>`
                     : `<p id="cupWarmerCurrentTemp" class="text-[var(--text-primary)] text-[24px] font-normal opacity-60 leading-[1.2] whitespace-nowrap" data-i18n-key="No reading">No reading</p>`}
             </div>
 
@@ -3084,7 +3132,7 @@ window.adjustCupWarmerTemp = function(change) {
     const input = document.getElementById('cupWarmerTempInput');
     if (input) {
         let v = parseInt(input.value, 10) + change;
-        v = Math.max(30, Math.min(80, v));
+        v = Math.max(tempInputValue(30), Math.min(tempInputValue(80), v));
         input.value = v;
         input.dispatchEvent(new Event('change'));
     }
@@ -3641,7 +3689,7 @@ export function renderHotWaterSettings() {
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Target Temperature (°C)">Target Temperature (°C)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">50 – 95 °C</span>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${tempInputValue(50)} – ${tempInputValue(95)} ${tempUnitLabel()}</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease hot water temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -3652,9 +3700,9 @@ export function renderHotWaterSettings() {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" id="hotWaterTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${targetTemp}" step="1" min="50" max="95"
-                                       onchange="window.updateHotWaterSetting('targetTemperature', parseInt(this.value))">
-                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">°C</span>
+                                       value="${tempInputValue(targetTemp)}" step="1" min="${tempInputValue(50)}" max="${tempInputValue(95)}"
+                                       onchange="window.updateHotWaterSetting('targetTemperature', Math.round(window.tempInputToCelsius(this.value)))">
+                                <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">${tempUnitLabel()}</span>
                             </div>
                             <button aria-label="Increase hot water temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                     onclick="window.flashPlusMinusButton(this); window.adjustHotWaterTemp(1);">
@@ -3787,7 +3835,7 @@ export function renderHotWaterSettings() {
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Flow Multiplier (s)">Flow Multiplier (s)</p>
+                            <p class="leading-[1.2]" data-i18n-key="Flow Multiplier">Flow Multiplier</p>
                             <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">Lookahead for stop-at-weight</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
@@ -3858,10 +3906,10 @@ export function renderWaterTankSettings() {
                         <div class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none flex items-center justify-center"
                              style="width: 130px;">
                             <input type="text" inputmode="numeric" pattern="[0-9]*" id="tankTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                   value="${settingsCache.de1.tankTemp !== undefined ? settingsCache.de1.tankTemp : 25}"
-                                   step="1" min="10" max="40"
-                                   onchange="window.updateDe1Setting('tankTemp', parseInt(this.value))">
-                            <span class="ml-2 text-nowrap">°C</span>
+                                   value="${tempInputValue(settingsCache.de1.tankTemp !== undefined ? settingsCache.de1.tankTemp : 25)}"
+                                   step="1" min="${tempInputValue(10)}" max="${tempInputValue(40)}"
+                                   onchange="window.updateDe1Setting('tankTemp', Math.round(window.tempInputToCelsius(this.value)))">
+                            <span class="ml-2 text-nowrap">${tempUnitLabel()}</span>
                         </div>
                         <button id="tank-temp-plus" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustTankTemp(1);">
@@ -3877,8 +3925,8 @@ export function renderWaterTankSettings() {
 
                 <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
-                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
-                            Water Alert Level
+                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Water level">
+                            Water level
                         </p>
                     </div>
                     <div class="content-stretch flex gap-[20px] h-[72px] items-center justify-center relative shrink-0 w-full">
@@ -3910,8 +3958,8 @@ export function renderWaterTankSettings() {
 
                 <div class="border border-[#c9c9c9] border-solid content-stretch flex flex-col gap-[20px] items-center px-[60px] py-[20px] relative shrink-0 w-[590px]">
                     <div class="content-stretch flex items-center relative shrink-0">
-                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]">
-                            Display Unit
+                        <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.2] not-italic relative shrink-0 text-[var(--text-primary)] text-[30px]" data-i18n-key="Measurement Units">
+                            Measurement Units
                         </p>
                     </div>
                     <div class="flex items-center gap-[8px]" role="group" aria-label="Water tank display unit">
@@ -4430,10 +4478,10 @@ export function renderCalibSteamSettings() {
                         <div class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none flex items-center justify-center"
                              style="width: 130px;">
                             <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamCalibTempInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                   value="${targetTemp}"
-                                   step="1" min="135" max="170"
-                                   onchange="window.updateSteamSetting('targetTemperature', parseInt(this.value))">
-                            <span class="ml-2 text-nowrap">°C</span>
+                                   value="${tempInputValue(targetTemp)}"
+                                   step="1" min="${tempInputValue(135)}" max="${tempInputValue(170)}"
+                                   onchange="window.updateSteamSetting('targetTemperature', Math.round(window.tempInputToCelsius(this.value)))">
+                            <span class="ml-2 text-nowrap">${tempUnitLabel()}</span>
                         </div>
                         <button id="steam-temp-plus" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
                                 onclick="window.flashPlusMinusButton(this); window.adjustSteamCalibTemp(1);">
@@ -6582,8 +6630,8 @@ export async function initializeSettings() {
         const input = document.getElementById('flushTempInput');
         if (input) {
             let newValue = parseFloat(input.value) + change;
-            // Ensure value stays within bounds (5 to 95 degrees)
-            newValue = Math.max(5, Math.min(95, newValue));
+            // Ensure value stays within bounds (5 to 95 °C, in the active display unit)
+            newValue = Math.max(tempInputValue(5), Math.min(tempInputValue(95), newValue));
             input.value = newValue.toFixed(1);
             // Trigger the onchange event to update the setting
             input.dispatchEvent(new Event('change'));
@@ -6666,7 +6714,7 @@ export async function initializeSettings() {
         const input = document.getElementById('hotWaterTempInput');
         if (input) {
             let newValue = parseInt(input.value, 10) + change;
-            newValue = Math.max(50, Math.min(95, newValue));
+            newValue = Math.max(tempInputValue(50), Math.min(tempInputValue(95), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
@@ -6716,7 +6764,7 @@ export async function initializeSettings() {
         const input = document.getElementById('heaterIdleTempInput');
         if (input) {
             let newValue = parseInt(input.value, 10) + change;
-            newValue = Math.max(0, Math.min(95, newValue));
+            newValue = Math.max(tempInputValue(0), Math.min(tempInputValue(95), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
@@ -6736,7 +6784,7 @@ export async function initializeSettings() {
         const input = document.getElementById('tankTempInput');
         if (input) {
             let newValue = parseInt(input.value, 10) + change;
-            newValue = Math.max(10, Math.min(40, newValue));
+            newValue = Math.max(tempInputValue(10), Math.min(tempInputValue(40), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
@@ -6802,7 +6850,7 @@ export async function initializeSettings() {
         const input = document.getElementById('steamCalibTempInput');
         if (input) {
             let newValue = parseInt(input.value, 10) + change;
-            newValue = Math.max(135, Math.min(170, newValue));
+            newValue = Math.max(tempInputValue(135), Math.min(tempInputValue(170), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
@@ -6812,7 +6860,7 @@ export async function initializeSettings() {
         const input = document.getElementById('steamTempInput');
         if (input) {
             let newValue = parseInt(input.value, 10) + change;
-            newValue = Math.max(130, Math.min(170, newValue));
+            newValue = Math.max(tempInputValue(130), Math.min(tempInputValue(170), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
@@ -6842,7 +6890,7 @@ export async function initializeSettings() {
         const input = document.getElementById('steamMilkStopInput');
         if (input) {
             let newValue = Math.round(parseFloat(input.value)) + change;
-            newValue = Math.max(30, Math.min(85, newValue));
+            newValue = Math.max(tempInputValue(30), Math.min(tempInputValue(85), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }
