@@ -4926,7 +4926,7 @@ function setupVisualizerEventListeners() {
                 
                 await setPluginSettings(pluginId, { AutoUpload: isEnabled });
                 localStorage.setItem('visualizerAutoUpload', isEnabled.toString());
-                ui.showToast(`Visualizer ${isEnabled ? 'enabled' : 'disabled'}`, 1500, 'success');
+                ui.showToast(`${getTranslation('Visualizer')} ${isEnabled ? getTranslation('Enabled') : getTranslation('Disabled')}`, 1500, 'success');
             } catch (error) {
                 console.error('Failed to save Visualizer state:', error);
                 ui.showToast('Failed to update Visualizer state', 2000, 'error');
@@ -5866,7 +5866,7 @@ export async function initializeSettings() {
         // The other half of the either/or: turning the image saver on means the
         // black cover is off.
         if (enabled) apiSetBlackScreenSaver(false);
-        ui.showToast(`Screen saver ${enabled ? 'enabled' : 'disabled'}`, 2000, 'success');
+        ui.showToast(`${getTranslation('Screen saver')} ${enabled ? getTranslation('Enabled') : getTranslation('Disabled')}`, 2000, 'success');
         if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
     };
 
@@ -5937,7 +5937,7 @@ export async function initializeSettings() {
     };
     window.updateHeaterVoltage = async function(value) {
         await window.updateDe1AdvancedSetting('heaterVoltage', value);
-        ui.showToast('Restart the machine for the voltage change to take effect', 6000, 'warning');
+        ui.showToast(getTranslation('Restart the machine after changing voltage for the setting to take effect.'), 6000, 'warning');
     };
     window.resetDe1Settings = async function() {
         try {
@@ -6555,7 +6555,7 @@ export async function initializeSettings() {
         }
 
         try {
-            ui.showToast('Uploading firmware — this may take several minutes...', 10000, 'info');
+            ui.showToast(`${getTranslation('Uploading...')} firmware — this may take several minutes`, 10000, 'info');
             await uploadFirmware(file);
             ui.showToast('Firmware uploaded successfully. Restart the machine to apply.', 8000, 'success');
         } catch (error) {
@@ -6597,7 +6597,7 @@ export async function initializeSettings() {
 
     window.updateSkin = async function() {
         try {
-            ui.showToast('Checking for skin updates...', 3000, 'info');
+            ui.showToast(getTranslation('Check for current skin updates'), 3000, 'info');
             await updateSkins(); // bridge checks sources & downloads newer skin files server-side
             settingsCache.allSkins = await getAllSkins();
             const diskVersion = settingsCache.allSkins.find(s => s.id === SKIN_ID)?.version;
@@ -6605,7 +6605,7 @@ export async function initializeSettings() {
                 ui.showToast(`New version v${diskVersion} downloaded. Reloading...`, 2000, 'success');
                 setTimeout(() => window.location.reload(), 2000);
             } else {
-                ui.showToast(`Already up to date (v${APP_VERSION}).`, 4000, 'info');
+                ui.showToast(`${getTranslation('Up to date')} (v${APP_VERSION}).`, 4000, 'info');
                 if (activeSettingsCategory) updateSettingsContentArea(activeSettingsCategory);
             }
         } catch (error) {
@@ -7566,11 +7566,11 @@ window.handleWakeLockToggle = async function(enabled) {
         if (enabled) {
             await enableWakeLock();
             localStorage.setItem('wakeLockEnabled', 'true');
-            ui.showToast('Wake lock enabled', 3000, 'success');
+            ui.showToast(`${getTranslation('Wake Lock')} ${getTranslation('Enabled')}`, 3000, 'success');
         } else {
             await disableWakeLock();
             localStorage.setItem('wakeLockEnabled', 'false');
-            ui.showToast('Wake lock disabled', 3000, 'success');
+            ui.showToast(`${getTranslation('Wake Lock')} ${getTranslation('Disabled')}`, 3000, 'success');
         }
     } catch (error) {
         console.error('Error toggling wake lock:', error);
@@ -7582,7 +7582,7 @@ window.handleWakeLockToggle = async function(enabled) {
 window.handlePresenceToggle = async function(enabled) {
     try {
         await setPresenceSettings({ userPresenceEnabled: enabled });
-        ui.showToast(`Presence detection ${enabled ? 'enabled' : 'disabled'}`, 3000, 'success');
+        ui.showToast(`${getTranslation('Presence Detection')} ${enabled ? getTranslation('Enabled') : getTranslation('Disabled')}`, 3000, 'success');
     } catch (error) {
         console.error('Error toggling presence detection:', error);
         ui.showToast('Failed to update presence detection', 5000, 'error');
@@ -7708,8 +7708,8 @@ export function renderBluetoothMachineSettings() {
                 <p class="flex-1 text-center font-['Inter:Semi_Bold',sans-serif] font-semibold not-italic text-[var(--text-primary)] text-[36px] leading-[1.2]" data-i18n-key="Espresso Machine">Espresso Machine</p>
                 <button id="scan-machine-btn"
                         class="w-[139px] shrink-0 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
-                        onclick="window.scanForMachines()">
-                    Scan
+                        onclick="window.scanForMachines()" data-i18n-key="Search">
+                    Search
                 </button>
             </div>
 
@@ -7751,8 +7751,8 @@ export function renderBluetoothScaleSettings(settings) {
                 <p class="flex-1 text-center font-['Inter:Semi_Bold',sans-serif] font-semibold not-italic text-[var(--text-primary)] text-[36px] leading-[1.2]" data-i18n-key="Scale">Scale</p>
                 <button id="scan-scale-btn"
                         class="w-[139px] shrink-0 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
-                        onclick="window.scanForScales()">
-                    Scan
+                        onclick="window.scanForScales()" data-i18n-key="Search">
+                    Search
                 </button>
             </div>
 
@@ -7923,7 +7923,7 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
         container.innerHTML = `
             <div class="flex items-center gap-[16px] w-full bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[18px] px-[28px] py-[24px] opacity-60">
                 <div class="w-[14px] h-[14px] rounded-full bg-[var(--profile-button-outline-color)] flex-shrink-0"></div>
-                <p class="text-[24px] text-[var(--text-primary)]">No ${type.toLowerCase()} found — tap Scan to search for nearby devices.</p>
+                <p class="text-[24px] text-[var(--text-primary)]">No ${type.toLowerCase()} found — tap Search to find nearby devices.</p>
             </div>`;
     }
     // The device list is injected via WebSocket updates, after the page's initial
@@ -8046,7 +8046,7 @@ window.handleDeviceConnection = async function(deviceId, action) {
     if (action === 'connect') {
         try {
             sendDeviceCommand({ command: 'connect', deviceId });
-            ui.showToast(`Connected to device ${deviceId}`, 3000, 'success');
+            ui.showToast(`${getTranslation('Connected')} to device ${deviceId}`, 3000, 'success');
             // Device list will update automatically via WebSocket onData callback
         } catch (error) {
             console.error('Error connecting to device:', error);
@@ -8055,7 +8055,7 @@ window.handleDeviceConnection = async function(deviceId, action) {
     } else if (action === 'disconnect') {
         try {
             sendDeviceCommand({ command: 'disconnect', deviceId });
-            ui.showToast(`Disconnected from device ${deviceId}`, 3000, 'info');
+            ui.showToast(`${getTranslation('Disconnected')} from device ${deviceId}`, 3000, 'info');
             // Device list will update automatically via WebSocket onData callback
         } catch (error) {
             console.error('Error disconnecting from device:', error);
@@ -8258,7 +8258,7 @@ window.startKeyRebind = function(stateValue) {
 window.resetKeyboardBindings = function() {
     localStorage.removeItem('keyboardBindings');
     updateSettingsContentArea('keyboard_shortcuts');
-    ui.showToast('Keyboard shortcuts reset to defaults', 3000, 'success');
+    ui.showToast(`${getTranslation('Keyboard Shortcuts')} ${getTranslation('Reset to default')}`, 3000, 'success');
 };
 
 window.handleNightModeToggle = async function(enabled) {
