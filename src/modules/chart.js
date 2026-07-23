@@ -629,10 +629,10 @@ function expandedTopTraces() {
 function expandedTempTraces() {
     const s = expandedSeries;
     const traces = [
-        { x: s.groupTemp.x, y: s.groupTemp.y, name: getTranslation('Group °C'), mode: 'lines', line: { color: '#ff97a1', width: 3 }, hoverinfo: 'skip' },
+        { x: s.groupTemp.x, y: s.groupTemp.y, name: `${getTranslation('Group')} °C`, mode: 'lines', line: { color: '#ff97a1', width: 3 }, hoverinfo: 'skip' },
         // Amber, CVD-validated against the group pink (worst ΔE 14.7, ≥12 req);
         // solid 3px = "actual" convention (targets are the dotted ones).
-        { x: s.mixTemp.x, y: s.mixTemp.y, name: getTranslation('Mix °C'), mode: 'lines', line: { color: '#d9822b', width: 3 }, hoverinfo: 'skip' },
+        { x: s.mixTemp.x, y: s.mixTemp.y, name: `${getTranslation('Mix')} °C`, mode: 'lines', line: { color: '#d9822b', width: 3 }, hoverinfo: 'skip' },
         // Two targets now, so "Target °C" would be ambiguous — say which is which.
         { x: s.targetTemp.x, y: s.targetTemp.y, name: getTranslation('Group Target °C'), mode: 'lines', line: { color: '#f0b8bd', dash: 'dot', width: 2 }, hoverinfo: 'skip' },
     ];
