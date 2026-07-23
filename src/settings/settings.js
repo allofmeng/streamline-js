@@ -7708,8 +7708,8 @@ export function renderBluetoothMachineSettings() {
                 <p class="flex-1 text-center font-['Inter:Semi_Bold',sans-serif] font-semibold not-italic text-[var(--text-primary)] text-[36px] leading-[1.2]" data-i18n-key="Espresso Machine">Espresso Machine</p>
                 <button id="scan-machine-btn"
                         class="w-[139px] shrink-0 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
-                        onclick="window.scanForMachines()">
-                    Scan
+                        onclick="window.scanForMachines()" data-i18n-key="Search">
+                    Search
                 </button>
             </div>
 
@@ -7751,8 +7751,8 @@ export function renderBluetoothScaleSettings(settings) {
                 <p class="flex-1 text-center font-['Inter:Semi_Bold',sans-serif] font-semibold not-italic text-[var(--text-primary)] text-[36px] leading-[1.2]" data-i18n-key="Scale">Scale</p>
                 <button id="scan-scale-btn"
                         class="w-[139px] shrink-0 border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border text-[24px] transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
-                        onclick="window.scanForScales()">
-                    Scan
+                        onclick="window.scanForScales()" data-i18n-key="Search">
+                    Search
                 </button>
             </div>
 
@@ -7923,7 +7923,7 @@ function renderDeviceList(containerId, devices, type, preferredId = '', settingK
         container.innerHTML = `
             <div class="flex items-center gap-[16px] w-full bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] rounded-[18px] px-[28px] py-[24px] opacity-60">
                 <div class="w-[14px] h-[14px] rounded-full bg-[var(--profile-button-outline-color)] flex-shrink-0"></div>
-                <p class="text-[24px] text-[var(--text-primary)]">No ${type.toLowerCase()} found — tap Scan to search for nearby devices.</p>
+                <p class="text-[24px] text-[var(--text-primary)]">No ${type.toLowerCase()} found — tap Search to find nearby devices.</p>
             </div>`;
     }
     // The device list is injected via WebSocket updates, after the page's initial
