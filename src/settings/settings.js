@@ -1933,8 +1933,10 @@ export function renderBrightnessSettings() {
 // Render Wake Lock settings
 export function renderWakeLockSettings() {
     // Prefer REA's live DisplayState; fall back to last-known localStorage intent
-    // only before the first display frame has arrived.
-    const wakeLockEnabled = displayStateCache?.wakeLockEnabled
+    // only before the first display frame has arrived. wakeLockOverride (not
+    // wakeLockEnabled) is whether THIS APP asked for the lock -- see the
+    // display-socket listener below for why that distinction matters.
+    const wakeLockEnabled = displayStateCache?.wakeLockOverride
         ?? isWakeLockEnabled();
 
     return `
@@ -7368,11 +7370,15 @@ export function initDisplayWebSocket() {
             if (brightnessNumber) brightnessNumber.value = data.brightness;
         }
 
-        // Update wake-lock toggle if it exists
+        // Update wake-lock toggle if it exists. wakeLockOverride (not
+        // wakeLockEnabled) is REA's record of whether THIS APP asked for the
+        // lock -- wakeLockEnabled is just whether a lock is held right now,
+        // which can read false for reasons unrelated to our request and was
+        // fighting the user's own toggle taps.
         const wakeLockToggle = document.getElementById('wake-lock-toggle');
-        if (wakeLockToggle && data.wakeLockEnabled !== undefined) {
-            wakeLockToggle.checked = data.wakeLockEnabled;
-            localStorage.setItem('wakeLockEnabled', data.wakeLockEnabled.toString());
+        if (wakeLockToggle && data.wakeLockOverride !== undefined) {
+            wakeLockToggle.checked = data.wakeLockOverride;
+            localStorage.setItem('wakeLockEnabled', data.wakeLockOverride.toString());
         }
     });
 
