@@ -593,6 +593,12 @@ export function connectDisplayWebSocket(onData) {
     displayWebSocket.onopen = () => {
         logger.info('Display WebSocket connected');
         displayWebSocketReady = true;
+        // REA scopes the wake-lock override to this connection and drops it
+        // whenever the socket closes, so a reconnect (network blip, REA
+        // restart) silently lets the tablet sleep again unless we re-request it.
+        if (isWakeLockEnabled()) {
+            enableWakeLock().catch((e) => logger.warn('Failed to re-arm wake-lock on connect:', e));
+        }
     };
 
     displayWebSocket.onmessage = (event) => {
@@ -1992,6 +1998,12 @@ export async function restoreBrightnessFromStorage() {
     } catch (e) {
         logger.warn('restoreBrightnessFromStorage failed:', e);
     }
+}
+
+/** Wake-lock defaults ON: absent key means never-touched, not opted-out. */
+export function isWakeLockEnabled() {
+    const stored = localStorage.getItem('wakeLockEnabled');
+    return stored === null ? true : stored === 'true';
 }
 
 export async function enableWakeLock() {
