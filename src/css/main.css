@@ -91,9 +91,7 @@ body {
     --status-clickable-color: #1967d4;
     --fav-button-wait:#e3e4e6;
 
-    /* Wake Lock and Presence Settings (Light Mode) */
-    --wakelock-card-bg: #385a92;
-    --wakelock-card-text: #ffffff;
+    /* Presence Settings (Light Mode) */
     --presence-card-bg: #f8f9fb;
     --presence-card-alt-bg: #ffffff;
     --presence-card-text: #121212;
@@ -135,9 +133,7 @@ body {
     --status-red-color: #DA515E;   /* Same as light mode */
     --status-clickable-color: #415996;
 
-    /* Wake Lock and Presence Settings (Dark Mode) */
-    --wakelock-card-bg: #415996;
-    --wakelock-card-text: #e8e8e8;
+    /* Presence Settings (Dark Mode) */
     --presence-card-bg: #17181D;
     --presence-card-alt-bg: #2d3a52;
     --presence-card-text: #e8e8e8;

@@ -1948,11 +1948,11 @@ export function renderWakeLockSettings() {
                 </p>
             </div>
 
-            <div class="bg-[var(--wakelock-card-bg)] rounded-lg p-6">
+            <div class="bg-[var(--presence-card-bg)] rounded-lg p-6">
                 <div class="flex items-center justify-between">
                     <div>
-                        <label class="text-[24px] font-semibold text-[var(--wakelock-card-text)]" data-i18n-key="Enable Wake Lock">Enable Wake Lock</label>
-                        <p class="text-[18px] text-[var(--wakelock-card-text)] opacity-75 mt-1" data-i18n-key="Keep the screen on while the app is active">
+                        <label class="text-[24px] font-semibold text-[var(--presence-card-text)]" data-i18n-key="Enable Wake Lock">Enable Wake Lock</label>
+                        <p class="text-[18px] text-[var(--presence-card-text)] opacity-75 mt-1" data-i18n-key="Keep the screen on while the app is active">
                             Keep the screen on while the app is active
                         </p>
                     </div>
