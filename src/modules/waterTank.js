@@ -27,7 +27,16 @@ function getWaterTankUnit() {
 }
 
 let lastLevelMm = null;
+let lastRefillLevelMm = null;
 let tankVolElementRef = null;
+
+// Tank running low is a level-vs-threshold fact independent of the DE1's own
+// `needsWater` machine state, which per the DE1 state machine only fires as a
+// hard block once it actively tries to heat/pull -- a tablet watching the
+// level itself can warn earlier, while the machine is idle/sleeping.
+export function isTankBelowRefillLevel() {
+    return lastLevelMm !== null && lastRefillLevelMm !== null && lastLevelMm <= lastRefillLevelMm;
+}
 
 function renderLevel() {
     if (!tankVolElementRef || lastLevelMm === null) return;
@@ -103,7 +112,8 @@ export function initWaterTankSocket() {
             // the localStorage key the settings page reads, so the displayed alert
             // level reflects REA when available instead of drifting from a stale local copy.
             if (data.refillLevel !== undefined) {
-                localStorage.setItem('waterRefillLevel', String(Math.round(data.refillLevel)));
+                lastRefillLevelMm = Math.round(data.refillLevel);
+                localStorage.setItem('waterRefillLevel', String(lastRefillLevelMm));
             }
         } catch (e) {
             logger.error('Error parsing water level data:', e);

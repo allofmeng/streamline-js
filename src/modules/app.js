@@ -9,7 +9,7 @@ import * as shotData from './shotData.js';
 import * as profileManager from './profileManager.js';
 import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
-import { initWaterTankSocket } from './waterTank.js';
+import { initWaterTankSocket, isTankBelowRefillLevel } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
 import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
@@ -611,6 +611,15 @@ function handleData(data) {
             if (formattedSubstate && formattedSubstate.toLowerCase() !== 'idle' && formattedSubstate.toLowerCase() !== formattedState.toLowerCase()) {
                 statusString += ` (${formattedSubstate})`;
             }
+        }
+
+        // Tank-level warning, independent of the machine's own `needsWater`
+        // state (that's a hard block that only fires once the machine actively
+        // tries to heat/pull). Same priority a real needsWater state already
+        // has -- it wins over Heating/pouring text too, since isHeatingState()
+        // never returns true for state === 'needsWater'.
+        if (state !== MachineState.NEEDS_WATER && isTankBelowRefillLevel()) {
+            statusString = formatStateString(MachineState.NEEDS_WATER);
         }
     }
 
