@@ -2248,7 +2248,7 @@ export function updateMachineStatus(data) {
         logger.debug('DEBUG: Out of water state - Set machine status with red styling');
     } else if (isEspressoPreparingForShot) {
         logger.debug('Entering isEspressoPreparingForShot condition');
-        const espressoHeatingWaitText = getTranslation('Espresso Heating : Please wait');
+        const espressoHeatingWaitText = getTranslation('Heating');
         machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${espressoHeatingWaitText}</span>`;
     } else if (isHeatingWithTimeRemaining) {
         // Split the status string to apply different colors to "Heating" and "Xs remaining"
