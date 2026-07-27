@@ -2401,10 +2401,32 @@ function renderReviewGraph() {
     const pressureX = [], pressureY = [], flowX = [], flowY = [], tempX = [], tempY = [];
     const stepShapes = [];
     let t = 0;
+    let prevPressure = 0;
+    let prevFlow = 0;
+
+    // 'smooth' ramps from the channel's last value into the new target over
+    // part of the step instead of jumping there instantly like 'fast' does.
+    function rampDuration(dur) {
+        return Math.min(dur, Math.min(3, Math.max(0.5, dur * 0.3)));
+    }
+    function pushChannel(xArr, yArr, startT, endT, prevVal, target, transition) {
+        if (transition === 'smooth' && prevVal !== target) {
+            const rampEnd = startT + rampDuration(endT - startT);
+            if (rampEnd < endT) {
+                xArr.push(rampEnd, endT);
+                yArr.push(target, target);
+                return;
+            }
+        }
+        xArr.push(startT, endT);
+        yArr.push(target, target);
+    }
+
     for (const step of (profile.steps || [])) {
         const dur = (step.seconds && step.seconds > 0) ? step.seconds : 10;
         const startT = t;
         const endT = t + dur;
+        const transition = step.transition || 'fast';
 
         // Step boundary vertical line (skip t=0)
         if (startT > 0) {
@@ -2417,15 +2439,19 @@ function renderReviewGraph() {
         }
 
         if (step.pump === 'pressure') {
-            pressureX.push(startT, endT);
-            pressureY.push(step.pressure ?? 0, step.pressure ?? 0);
+            const target = step.pressure ?? 0;
+            pushChannel(pressureX, pressureY, startT, endT, prevPressure, target, transition);
+            prevPressure = target;
             flowX.push(startT, endT);
             flowY.push(0, 0);
+            prevFlow = 0;
         } else {
-            flowX.push(startT, endT);
-            flowY.push(step.flow ?? 0, step.flow ?? 0);
+            const target = step.flow ?? 0;
+            pushChannel(flowX, flowY, startT, endT, prevFlow, target, transition);
+            prevFlow = target;
             pressureX.push(startT, endT);
             pressureY.push(0, 0);
+            prevPressure = 0;
         }
         const tempScaled = ((step.temperature ?? 0) / 100) * 10;
         tempX.push(startT, endT);

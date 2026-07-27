@@ -1234,6 +1234,37 @@ export function plotProfile(profile) {
     const tempY = chartData.groupTemperature.y;
 
     let currentTime = 0;
+    // 'smooth' ramps from the channel's last value into the new target instead
+    // of jumping there instantly; null means the channel was off (gap in the
+    // line), so a ramp has nothing to ramp from and falls back to a jump.
+    let prevPressure = 0;
+    let prevFlow = 0;
+
+    function rampDuration(duration) {
+        return Math.min(duration, Math.min(3, Math.max(0.5, duration * 0.3)));
+    }
+
+    function pushChannelStep(xArr, yArr, isActive, target, prevVal, transition, nextTime, duration) {
+        if (!isActive) {
+            xArr.push(currentTime, nextTime);
+            yArr.push(null, null);
+            return null;
+        }
+        if (transition === 'smooth' && prevVal !== null && prevVal !== target) {
+            const rampEnd = currentTime + rampDuration(duration);
+            if (rampEnd < nextTime) {
+                xArr.push(rampEnd, nextTime);
+                yArr.push(target, target);
+            } else {
+                xArr.push(nextTime);
+                yArr.push(target);
+            }
+        } else {
+            xArr.push(currentTime, nextTime);
+            yArr.push(target, target);
+        }
+        return target;
+    }
 
     const initialTemp = (parseFloat(profile.steps[0].temperature || 0) / 100) * 10;
     tpX.push(0);
@@ -1248,21 +1279,16 @@ export function plotProfile(profile) {
         if (duration <= 0) continue;
 
         const nextTime = currentTime + duration;
-        let pressure = null;
-        let flow = null;
         const temp = (parseFloat(step.temperature || 0) / 100) * 10;
+        const transition = step.transition || 'fast';
 
-        if (step.pump === 'pressure') {
-            pressure = parseFloat(step.pressure || 0);
-        } else if (step.pump === 'flow') {
-            flow = parseFloat(step.flow || 0);
-        }
+        const isPressure = step.pump === 'pressure';
+        const isFlowStep = step.pump === 'flow';
+        const pressureTarget = isPressure ? parseFloat(step.pressure || 0) : null;
+        const flowTarget = isFlowStep ? parseFloat(step.flow || 0) : null;
 
-        tpX.push(currentTime, nextTime);
-        tpY.push(pressure, pressure);
-
-        tfX.push(currentTime, nextTime);
-        tfY.push(flow, flow);
+        prevPressure = pushChannelStep(tpX, tpY, isPressure, pressureTarget, prevPressure, transition, nextTime, duration);
+        prevFlow = pushChannelStep(tfX, tfY, isFlowStep, flowTarget, prevFlow, transition, nextTime, duration);
 
         tempX.push(currentTime, nextTime);
         tempY.push(temp, temp);
