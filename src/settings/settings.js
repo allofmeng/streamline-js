@@ -402,7 +402,8 @@ const settingsTree = {
         name: 'Extensions',
         subcategories: [
             { id: 'extention1', name: 'Visualizer', settingsCategory: 'extensions' },
-            { id: 'extention2', name: 'Plugins', settingsCategory: 'plugins' }
+            { id: 'extention2', name: 'Plugins', settingsCategory: 'plugins' },
+            { id: 'dye2', name: 'DYE2', settingsCategory: 'dye2', i18nKey: 'DYE2' }
         ]
     },
     'miscellaneous': {
@@ -646,6 +647,8 @@ export function renderSettingsContent(category) {
             return renderLanguageSettings();
         case 'plugins':
             return renderPluginManagerSettings();
+        case 'dye2':
+            return renderDye2Settings();
         case 'extensions':
         case 'extention1':
         case 'extention2':
@@ -4841,21 +4844,6 @@ export function renderExtensionsSettings() {
 
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <!-- DYE2 master switch — gates the whole DYE2 dashboard header UI. Default OFF. -->
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="DYE2">DYE2</p>
-                            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Show DYE auto-favourites and recipes on the dashboard header.">
-                                Show DYE auto-favourites and recipes on the dashboard header.
-                            </p>
-                        </div>
-                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
-                            <input type="checkbox" id="dye2-enabled" class="sr-only peer">
-                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
-                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
-                        </label>
-                    </div>
-
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Visualizer">Visualizer</p>
@@ -4913,9 +4901,40 @@ export function renderExtensionsSettings() {
 
     // After returning the template, set up the event listeners
     setTimeout(setupVisualizerEventListeners, 0);
-    setTimeout(setupDye2SettingsListeners, 0);
 
     return template;
+}
+
+// Render DYE2 (Describe Your Espresso 2) settings — its own Extensions sub-page.
+export function renderDye2Settings() {
+    setTimeout(setupDye2SettingsListeners, 0);
+
+    return `
+        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Describe Your Espresso">Describe Your Espresso</p>
+            </div>
+
+            <div class="content-stretch flex flex-col items-start relative w-full">
+                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <!-- DYE2 master switch — gates the whole DYE2 dashboard header UI. Default OFF. -->
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="DYE2">DYE2</p>
+                            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Show DYE auto-favourites and recipes on the dashboard header.">
+                                Show DYE auto-favourites and recipes on the dashboard header.
+                            </p>
+                        </div>
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="dye2-enabled" class="sr-only peer">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // DYE2 master on/off. Persists streamline.dye2Enabled (default OFF). Flipping it
