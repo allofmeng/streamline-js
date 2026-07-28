@@ -4556,11 +4556,31 @@ export function renderMainAirPurgeSettings() {
                             Start
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]">
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]"
+                       data-i18n-key="Purges remaining water from inside the machine. Run before packing the machine to prevent leaks during transport.">
                         Purges remaining water from inside the machine. Run before packing the machine to prevent leaks during transport.
                     </p>
                 </div>
             </div>
+
+            <dialog id="airpurge-confirm-modal" class="modal">
+                <div class="modal-box bg-[var(--box-color)] max-w-2xl">
+                    <h3 class="font-bold text-[28px] text-[var(--text-primary)] mb-2" data-i18n-key="Transport Mode">Transport Mode</h3>
+                    <p class="text-[20px] text-[var(--text-primary)] opacity-80 mb-4 break-words" data-i18n-key="Prepare your espresso machine for transport">
+                        Prepare your espresso machine for transport
+                    </p>
+                    <div class="modal-action">
+                        <button class="border-[var(--mimoja-blue)] text-[var(--mimoja-blue)] h-[62px] rounded-[67.5px] border px-[32px] text-[24px] font-bold transition-colors duration-200 hover:bg-[var(--mimoja-blue)] hover:text-white"
+                                onclick="document.getElementById('airpurge-confirm-modal').close()" data-i18n-key="Cancel">
+                            Cancel
+                        </button>
+                        <button class="bg-[#385a92] h-[62px] px-[32px] rounded-[67.5px] text-white text-[24px] font-bold"
+                                onclick="window.confirmStartAirPurge()" data-i18n-key="Start">
+                            Start
+                        </button>
+                    </div>
+                </div>
+            </dialog>
         </div>
     `;
 }
@@ -6521,11 +6541,45 @@ export async function initializeSettings() {
         calRerender();
     };
 
+    // Hold a "running, don't touch the machine" toast for as long as the machine
+    // reports airPurge, then report completion. Polls the snapshot-fed
+    // currentMachineState rather than adding a listener — nothing else here
+    // subscribes to state changes. The cap is a leak guard, not a purge timer:
+    // a purge that outlives it just drops the banner early.
+    // ponytail: 1 s poll, swap for a state-change listener if one ever exists.
+    function watchAirPurge() {
+        ui.showToast(getTranslation('Now removing water from your espresso machine.'), 0, 'info');
+        let entered = false;
+        const startedAt = Date.now();
+        const timer = setInterval(() => {
+            const running = currentMachineState === MachineState.AIR_PURGE;
+            if (running) entered = true;
+            if (entered && !running) {
+                clearInterval(timer);
+                ui.showToast(getTranslation('You can turn your machine off once it is out of water. It will then be ready for transport.'), 8000, 'success');
+            } else if (Date.now() - startedAt > 5 * 60 * 1000) {
+                clearInterval(timer);
+                ui.hideToast();
+            }
+        }, 1000);
+    }
+
     window.startAirPurge = async function() {
-        if (!confirm('Start air purge? The machine will run the air purge cycle.')) return;
+        // Firmware quirk: a needsWater state blocks transport mode outright.
+        // Pressing the group stop button overrides the out-of-water signal,
+        // after which Start works normally.
+        if (currentMachineState === MachineState.NEEDS_WATER) {
+            ui.showToast(`${getTranslation('Out of water')} — ${getTranslation('Press the stop button on the group head to override, then tap Start again.')}`, 6000, 'error');
+            return;
+        }
+        document.getElementById('airpurge-confirm-modal')?.showModal();
+    };
+
+    window.confirmStartAirPurge = async function() {
+        document.getElementById('airpurge-confirm-modal')?.close();
         try {
             await setMachineState('airPurge');
-            ui.showToast('Air purge started', 3000, 'success');
+            watchAirPurge();
         } catch (error) {
             logger.error('Error starting air purge:', error);
             ui.showToast(`Failed to start air purge: ${error.message}`, 5000, 'error');
