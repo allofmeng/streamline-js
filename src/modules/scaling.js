@@ -112,11 +112,11 @@ export function initScaling() {
         let sx = screenWidth / designWidth;
         let sy = screenHeight / designHeight;
 
-        // ponytail: 1.0 = uniform scale (aspect preserved, letterboxed) — iPad Pro is 4:3
-        // vs the 16:10 design canvas, and independent x/y scaling stretched it ~15%.
-        // localStorage 'maxStretch' (e.g. '1.15') trades aspect for filling the screen
-        // on odd panels like the 1340x800 8" tablets.
-        const MAX_STRETCH = parseFloat(localStorage.getItem('maxStretch') || '1.0');
+        // ponytail: 1.05 lets the 16:10-ish Samsungs (A7 Lite 1340x800 needs 1.047,
+        // A7 10.4 needs 1.042) fill the screen with no gutters, while 4:3 iPads --
+        // which need 1.20 and looked visibly stretched -- get clamped and letterboxed.
+        // localStorage 'maxStretch': 1.0 = never stretch, higher = fill more aggressively.
+        const MAX_STRETCH = parseFloat(localStorage.getItem('maxStretch') || '1.05');
         const stretch = Math.max(sx, sy) / Math.min(sx, sy);
         if (stretch > MAX_STRETCH) {
             const k = MAX_STRETCH / stretch;
