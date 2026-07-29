@@ -1413,6 +1413,31 @@ export function initChart() {
         }, 100);
     });
     
+    // The window-resize handler above fires before scaling.js has written the new
+    // canvas height, so on a screen taller than 16:10 the container grows after
+    // Plotly has already measured it and the plot keeps its old height with white
+    // space below. Observing the container catches the real size change.
+    //
+    // Plots.resize() is not enough here: Plotly writes the computed width/height
+    // back into the layout object we pass it, so after the first draw autosize is
+    // off and the plot is pinned to whatever height it was born at. Setting the
+    // size explicitly from the container is what actually moves it.
+    const chartEl = getChartElement();
+    if (chartEl && window.ResizeObserver) {
+        let roTimeout;
+        new ResizeObserver(() => {
+            clearTimeout(roTimeout);
+            roTimeout = setTimeout(() => {
+                if (chartEl.offsetParent === null) return;   // hidden (subpage open)
+                if (!chartEl.clientHeight || !chartEl.clientWidth) return;
+                try {
+                    Plotly.relayout(chartEl, { width: chartEl.clientWidth, height: chartEl.clientHeight });
+                    refreshLabelMargin();
+                } catch (e) { /* not plotted yet */ }
+            }, 100);
+        }).observe(chartEl);
+    }
+
     // Listen for theme changes to update the chart when the theme changes
     window.addEventListener('storage', (event) => {
         if (event.key === 'theme') {

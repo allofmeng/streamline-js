@@ -13,7 +13,109 @@
 
 #subpage-host {
     width: 1920px;
-    height: 1200px;
+    height: 100%;
+}
+
+/* Subpage roots: settings/profile_editor carry h-full themselves, profile_selector
+   does not and stopped short of the canvas. Cover all of them in one place. */
+#subpage-host > div {
+    height: 100%;
+}
+
+/* profile_selector's fixed panel heights (list 850, chart 675, notes 275) add up to
+   the design canvas exactly; grow the list and the graph so the pair still reaches
+   the bottom when the canvas is taller. Notes keeps its 275. */
+#profile-list,
+#profile-chart-wrap {
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+#profile-chart-wrap {
+    display: flex;
+}
+
+#profile-chart-wrap > #plotly-chart {
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+/* scaling.js grows #scaled-content past 1200 design rows on screens taller than
+   16:10 (4:3 iPads). These rules pass that height down so the extra space lands
+   in the chart rather than as an empty band at the bottom. */
+#main-page {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The header is a fixed 168px band. Without shrink:0 it is a shrinkable flex item,
+   and any overshoot in the growing chart below squeezes it to ~1px instead. */
+#main-page > header {
+    flex: 0 0 auto;
+}
+
+/* min-height:0 lets the column shrink past its content instead of overflowing
+   (flex items default to min-height:auto). */
+#main-page > div,
+#main-page main {
+    min-height: 0;
+}
+
+/* flex-basis 0, not auto: with auto, the chart's own content height feeds back
+   into the column's base size and the siblings (header band, telemetry row) get
+   shrunk to compensate. Basis 0 means these two absorb free space only. */
+#main-row {
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+#chart-wrap {
+    flex: 1 1 0;
+    min-height: 650px;   /* the design height -- never shrink below it */
+}
+
+/* Scoped to the main page on purpose: profile_selector.html reuses the
+   #plotly-chart id inside an auto-height wrapper, where height:100% collapses it. */
+#main-page #plotly-chart {
+    height: 100%;
+}
+
+/* Shot Settings sidebar is h-[1036px] (= 1200 - 168 header, near enough). Let it
+   stretch with the canvas; its own justify-around then spaces the rows evenly. */
+#shot-settings {
+    height: auto;
+}
+
+/* The footer band is absolutely placed against the canvas at top:958 (958 = 168
+   header + 790 chart row; the panels are h-60 = 240 tall, ending at 1198). Anchor
+   it to the bottom instead so it stays put when the canvas grows, and reserve its
+   242px inside <main> so the growing chart stops flush above it rather than
+   sliding underneath. Both are no-ops at the design height of 1200. */
+#main-page main {
+    padding-bottom: 242px;
+}
+
+#shot-history-panel,
+#shot-data-panel {
+    top: auto;
+    bottom: 2px;
+}
+
+/* Settings body is h-[1088px] = 1200 - 112 header. Grow it with the canvas so the
+   panels reach the bottom instead of leaving a bare strip of page background. */
+#settings-body {
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+/* Fixed h-[790px] in the markup is 116 + 675 at design height; let it track the
+   chart column instead so the two stay flush when the canvas grows. */
+#ghc-controls {
+    height: auto;
 }
 
 #scaled-content.scaled {

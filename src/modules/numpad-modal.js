@@ -239,23 +239,35 @@ function createModalHTML() {
     return overlay;
 }
 
-// Fit the fixed 1920x1200 design canvas to the viewport. Scales x and y
-// independently (same as scaling.js / the TCL skin's dui) so 8" tablets at
-// 1340x800 fill the screen instead of sitting in left/right gutters.
+// Fit the fixed 1920x1200 design canvas to the viewport, mirroring scaling.js:
+// on screens taller than 16:10 (4:3 iPads) keep the scale uniform and grow the
+// canvas -- the keypad's absolute TCL coordinates stay put at the top and the
+// white container simply fills the extra rows, so the page stays full-bleed
+// instead of floating as a letterboxed card. On shorter screens (8" tablets at
+// 1340x800) fall back to the independent x/y squash so they still fill.
 function scaleNumpadCanvas() {
     const inner = document.querySelector('#numpad-modal-overlay .numpad-modal-scaled-inner');
     if (!inner) return;
     let sx = window.innerWidth / 1920;
     let sy = window.innerHeight / 1200;
-    const MAX_STRETCH = 1.15;
-    const stretch = Math.max(sx, sy) / Math.min(sx, sy);
-    if (stretch > MAX_STRETCH) {
-        const k = MAX_STRETCH / stretch;
-        if (sx > sy) sx *= k; else sy *= k;
+    let canvasHeight = 1200;
+
+    if (window.innerHeight / sx >= 1200) {
+        sy = sx;
+        canvasHeight = window.innerHeight / sx;
+    } else {
+        const MAX_STRETCH = parseFloat(localStorage.getItem('maxStretch') || '1.15');
+        const stretch = Math.max(sx, sy) / Math.min(sx, sy);
+        if (stretch > MAX_STRETCH) {
+            const k = MAX_STRETCH / stretch;
+            if (sx > sy) sx *= k; else sy *= k;
+        }
     }
+
     // Placed explicitly from the top-left origin — see numpad-modal.css.
     const offsetX = (window.innerWidth - 1920 * sx) / 2;
-    const offsetY = (window.innerHeight - 1200 * sy) / 2;
+    const offsetY = (window.innerHeight - canvasHeight * sy) / 2;
+    inner.style.height = `${canvasHeight}px`;
     inner.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${sx}, ${sy})`;
 }
 

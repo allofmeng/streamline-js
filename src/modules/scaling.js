@@ -103,29 +103,40 @@ export function initScaling() {
         const screenHeight = keyboardShrunk ? baselineHeight : rawHeight;
         if (!keyboardShrunk) baselineHeight = rawHeight;
 
-        // Scale x and y independently, the way the TCL skin does it: dui maps its
-        // fixed 2560x1600 canvas onto the real screen with separate xscale_factor /
-        // yscale_factor (de1plus/dui.tcl), so the canvas always fills the screen.
-        // A uniform min() scale letterboxes any non-16:10 viewport -- an 8" tablet at
-        // 1340x800 (Samsung A7 Lite) or a 1280x800 panel minus browser chrome ends up
-        // both too small and guttered left/right.
+        // Width always fills. What happens vertically depends on the screen's aspect
+        // relative to the 16:10 design canvas:
+        //
+        //   taller than 16:10 (4:3 iPads)  -> keep the scale uniform and GROW the
+        //     canvas past 1200 design rows. #main-page is a flex column whose <main>
+        //     grows, so the extra rows land in the chart instead of in black bars.
+        //     No stretch, no letterbox.
+        //   shorter than 16:10 (A7 1340x800, 16:9 panels) -> can't grow into rows that
+        //     aren't there, so fall back to the TCL-style independent x/y squash
+        //     (dui.tcl uses separate xscale_factor/yscale_factor for the same reason),
+        //     clamped so round controls don't visibly turn into ellipses.
         let sx = screenWidth / designWidth;
         let sy = screenHeight / designHeight;
+        let canvasHeight = designHeight;
 
-        // ponytail: 1.05 lets the 16:10-ish Samsungs (A7 Lite 1340x800 needs 1.047,
-        // A7 10.4 needs 1.042) fill the screen with no gutters, while 4:3 iPads --
-        // which need 1.20 and looked visibly stretched -- get clamped and letterboxed.
-        // localStorage 'maxStretch': 1.0 = never stretch, higher = fill more aggressively.
-        const MAX_STRETCH = parseFloat(localStorage.getItem('maxStretch') || '1.05');
-        const stretch = Math.max(sx, sy) / Math.min(sx, sy);
-        if (stretch > MAX_STRETCH) {
-            const k = MAX_STRETCH / stretch;
-            if (sx > sy) sx *= k; else sy *= k;
+        if (screenHeight / sx >= designHeight) {
+            sy = sx;
+            canvasHeight = screenHeight / sx;
+        } else {
+            // Only screens shorter than 16:10 land here, so this clamp no longer has
+            // to protect the 4:3 iPads (they take the grow branch above) -- it can
+            // stay loose enough to cover an A7 Lite whose height is eaten by browser
+            // chrome (1340x736 needs 1.138). localStorage 'maxStretch': 1.0 = never
+            // squash (letterbox instead), higher = fill more aggressively.
+            const MAX_STRETCH = parseFloat(localStorage.getItem('maxStretch') || '1.15');
+            const stretch = Math.max(sx, sy) / Math.min(sx, sy);
+            if (stretch > MAX_STRETCH) {
+                const k = MAX_STRETCH / stretch;
+                if (sx > sy) sx *= k; else sy *= k;
+            }
         }
 
-        // Explicitly set content dimensions to original design dimensions
         content.style.width = `${designWidth}px`;
-        content.style.height = `${designHeight}px`;
+        content.style.height = `${canvasHeight}px`;
 
         // Option A: only apply user zoom when the base scale < 1.0
         // (i.e. UI is already smaller than designed — small/tablet screens).
@@ -150,8 +161,9 @@ export function initScaling() {
             viewport.style.overflow = 'auto';
         } else {
             // Default: center whatever residual gap the stretch clamp left behind
+            // (zero on the grow path -- the canvas fits the screen exactly there)
             offsetX = (screenWidth - designWidth * sx) / 2;
-            offsetY = (screenHeight - designHeight * sy) / 2;
+            offsetY = (screenHeight - canvasHeight * sy) / 2;
             viewport.style.overflow = 'hidden';
         }
 
