@@ -2906,10 +2906,17 @@ function initSettingsModal() {
 }
 
 
+// Single shared timer: without cancelling the previous one, a short toast's hide
+// timer fires while a later, longer toast is on screen and cuts it off early --
+// e.g. the 1.5s "Hold to assign profile." hint killing the assign error 1.1s in.
+let toastHideTimer = null;
+
 export function showToast(message, duration = 2400, type = 'info') {
     const toastEl = document.getElementById('app-toast');
     const messageEl = document.getElementById('app-toast-message');
     if (toastEl && messageEl) {
+        clearTimeout(toastHideTimer);
+        toastHideTimer = null;
         messageEl.textContent = message;
 
         const alertEl = toastEl.querySelector('.alert');
@@ -2930,7 +2937,8 @@ export function showToast(message, duration = 2400, type = 'info') {
         toastEl.style.display = 'grid';
 
         if (duration > 0) {
-            setTimeout(() => {
+            toastHideTimer = setTimeout(() => {
+                toastHideTimer = null;
                 hideToast();
             }, duration);
         }
@@ -2940,6 +2948,9 @@ export function showToast(message, duration = 2400, type = 'info') {
 }
 
 export function hideToast() {
+
+    clearTimeout(toastHideTimer);
+    toastHideTimer = null;
 
     const toastEl = document.getElementById('app-toast');
 

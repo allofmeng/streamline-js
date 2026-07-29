@@ -617,20 +617,31 @@ async function handleProfileClick(index) {
     }
 }
 
+// Reports what actually happened, so callers can pick the right toast:
+//   'assigned'  - a new assignment was made; show a success toast
+//   'rejected'  - refused because the profile is already on a favourite (any of
+//                 them, the pressed one included); this function has already shown
+//                 the error toast naming that button, so the caller must not
+//                 overwrite it with a success message of its own
+//   'unchanged' - no-op: invalid button index
 export async function assignProfile(buttonIndex, profileKey) {
     if (buttonIndex < 0 || buttonIndex >= FAV_COUNT) {
         logger.error(`Invalid button index ${buttonIndex} passed to assignProfile - must be between 0 and ${FAV_COUNT - 1}`);
-        return;
+        return 'unchanged';
     }
 
-    // Reject if profileKey already assigned to another favorite button.
+    // Reject if profileKey is already on ANY favorite button — including the one
+    // being pressed. Re-assigning to the same button is a no-op, but staying silent
+    // there reads as "nothing happened", so it is reported the same as any other
+    // duplicate: the user always gets told which button already holds the profile.
     if (profileKey) {
         for (let i = 0; i < FAV_COUNT; i++) {
-            if (i !== buttonIndex && favoriteAssignments[i] === profileKey) {
+            if (favoriteAssignments[i] === profileKey) {
                 logger.info(`Rejecting assign: profile '${profileKey}' already on button ${i}.`);
-                showToast(`Profile already assigned to favorite ${i + 1}`, 3000, 'error');
+                const title = availableProfiles[profileKey]?.profile?.title;
+                showToast(`${title ? `'${title}'` : 'Profile'} already assigned to favorite ${i + 1}`, 3000, 'error');
                 document.getElementById('profile_modal')?.close();
-                return;
+                return 'rejected';
             }
         }
     }
@@ -640,6 +651,7 @@ export async function assignProfile(buttonIndex, profileKey) {
     await saveAssignments();
     updateButtonUI();
     document.getElementById('profile_modal')?.close();
+    return 'assigned';
 }
 
 function openProfileSelectionModal(buttonIndex) {

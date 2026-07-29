@@ -1,4 +1,4 @@
-import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI, favoriteAssignments } from './profileManager.js';
+import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI } from './profileManager.js';
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
@@ -402,6 +402,10 @@ async function handleConfirm() {
     const effectiveYield = meta.targetYield        ?? parseFloat(profile.target_weight);
 
     logger.info(`Confirming and sending profile: ${profile.title}`);
+    // A rejected favourite assignment has already put its error toast on screen;
+    // the 'Profile Set' toast below would overwrite it a few hundred ms later,
+    // so the user never gets to read why the assignment did not happen.
+    let assignWasRejected = false;
     try {
         // Check if there's a pending assignment from a long press on the main page
         const pendingAssignmentIndex = sessionStorage.getItem('pendingAssignmentIndex');
@@ -414,13 +418,17 @@ async function handleConfirm() {
                 showToast('Invalid favorite button. Please try again.', 3000, 'error');
             } else {
                 // Assign the profile to the specific favorite button
-                await assignProfile(parsedIndex, selectedProfileKey);
+                const assignResult = await assignProfile(parsedIndex, selectedProfileKey);
+                assignWasRejected = assignResult === 'rejected';
 
                 // Clear the pending assignment
                 sessionStorage.removeItem('pendingAssignmentIndex');
 
-                // Show a success message
-                setTimeout(() => showToast(`Profile assigned to Favorite ${parsedIndex + 1}`, 3000, 'success'), 1000  );
+                // Show a success message — but not when the assign was rejected or
+                // was a no-op, or this lands on top of the error toast a second later.
+                if (assignResult === 'assigned') {
+                    setTimeout(() => showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', parsedIndex + 1)}: ${profile.title}`, 3000, 'success'), 1000  );
+                }
             }
         }
 
@@ -450,7 +458,9 @@ async function handleConfirm() {
             // so the user lands on a page that already reflects what's on Rea
             // instead of waiting for the next WS snapshot to repaint.
             applyWorkflowToMainPageUI(sentworkflow);
-            showToast(`Profile Set`, 3000, 'success');
+            if (!assignWasRejected) {
+                showToast(`Profile Set`, 3000, 'success');
+            }
             loadPage('index.html');
         } else {
             alert('Failed to set the profile on the machine. Please try again.');
@@ -538,8 +548,7 @@ function showProfileContextMenu(key, profileRecord, anchorEl) {
 
     async function doAssign(slotIndex) {
         try {
-            const wasAlreadyAssigned = Object.values(favoriteAssignments).includes(key);
-            await assignProfile(slotIndex, key);
+            const assignResult = await assignProfile(slotIndex, key);
             const pr = availableProfiles[key];
             if (pr?.profile) {
                 const meta = pr.metadata || {};
@@ -551,8 +560,8 @@ function showProfileContextMenu(key, profileRecord, anchorEl) {
                     setActiveProfile(key);
                     updateProfileName(pr.profile.title);
                 } catch (_) {}
-                if (!wasAlreadyAssigned) {
-                    showToast(`Assigned '${pr.profile.title}' to favourite ${slotIndex + 1}`, 3000, 'success');
+                if (assignResult === 'assigned') {
+                    showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', slotIndex + 1)}: ${pr.profile.title}`, 3000, 'success');
                 }
             }
         } catch (e) { logger.warn('assignProfile error:', e.message); }
@@ -815,8 +824,9 @@ async function initFavoriteButtons() {
             showToast(`Hold to assign profile.`, 1500, 'info');
             pressTimer = setTimeout(async () => {
                 if (selectedProfileKey) {
+                    let assignResult = 'unchanged';
                     try {
-                        await assignProfile(index, selectedProfileKey);
+                        assignResult = await assignProfile(index, selectedProfileKey);
                     } catch (e) {
                         logger.warn('Caught expected error from assignProfile modal close:', e.message);
                     }
@@ -839,7 +849,11 @@ async function initFavoriteButtons() {
                         } catch (e) {
                             logger.error('Failed to send profile to machine after assignment:', e);
                         }
-                        showToast(`Assigned '${profile.title}' to favorite ${index + 1}`, 3000, 'success');
+                        // Only on a genuinely new assignment — a rejected assign has
+                        // already shown its own error toast.
+                        if (assignResult === 'assigned') {
+                            showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', index + 1)}: ${profile.title}`, 3000, 'success');
+                        }
                     }
                 } else {
                     showToast('Please select a profile from the list to assign it.', 3000, 'error');

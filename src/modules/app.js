@@ -713,13 +713,13 @@ function handleData(data) {
 
             let stopReason;
             if (isScaleConnected && WEIGHT_HIT) {
-                stopReason = getTranslation('Stopped by weight: {value}').replace('{value}', `${finalWeight.toFixed(1)}g`);
+                stopReason = stopReasonText('Stopped by weight:', `${finalWeight.toFixed(1)}g`);
             } else if (!isScaleConnected && VOLUME_HIT) {
-                stopReason = getTranslation('Stopped by volume: {value}').replace('{value}', `${Math.round(finalVolume)}ml`);
+                stopReason = stopReasonText('Stopped by volume:', `${Math.round(finalVolume)}ml`);
             } else if (TIME_HIT) {
-                stopReason = getTranslation('Stopped by time: {value}').replace('{value}', `${totalS.toFixed(1)}s`);
+                stopReason = stopReasonText('Stopped by time:', `${totalS.toFixed(1)}s`);
             } else {
-                stopReason = getTranslation('Shot stopped: {value}').replace('{value}', `${totalS.toFixed(1)}s`);
+                stopReason = `${getTranslation('Shot Stopped')}: ${totalS.toFixed(1)}s`;
             }
             ui.showToast(stopReason, 6000, 'info');
 
@@ -985,21 +985,29 @@ function seqRefreshHistory(shotId) {
     }
 }
 
+// The translation sheet's stop-reason keys end at the colon ("Stopped by weight:",
+// with fr "Arrêt en fonction du poids :"), so the measured value is appended rather
+// than substituted into a {value} placeholder. Asking for a key that carries the
+// placeholder finds no row and silently falls back to English.
+function stopReasonText(key, value) {
+    return `${getTranslation(key)} ${value}`;
+}
+
 function shotStateStopMessage(decision, machineHasAutonomousSAW) {
     const reason = decision.reason;
     // With firmware-side stop-at-weight (Bengle) the target-yield stop is
     // reported as machineEnded — present it as a weight stop like app-side SAW.
     if (reason === 'targetWeight' || (reason === 'machineEnded' && machineHasAutonomousSAW && isScaleConnected)) {
         const w = parseFloat(decision.data?.projectedWeight ?? latestScaleWeight);
-        return getTranslation('Stopped by weight: {value}').replace('{value}', `${w.toFixed(1)}g`);
+        return stopReasonText('Stopped by weight:', `${w.toFixed(1)}g`);
     }
     if (reason === 'targetVolume') {
         const v = shotData.getCurrentShot()?.volumes?.at(-1) ?? 0;
-        return getTranslation('Stopped by volume: {value}').replace('{value}', `${Math.round(v)}ml`);
+        return stopReasonText('Stopped by volume:', `${Math.round(v)}ml`);
     }
     // apiStop / appStop / machineEnded / stoppingBackstop — and any unknown
     // reason: the enum is an open set, newer builds may add values.
-    return getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`);
+    return `${getTranslation('Shot Stopped')}: ${shotData.getTotalTime().toFixed(1)}s`;
 }
 
 function handleShotStateEvent(frame) {
@@ -1030,7 +1038,7 @@ function handleShotStateEvent(frame) {
         case 'abort':
             ui.showToast(d.reason === 'noScale'
                 ? getTranslation('Shot blocked: no scale connected')
-                : (d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`)),
+                : (d.details || `${getTranslation('Shot Stopped')}: ${shotData.getTotalTime().toFixed(1)}s`),
                 4000, 'error');
             break;
         case 'stop':
@@ -1039,7 +1047,7 @@ function handleShotStateEvent(frame) {
             break;
         case 'terminal':
             // Abnormal end (error / disconnect).
-            ui.showToast(d.details || getTranslation('Shot stopped: {value}').replace('{value}', `${shotData.getTotalTime().toFixed(1)}s`), 6000, 'error');
+            ui.showToast(d.details || `${getTranslation('Shot Stopped')}: ${shotData.getTotalTime().toFixed(1)}s`, 6000, 'error');
             seqRefreshHistory(frame.shotId);
             break;
         case 'finalize':
