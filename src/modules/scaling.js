@@ -112,9 +112,11 @@ export function initScaling() {
         let sx = screenWidth / designWidth;
         let sy = screenHeight / designHeight;
 
-        // ponytail: clamp the stretch so round controls don't become obvious ellipses
-        // on odd aspects. Raise MAX_STRETCH if filling the screen matters more.
-        const MAX_STRETCH = 1.15;
+        // ponytail: 1.0 = uniform scale (aspect preserved, letterboxed) — iPad Pro is 4:3
+        // vs the 16:10 design canvas, and independent x/y scaling stretched it ~15%.
+        // localStorage 'maxStretch' (e.g. '1.15') trades aspect for filling the screen
+        // on odd panels like the 1340x800 8" tablets.
+        const MAX_STRETCH = parseFloat(localStorage.getItem('maxStretch') || '1.0');
         const stretch = Math.max(sx, sy) / Math.min(sx, sy);
         if (stretch > MAX_STRETCH) {
             const k = MAX_STRETCH / stretch;
