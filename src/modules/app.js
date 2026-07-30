@@ -659,7 +659,12 @@ function handleData(data) {
 
     // Check if the machine is in an error state that indicates disconnection
     if (state === MachineState.ERROR) {
-        logger.warn('DE1 machine in error state, likely disconnected.');
+        // Log the edge only. Snapshots keep arriving at ~10 Hz while the machine is
+        // gone, and logging every one of them filled the host's WebView console log
+        // (1 MB every ~2 min) for as long as the DE1 stayed disconnected.
+        if (previousState.state !== MachineState.ERROR) {
+            logger.warn('DE1 machine in error state, likely disconnected.');
+        }
         isDe1Connected = false;
         ui.updateMachineStatus({ status: "Disconnected" });
     }
@@ -864,7 +869,11 @@ function handleScaleData(data) {
         if (!isScaleConnected) {
             renderScaleDisconnectedText();
         }
-        logger.warn('Scale message received without weight data.');
+        // debug, not warn: weightless frames repeat for as long as the scale is
+        // away (and some scales send battery-only frames while connected), so one
+        // warn each flooded the host's WebView console log. The connect and
+        // disconnect edges are already logged either side of this.
+        logger.debug('Scale message received without weight data.');
     }
 }
 

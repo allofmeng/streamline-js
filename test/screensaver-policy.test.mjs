@@ -15,6 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    deriveDisplayAction,
     deriveScreensaverAction,
     deriveSleepButtonAction,
     isMachineAsleep,
@@ -216,4 +217,46 @@ test('sleep button derivation is pure — repeated calls give the same answer', 
     const input = { machineState: 'idle', screensaverActive: false };
     assert.deepEqual(deriveSleepButtonAction(input), deriveSleepButtonAction(input));
     assert.deepEqual(deriveSleepButtonAction(input), { command: 'sleeping', hideScreensaver: false });
+});
+
+// --- deriveDisplayAction: a dim must always have something that undoes it -------
+//
+// reaprime#519: the DE1 dropped off BLE while asleep. The dim was applied on the
+// 'sleeping' transition and only an 'idle' transition released it — which a machine
+// that is no longer there never sends. The tablet stayed dark for the rest of the
+// session, with the settings brightness slider (invisible on a dark panel) the only
+// way back.
+
+test('a machine that drops off BLE while asleep releases the dim', () => {
+    assert.equal(deriveDisplayAction('idle', 'sleeping'), 'dim');
+    assert.equal(deriveDisplayAction('sleeping', 'error'), 'restore');
+});
+
+test('every state that can follow a dim eventually restores — no dead end', () => {
+    // Whatever the machine does next after we dimmed it, there must be a path back
+    // to a lit panel. The only states that legitimately follow 'sleeping' are a wake
+    // ('idle') and a disconnect ('error'); both restore.
+    for (const next of ['idle', 'error']) {
+        assert.equal(deriveDisplayAction('sleeping', next), 'restore', `${next} must undo the dim`);
+    }
+});
+
+test('the display action is transition-only — a repeated state does nothing', () => {
+    // The snapshot feed repeats the same state at ~10 Hz. Acting on every frame would
+    // re-dim over a brightness the user just picked on the settings slider.
+    for (const state of ['sleeping', 'idle', 'error', 'espresso']) {
+        assert.equal(deriveDisplayAction(state, state), 'none');
+    }
+});
+
+test('states that are neither sleep nor a wake nor a drop leave brightness alone', () => {
+    for (const next of ['espresso', 'steam', 'hotWater', 'heating', 'flush', 'booting']) {
+        assert.equal(deriveDisplayAction('idle', next), 'none');
+    }
+});
+
+test('the first frame after boot dims if the machine is already asleep', () => {
+    // previousMachineState starts undefined; an already-sleeping machine must still dim.
+    assert.equal(deriveDisplayAction(undefined, 'sleeping'), 'dim');
+    assert.equal(deriveDisplayAction(undefined, 'idle'), 'restore');
 });

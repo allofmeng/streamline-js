@@ -115,3 +115,25 @@ export function deriveSleepButtonAction({ machineState, screensaverActive = fals
     // screensaver when the machine confirms it is sleeping.
     return { command: 'sleeping', hideScreensaver: false };
 }
+
+/**
+ * What the panel brightness should do on a machine state TRANSITION.
+ *
+ * 'error' means the DE1 fell off BLE. It has to release the dim, because the only
+ * other thing that does is an 'idle' frame and a machine that is gone never sends
+ * one: a drop while the machine was asleep used to leave the tablet dark for the
+ * rest of the session, recoverable only by the settings slider the user could not
+ * see (reaprime#519). If it comes back still asleep, the sleeping transition dims
+ * it again.
+ *
+ * Transition-only by design — the snapshot feed repeats the same state at ~10 Hz,
+ * and re-dimming on every frame would clobber a brightness the user just chose.
+ *
+ * @returns {'dim'|'restore'|'none'}
+ */
+export function deriveDisplayAction(previousState, currentState) {
+    if (previousState === currentState) return 'none';
+    if (isMachineAsleep(currentState)) return 'dim';
+    if (currentState === 'idle' || currentState === 'error') return 'restore';
+    return 'none';
+}
