@@ -2113,6 +2113,18 @@ export function updateSleepButton(state) {
     }
 }
 
+// "Heating: 12s remaining" is composed in English upstream (app.js:490) because the
+// state detection in updateMachineStatus pattern-matches on it, so it can only be
+// translated at render time. Returns the two halves separately: they are painted in
+// different colours, and the countdown must not be swallowed by the label.
+// Sheet rows: 'Heating:' (fr "Chauffant :"), 'Heating', 'remaining' (fr "restant").
+function heatingStatusParts(raw) {
+    const seconds = /(\d+)\s*s\b/.exec(raw || '')?.[1];
+    return seconds
+        ? { label: getTranslation('Heating:'), remaining: ` ${seconds}s ${getTranslation('remaining')}` }
+        : { label: getTranslation('Heating'), remaining: '' };
+}
+
 export function updateMachineStatus(data) {
     const { status, substate, stepName, timeValue, isClickable,  isHeating, isHeatingFromTimeToReady, steamTemperature } = data;
     // Steam boiler is considered ready at/above 130°C. Below that it still needs
@@ -2240,6 +2252,7 @@ export function updateMachineStatus(data) {
 
     // Check if this is a heating state with time remaining and apply special formatting
     const isHeatingWithTimeRemaining = isHeating && isHeatingFromTimeToReady && status && status.includes('Heating: ') && status.includes('s remaining');
+
     
     // Handle Needs Water state - takes priority
     if (isNeedsWaterState) {
@@ -2251,10 +2264,8 @@ export function updateMachineStatus(data) {
         const espressoHeatingWaitText = getTranslation('Heating');
         machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${espressoHeatingWaitText}</span>`;
     } else if (isHeatingWithTimeRemaining) {
-        // Split the status string to apply different colors to "Heating" and "Xs remaining"
-        const parts = status.split(': ');
-        const heatingPart = parts[0] // "Heating"
-        const timeRemainingPart = ': ' + parts[1]; // ": Xs remaining"
+        // Apply different colors to the "Heating:" label and the "Xs remaining" countdown
+        const { label: heatingPart, remaining: timeRemainingPart } = heatingStatusParts(status);
 
         // Apply --status-red-color to "Heating" and --heatingstatus to "Xs remaining" <span class="text-[var(--heatingstatus)]">${timeRemainingPart}</span>
         machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${heatingPart}</span><span class="text-[var(--heatingstatus)]">${timeRemainingPart}</span>`;
@@ -2385,7 +2396,7 @@ export function updateMachineStatus(data) {
 
                     // Handle plain "Heating" message (without time remaining)
                     if (isHeating && status === "Heating") {
-                        machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">Heating</span>`;
+                        machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${getTranslation('Heating')}</span>`;
                         logger.info(`DEBUG: Generic Heating state - Set machine status to: ${machineStatusEl.innerHTML}`);
                     } else {
                         machineStatusEl.textContent = statusConfig.message;
@@ -2421,10 +2432,10 @@ function getStatusConfiguration(status, substate, stepName, timeValue, isClickab
             message: getTranslation('Error') || 'Error',
             messageClass: 'status-msg-red'
         },
-        'heating': (inputStatus) => ({
-            message: inputStatus,
-            additionalClass: 'text-red-500'
-        }),
+        'heating': (inputStatus) => {
+            const { label, remaining } = heatingStatusParts(inputStatus);
+            return { message: `${label}${remaining}`, additionalClass: 'text-red-500' };
+        },
         'idle': {
             message: getTranslation('Ready'),
             messageClass: 'status-msg-green'
