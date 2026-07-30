@@ -22,6 +22,21 @@
     height: 100%;
 }
 
+/* Fixed-height header band. Without shrink:0 it is a shrinkable flex item, so any
+   overflow below it (profile_selector's grid asks for h-full = the whole root)
+   squeezes the header instead, and the button gaps come out short. */
+#subpage-header {
+    flex-shrink: 0;
+}
+
+/* h-full here means 100% of the root, which together with the header overflows it.
+   Flex instead so the grid takes what is left. */
+#profile-editor-grid {
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
 /* profile_selector's fixed panel heights (list 850, chart 675, notes 275) add up to
    the design canvas exactly; grow the list and the graph so the pair still reaches
    the bottom when the canvas is taller. Notes keeps its 275. */
