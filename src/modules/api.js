@@ -3,6 +3,7 @@ import { logger ,setDebug} from './logger.js';
 import { createSocketSlot } from './socket-slot.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { buildCalibrateBody, calResponseHasBody } from './loadcell-cal.js';
+import { deriveDisplayAction } from './screensaver-policy.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
 export const REA_PORT = 8080;
@@ -208,9 +209,8 @@ export async function calibrateScale(command, grams) {
 
 export function connectWebSocket(onData, onReconnect) {
     reconnectingWebSocket = snapshotSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/snapshot`, [], {
-        debug: true,
         reconnectInterval: 3000,
-    })); // Enable debug logging
+    }));
 
     reconnectingWebSocket.onopen = () => {
         logger.info('WebSocket (re)connected.');
@@ -234,17 +234,15 @@ export function connectWebSocket(onData, onReconnect) {
             currentMachineState = stateValue;
             // logger.info('Current state after assignment:', currentMachineState);
             
-            if (previousMachineState !== currentMachineState) {
-                logger.info('State changed! Checking conditions...');
-                if (currentMachineState === MachineState.SLEEPING) {
-                    logger.info('Machine state changed to SLEEPING. Dimming display.');
-                    dimDisplay();
-                } else if (currentMachineState === MachineState.IDLE) {
-                    logger.info('Machine state changed to IDLE. Restoring display.');
-                    restoreDisplay();
-                }
-            } else {
-                // logger.info('State did not change, skipping display adjustment.');
+            // Brightness follows the machine's confirmed state. See
+            // deriveDisplayAction() for why 'error' has to release the dim.
+            const displayAction = deriveDisplayAction(previousMachineState, currentMachineState);
+            if (displayAction === 'dim') {
+                logger.info(`Machine state changed to ${currentMachineState}. Dimming display.`);
+                dimDisplay();
+            } else if (displayAction === 'restore') {
+                logger.info(`Machine state changed to ${currentMachineState}. Restoring display.`);
+                restoreDisplay();
             }
             
             onData(data);
@@ -278,7 +276,6 @@ export function connectScaleWebSocket(onData, onReconnect, onDisconnect) {
     }
 
     scaleWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/scale/snapshot`, [], {
-        debug: true,
         reconnectInterval: 3000,
     });
 
@@ -322,7 +319,6 @@ export function connectScaleWebSocket(onData, onReconnect, onDisconnect) {
 
 export function connectShotSettingsWebSocket(onData) {
     const shotSettingsWebSocket = shotSettingsSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/shotSettings`, [], {
-        debug: true,
         reconnectInterval: 3000,
     }));
 
@@ -354,7 +350,6 @@ export function connectShotSettingsWebSocket(onData) {
 // socket is not gated on a connected machine — attach once and keep it open.
 export function connectShotStateWebSocket(onData) {
     const shotStateWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/machine/shotState`, [], {
-        debug: true,
         reconnectInterval: 3000,
     });
 
@@ -381,7 +376,6 @@ export function connectShotStateWebSocket(onData) {
 
 export function connectTimeToReadyWebSocket(onData) {
     const timeToReadyWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/plugins/time-to-ready.reaplugin/timeToReady`, [], {
-        debug: true,
         reconnectInterval: 3000,
     });
 
@@ -472,7 +466,6 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
     }
 
     deviceWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/devices`, [], {
-        debug: true,
         reconnectInterval: 3000,
     });
 
@@ -586,7 +579,6 @@ export function connectDisplayWebSocket(onData) {
     }
 
     displayWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/display`, [], {
-        debug: true,
         reconnectInterval: 3000,
     });
 
@@ -685,7 +677,6 @@ export function connectUpdateWebSocket(onData) {
     }
 
     updateWebSocket = new ReconnectingWebSocket(`${WS_PROTOCOL}//${reaHostname}:${REA_PORT}/ws/v1/update`, [], {
-        debug: true,
         reconnectInterval: 3000,
     });
 

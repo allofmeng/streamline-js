@@ -92,7 +92,6 @@ export function initWaterTankSocket() {
     tankVolElementRef = tankVolElement;
 
     const socket = waterLevelSocketSlot.replace(() => new ReconnectingWebSocket(`${WS_PROTOCOL}//${window.location.hostname}:${REA_PORT}/ws/v1/machine/waterLevels`, [], {
-        debug: true,
         reconnectInterval: 3000,
     }));
 
