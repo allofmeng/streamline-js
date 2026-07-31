@@ -2296,7 +2296,7 @@ export function updateMachineStatus(data) {
 
                     const currentStageText = machineStatusEl.currentPreinfusionOrPouringStageText || stageText;
                     machineStatusEl.innerHTML = `<span class="text-[var(--status-green-color)]">${currentStageText}</span> <span class="text-[var(--status-clickable-color)]">| ${machineStatusEl.currentPreinfusionOrPouringValue}s >></span>`;
-                    logger.info(`DEBUG: Preinfusion/Pouring live counter update: ${machineStatusEl.innerHTML}`); // Keep log
+                    logger.debug(`DEBUG: Preinfusion/Pouring live counter update: ${machineStatusEl.innerHTML}`); // Keep log
                 }, 1000);
             }
 
@@ -2324,7 +2324,7 @@ export function updateMachineStatus(data) {
             if (isCurrentlyFlushState) { // Use the new combined state check
                 // Special handling for flush state to have different colors for "Flushing" and the value
                 const flushText = getTranslation('Flush');
-                logger.info(`DEBUG: Detected flush state: ${flushText}`); // Retained as per user request to inspect flush state updates
+                logger.debug(`DEBUG: Detected flush state: ${flushText}`); // Retained as per user request to inspect flush state updates
                 // Only start a new interval if one is NOT already running for this state.
                 if (!machineStatusEl.flushIntervalId) {
                     machineStatusEl.currentFlushValue = 0; // Start from 0
@@ -2334,7 +2334,7 @@ export function updateMachineStatus(data) {
                         machineStatusEl.currentFlushValue += 1;
 
                         machineStatusEl.innerHTML = `<span class="text-[var(--status-ready-green)]">${flushText}:</span> <span class="text-[var(--status-clickable-color)]">${machineStatusEl.currentFlushValue}s</span>`;
-                        logger.info(`DEBUG: Flush live counter update: ${machineStatusEl.innerHTML}`);
+                        logger.debug(`DEBUG: Flush live counter update: ${machineStatusEl.innerHTML}`);
                     }, 1000);
                     // Manually set the initial state immediately after starting the interval
                     machineStatusEl.innerHTML = `<span class="text-[var(--status-ready-green)]">${flushText}:</span> <span class="text-[var(--status-clickable-color)]">${machineStatusEl.currentFlushValue}s</span>`;
@@ -2365,7 +2365,7 @@ export function updateMachineStatus(data) {
                             machineStatusEl.currentSteamValue += 1;
 
                             machineStatusEl.innerHTML = `<span class="text-[var(--status-ready-green)]">${steamText}:</span> <span class="text-[var(--status-clickable-color)]">${machineStatusEl.currentSteamValue}s</span>`;
-                            logger.info(`DEBUG: Steam live counter update: ${machineStatusEl.innerHTML}`);
+                            logger.debug(`DEBUG: Steam live counter update: ${machineStatusEl.innerHTML}`);
                         }, 1000);
 
                         // Initial render at 0s
@@ -2389,7 +2389,7 @@ export function updateMachineStatus(data) {
                         : '';
 
                     machineStatusEl.innerHTML = `<span class="text-[var(--status-green-color)]">${pouringText}:</span> <span class="text-[var(--status-clickable-color)]">${mlText}</span>`;
-                    logger.info(`DEBUG: Hot Water state - Set machine status to: ${machineStatusEl.innerHTML}`);
+                    logger.debug(`DEBUG: Hot Water state - Set machine status to: ${machineStatusEl.innerHTML}`);
                 } else {
                     // Determine message and class based on status and substate using a mapping approach
                     const statusConfig = getStatusConfiguration(status, substate, stepName, timeValue, isClickable);
@@ -2397,7 +2397,7 @@ export function updateMachineStatus(data) {
                     // Handle plain "Heating" message (without time remaining)
                     if (isHeating && status === "Heating") {
                         machineStatusEl.innerHTML = `<span class="text-[var(--status-red-color)]">${getTranslation('Heating')}</span>`;
-                        logger.info(`DEBUG: Generic Heating state - Set machine status to: ${machineStatusEl.innerHTML}`);
+                        logger.debug(`DEBUG: Generic Heating state - Set machine status to: ${machineStatusEl.innerHTML}`);
                     } else {
                         machineStatusEl.textContent = statusConfig.message;
                         // logger.info(`DEBUG: Generic state from getStatusConfiguration - Set machine status to: ${machineStatusEl.textContent}`);

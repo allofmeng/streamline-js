@@ -330,7 +330,9 @@ export function connectShotSettingsWebSocket(onData) {
         try {
             const data = JSON.parse(event.data);
             onData(data);
-            logger.info('shotsettings data',data);
+            // Dumps the whole payload once per frame -- the same shape of cost as the
+            // socket debug logging this file used to enable. debug, not info.
+            logger.debug('shotsettings data', data);
         } catch (error) {
             logger.error('Error parsing Shot Settings WebSocket message:', error);
         }
