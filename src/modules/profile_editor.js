@@ -21,6 +21,10 @@ let _isNewProfileSession = false;
 let _sessionImportedIds = [];
 let _hasImportedInSession = false;
 
+// Snapshot of the profile as last loaded or saved. Cancel compares against it
+// to decide whether there is unsaved work worth warning about.
+let _baselineProfileJson = null;
+
 // Which step indices have their temp ± buttons expanded
 let expandedTempSteps = new Set();
 
@@ -45,9 +49,20 @@ let expandedReviewField = null; // { collapseFunc: fn } | null
 // manipulation of focal elements — stacking context issues are irrelevant.
 
 let _focusOverlay = null; // { top, right, bottom, left } — four divs
+let _focusTarget = null;  // { el, collapse } — the element the hole is cut around
+
+// The overlay divs are position:fixed but the hole is cut from viewport
+// coordinates captured when the field is tapped. The step grid scrolls in both
+// axes, so without this the hole stays put while the field it framed slides
+// away. Capture phase — the grid's scroll doesn't bubble to window. Registered
+// once at module scope; a no-op whenever nothing is focused.
+window.addEventListener('scroll', () => _repositionFocusOverlay(), true);
+window.addEventListener('resize', () => _repositionFocusOverlay());
 
 function _ensureFocusOverlayDivs() {
-    if (_focusOverlay) return;
+    // isConnected, not just non-null: the router rebuilds the page DOM, which
+    // detaches the divs while the reference stays live.
+    if (_focusOverlay && _focusOverlay.top.isConnected) return;
     _focusOverlay = {};
     ['top','right','bottom','left'].forEach(side => {
         const d = document.createElement('div');
@@ -60,6 +75,13 @@ function _ensureFocusOverlayDivs() {
 
 function showFocusOverlay(el, collapseCallback) {
     _ensureFocusOverlayDivs();
+    _focusTarget = { el, collapse: collapseCallback };
+    _repositionFocusOverlay();
+}
+
+function _repositionFocusOverlay() {
+    if (!_focusTarget || !_focusOverlay) return;
+    const { el, collapse: collapseCallback } = _focusTarget;
     const PAD = 8; // small breathing room around tight-fit bounds
 
     // Compute union bounding rect of el + all descendants (catches absolute ± buttons)
@@ -89,6 +111,7 @@ function showFocusOverlay(el, collapseCallback) {
 }
 
 function clearFocusOverlay() {
+    _focusTarget = null;
     if (!_focusOverlay) return;
     Object.values(_focusOverlay).forEach(d => { d.style.display = 'none'; d.onclick = null; });
 }
@@ -234,6 +257,39 @@ const EXIT_UNIT_MAP = { pressure: 'bar', flow: 'mL/s' };
 const EXIT_STEP_MAP = { pressure: 0.1, flow: 0.1 };
 const EXIT_MAX_MAP  = { pressure: 12,  flow: 8 };
 
+// Single source of truth for every numeric field's bounds. The grid and text
+// tabs each used to carry their own copy, and they had drifted: weight/volume
+// clamped at 1000 in the grid but 500 in the text tab, pressure at 12 vs 16.
+// The same field would clamp differently depending on which tab you edited in.
+const FIELD_LIMITS = {
+    // 105 is the ceiling the TCL skin enforces (skin.tcl:1848). The grid's ±
+    // buttons used to allow 110 while its numpad clamped to 105 — and the
+    // numpad's own label read "0–110".
+    temperature:   { min: 0, max: 105, step: 0.5 },
+    flow:          { min: 0, max: 15,  step: 0.1 },
+    // 0 bar is a valid "pump off" target, same as a 0 limiter — the grid used
+    // to set min 1, making it impossible to reach from the − button.
+    pressure:      { min: 0, max: 12,  step: 0.1 },
+    flowLimit:     { min: 0, max: 8,   step: 0.1 }, // flow limit on a pressure step
+    pressureLimit: { min: 0, max: 12,  step: 0.1 }, // pressure limit on a flow step
+    weight:        { min: 0, max: 500, step: 1 },
+    seconds:       { min: 0, max: 300, step: 1 },
+    volume:        { min: 0, max: 500, step: 1 },
+};
+
+// Builds a numpad config from a FIELD_LIMITS entry so the displayed range label
+// can never disagree with the range actually enforced.
+function numpadConfig(fieldType, title, unit, lim) {
+    return { fieldType, title, unit, min: lim.min, max: lim.max, label: `${lim.min}–${lim.max}` };
+}
+
+// Numpad identity for the three "Max" fields — shared by the grid and text tabs.
+const MAX_NUMPAD = {
+    weight:  { fieldType: 'pe-max-weight',  title: 'MAX WEIGHT' },
+    seconds: { fieldType: 'pe-max-seconds', title: 'MAX TIME' },
+    volume:  { fieldType: 'pe-max-volume',  title: 'MAX VOLUME' },
+};
+
 // Seed values used when the pump-toggle switches between flow and pressure
 // modes. Not part of the persisted step shape — see makeNewStep().
 const PUMP_SEED_FLOW = 6.0;
@@ -258,6 +314,25 @@ const DEFAULT_STEP = {
 // previous step) can branch here.
 function makeNewStep() {
     return JSON.parse(JSON.stringify(DEFAULT_STEP));
+}
+
+// profile.target_volume_count_start is a 1-based step index (0 = None), so it
+// has to move with the steps around it. Splicing the array directly — as both
+// the grid and text tabs used to do — silently repointed it at a different
+// step, or left it dangling past the end of the array.
+function removeStepAt(index) {
+    const p = editorState.profile;
+    p.steps.splice(index, 1);
+    const start = p.target_volume_count_start || 0;
+    if (start === index + 1) p.target_volume_count_start = index; // the marked step is gone → fall back to the one before it (0 = None)
+    else if (start > index + 1) p.target_volume_count_start = start - 1;
+}
+
+function insertStepAfter(index) {
+    const p = editorState.profile;
+    p.steps.splice(index + 1, 0, makeNewStep());
+    const start = p.target_volume_count_start || 0;
+    if (start > index + 1) p.target_volume_count_start = start + 1;
 }
 
 const TAB_COUNT = 3;
@@ -522,6 +597,7 @@ function renderStepCards() {
             const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-center px-[16px] py-[8px] border-r border-b border-[var(--border-color)] gap-[8px]');
             const isExpanded = expandedTempSteps.has(index);
 
+            const TEMP_LIM = FIELD_LIMITS.temperature;
             let tempValue = step.temperature || 93;
             let tempTimer = null;
 
@@ -592,30 +668,11 @@ function renderStepCards() {
                 tempTimer = setTimeout(collapseTempSpinner, 2000);
             }
 
-            let tempLongPressTimer = null;
-            let tempLongPressFired = false;
-
-            tempDisplay.addEventListener('pointerdown', () => {
-                if (!expandedTempSteps.has(index)) return;
-                tempLongPressFired = false;
-                tempLongPressTimer = setTimeout(() => {
-                    tempLongPressFired = true;
-                    tempValue = 0;
-                    tempDisplay.firstChild.textContent = '0\u00b0C';
-                    editorState.profile.steps[index].temperature = 0;
-                    startTempTimer();
-                }, 600);
-            });
-            tempDisplay.addEventListener('pointerup',     () => clearTimeout(tempLongPressTimer));
-            tempDisplay.addEventListener('pointerleave',  () => clearTimeout(tempLongPressTimer));
-            tempDisplay.addEventListener('pointercancel', () => clearTimeout(tempLongPressTimer));
-
             tempDisplay.addEventListener('click', (e) => {
                 if (e.target === minusBtn || e.target === plusBtn) return;
-                if (tempLongPressFired) { tempLongPressFired = false; return; }
                 if (expandedTempSteps.has(index)) {
                     if (shouldUseNumpad()) {
-                        openNumpadForField(tempValue, { fieldType: 'pe-temp', title: 'TEMPERATURE', unit: '\u00b0C', min: 0, max: 105, label: '0\u2013110' }, (val) => {
+                        openNumpadForField(tempValue, numpadConfig('pe-temp', 'TEMPERATURE', '\u00b0C', TEMP_LIM), (val) => {
                             tempValue = val;
                             tempTextSpan.textContent = `${tempValue}\u00b0C`;
                             editorState.profile.steps[index].temperature = tempValue;
@@ -625,7 +682,7 @@ function renderStepCards() {
                         return;
                     }
                     // Desktop: inline edit on second click
-                    const handled = inlineEditValue(tempTextSpan, tempValue, { min: 0, max: 110, step: 0.5, unit: '\u00b0C', onCommit: (val) => {
+                    const handled = inlineEditValue(tempTextSpan, tempValue, { min: TEMP_LIM.min, max: TEMP_LIM.max, step: TEMP_LIM.step, unit: '\u00b0C', onCommit: (val) => {
                         tempValue = val;
                         tempTextSpan.textContent = `${tempValue}\u00b0C`;
                         editorState.profile.steps[index].temperature = tempValue;
@@ -646,7 +703,7 @@ function renderStepCards() {
             minusBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 flashPlusMinusButton(minusBtn);
-                tempValue = roundTo(clamp(tempValue - 0.5, 0, 110), 0.5);
+                tempValue = roundTo(clamp(tempValue - TEMP_LIM.step, TEMP_LIM.min, TEMP_LIM.max), TEMP_LIM.step);
                 tempTextSpan.textContent = `${tempValue}\u00b0C`;
                 editorState.profile.steps[index].temperature = tempValue;
                 startTempTimer();
@@ -655,7 +712,7 @@ function renderStepCards() {
             plusBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 flashPlusMinusButton(plusBtn);
-                tempValue = roundTo(clamp(tempValue + 0.5, 0, 110), 0.5);
+                tempValue = roundTo(clamp(tempValue + TEMP_LIM.step, TEMP_LIM.min, TEMP_LIM.max), TEMP_LIM.step);
                 tempTextSpan.textContent = `${tempValue}\u00b0C`;
                 editorState.profile.steps[index].temperature = tempValue;
                 startTempTimer();
@@ -675,9 +732,10 @@ function renderStepCards() {
             pumpLine.className = 'flex flex-col gap-[4px]';
 
             const targetUnit = isFlow ? 'mL/s' : 'bar';
-            const targetMax  = isFlow ? 15 : 12;
-            const targetMin  = isFlow ? 0  : 1;
-            const tStep      = 0.1;
+            const PUMP_LIM   = isFlow ? FIELD_LIMITS.flow : FIELD_LIMITS.pressure;
+            const targetMax  = PUMP_LIM.max;
+            const targetMin  = PUMP_LIM.min;
+            const tStep      = PUMP_LIM.step;
             const isPumpExp  = expandedPumpSteps.has(index);
 
             let targetValue = isFlow ? (step.flow || 0) : (step.pressure || 0);
@@ -687,7 +745,7 @@ function renderStepCards() {
             const transBtn = document.createElement('button');
             transBtn.type = 'button';
             transBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-            transBtn.textContent = transValue === 'fast' ? getTranslation('Quick') : getTranslation('Smooth');
+            transBtn.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
 
             const rampText = document.createElement('span');
             rampText.className = 'text-[24px] text-[var(--text-primary)] select-none';
@@ -772,37 +830,16 @@ function renderStepCards() {
 
             transBtn.addEventListener('click', () => {
                 transValue = transValue === 'fast' ? 'smooth' : 'fast';
-                transBtn.textContent = transValue === 'fast' ? getTranslation('Quick') : getTranslation('Smooth');
+                transBtn.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
                 editorState.profile.steps[index].transition = transValue;
             });
 
-            let targetLongPressTimer = null;
-            let targetLongPressFired = false;
-
-            targetDisplay.addEventListener('pointerdown', () => {
-                if (!expandedPumpSteps.has(index)) return;
-                targetLongPressFired = false;
-                targetLongPressTimer = setTimeout(() => {
-                    targetLongPressFired = true;
-                    targetValue = 0;
-                    targetDisplay.textContent = '0';
-                    updateTargetStyle();
-                    if (isFlow) editorState.profile.steps[index].flow = 0;
-                    else editorState.profile.steps[index].pressure = 0;
-                    startPumpTimer();
-                }, 600);
-            });
-            targetDisplay.addEventListener('pointerup',     () => clearTimeout(targetLongPressTimer));
-            targetDisplay.addEventListener('pointerleave',  () => clearTimeout(targetLongPressTimer));
-            targetDisplay.addEventListener('pointercancel', () => clearTimeout(targetLongPressTimer));
-
             targetDisplay.addEventListener('click', () => {
-                if (targetLongPressFired) { targetLongPressFired = false; return; }
                 if (expandedPumpSteps.has(index)) {
                     if (shouldUseNumpad()) {
                         const pumpConfig = isFlow
-                            ? { fieldType: 'pe-pump', title: 'FLOW', unit: 'mL/s', min: 0, max: 15, label: '0\u201315' }
-                            : { fieldType: 'pe-pump', title: 'PRESSURE', unit: 'bar', min: 1, max: 12, label: '1\u201312' };
+                            ? numpadConfig('pe-pump', 'FLOW', 'mL/s', PUMP_LIM)
+                            : numpadConfig('pe-pump', 'PRESSURE', 'bar', PUMP_LIM);
                         openNumpadForField(targetValue, pumpConfig, (val) => {
                             targetValue = val;
                             targetDisplay.textContent = `${targetValue}`;
@@ -815,9 +852,7 @@ function renderStepCards() {
                         return;
                     }
                     // Desktop: inline edit
-                    const tMax = isFlow ? 15 : 12;
-                    const tMin = isFlow ? 0  : 1;
-                    const handled = inlineEditValue(targetDisplay, targetValue, { min: tMin, max: tMax, step: tStep, onCommit: (val) => {
+                    const handled = inlineEditValue(targetDisplay, targetValue, { min: targetMin, max: targetMax, step: tStep, onCommit: (val) => {
                         targetValue = val;
                         targetDisplay.textContent = `${targetValue}`;
                         updateTargetStyle();
@@ -880,12 +915,13 @@ function renderStepCards() {
             limLine.className = 'flex flex-col gap-[4px]';
 
             const limUnit = isFlow ? 'bar' : 'mL/s';
-            const limMax  = isFlow ? 12 : 8;
             // 0 always allowed: 0 = limiter off (saveProfile nulls a 0-value
             // limiter). A min of 1 on flow steps made the pressure limit
             // impossible to switch off from the − button or the numpad.
-            const limMin  = 0;
-            const lStep   = 0.1;
+            const LIM_LIM = isFlow ? FIELD_LIMITS.pressureLimit : FIELD_LIMITS.flowLimit;
+            const limMax  = LIM_LIM.max;
+            const limMin  = LIM_LIM.min;
+            const lStep   = LIM_LIM.step;
             const isLimExp = expandedLimSteps.has(index);
 
             let limValue = step.limiter?.value ?? 0;
@@ -968,33 +1004,12 @@ function renderStepCards() {
                 limTimer = setTimeout(collapseLimSpinner, 2000);
             }
 
-            let limLongPressTimer = null;
-            let limLongPressFired = false;
-
-            limDisplay.addEventListener('pointerdown', () => {
-                if (!expandedLimSteps.has(index)) return;
-                limLongPressFired = false;
-                limLongPressTimer = setTimeout(() => {
-                    limLongPressFired = true;
-                    limValue = 0;
-                    limDisplay.textContent = '0';
-                    updateLimStyle();
-                    if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: 0, range: 0.6 };
-                    else editorState.profile.steps[index].limiter.value = 0;
-                    startLimTimer();
-                }, 600);
-            });
-            limDisplay.addEventListener('pointerup',     () => clearTimeout(limLongPressTimer));
-            limDisplay.addEventListener('pointerleave',  () => clearTimeout(limLongPressTimer));
-            limDisplay.addEventListener('pointercancel', () => clearTimeout(limLongPressTimer));
-
             limDisplay.addEventListener('click', () => {
-                if (limLongPressFired) { limLongPressFired = false; return; }
                 if (expandedLimSteps.has(index)) {
                     if (shouldUseNumpad()) {
                         const limConfig = isFlow
-                            ? { fieldType: 'pe-lim', title: 'PRESSURE LIMIT', unit: 'bar', min: 0, max: 12, label: '0\u201312' }
-                            : { fieldType: 'pe-lim', title: 'FLOW LIMIT', unit: 'mL/s', min: 0, max: 8, label: '0\u20138' };
+                            ? numpadConfig('pe-lim', 'PRESSURE LIMIT', 'bar', LIM_LIM)
+                            : numpadConfig('pe-lim', 'FLOW LIMIT', 'mL/s', LIM_LIM);
                         openNumpadForField(limValue, limConfig, (val) => {
                             limValue = val;
                             limDisplay.textContent = `${limValue}`;
@@ -1169,27 +1184,7 @@ function renderStepCards() {
                 else editorState.profile.steps[index].exit.condition = exitCond;
             });
 
-            let exitLongPressTimer = null;
-            let exitLongPressFired = false;
-
-            valueDisplay.addEventListener('pointerdown', () => {
-                if (!expandedExitSteps.has(index)) return;
-                exitLongPressFired = false;
-                exitLongPressTimer = setTimeout(() => {
-                    exitLongPressFired = true;
-                    exitValue = 0;
-                    valueDisplay.textContent = `0 ${EXIT_UNIT_MAP[exitType]}`;
-                    if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: 0 };
-                    else editorState.profile.steps[index].exit.value = 0;
-                    startExitTimer();
-                }, 600);
-            });
-            valueDisplay.addEventListener('pointerup',     () => clearTimeout(exitLongPressTimer));
-            valueDisplay.addEventListener('pointerleave',  () => clearTimeout(exitLongPressTimer));
-            valueDisplay.addEventListener('pointercancel', () => clearTimeout(exitLongPressTimer));
-
             valueDisplay.addEventListener('click', () => {
-                if (exitLongPressFired) { exitLongPressFired = false; return; }
                 if (expandedExitSteps.has(index)) {
                     if (exitType !== 'off' && shouldUseNumpad()) {
                         openNumpadForField(exitValue, {
@@ -1272,9 +1267,9 @@ function renderStepCards() {
             maxExtrasRow.style.display = 'none';
 
             const MAX_FIELDS = [
-                { key: 'weight',  unit: 'g',   fStep: 1, fMax: 1000 },
-                { key: 'seconds', unit: 'sec', fStep: 1, fMax: 300 },
-                { key: 'volume',  unit: 'ml',  fStep: 1, fMax: 1000 },
+                { key: 'weight',  unit: 'g',   lim: FIELD_LIMITS.weight },
+                { key: 'seconds', unit: 'sec', lim: FIELD_LIMITS.seconds },
+                { key: 'volume',  unit: 'ml',  lim: FIELD_LIMITS.volume },
             ];
 
             const fieldRefs = [];
@@ -1405,7 +1400,8 @@ function renderStepCards() {
                 showFocusOverlay(maxTopRow, collapseMaxSpinner);
             });
 
-            MAX_FIELDS.forEach(({ key, unit, fStep, fMax }) => {
+            MAX_FIELDS.forEach(({ key, unit, lim }) => {
+                const fStep = lim.step, fMax = lim.max;
                 const isThisExpanded = (expandedMaxSteps.get(index) ?? null) === key;
                 let fieldValue = step[key] || 0;
 
@@ -1444,38 +1440,12 @@ function renderStepCards() {
 
                 fieldRefs.push({ key, minusBtn, plusBtn, display, section, getValue: () => fieldValue });
 
-                let longPressTimer = null;
-                let longPressFired = false;
-
-                display.addEventListener('pointerdown', (e) => {
-                    if (e.target === minusBtn || e.target === plusBtn) return;
-                    if (expandedMaxSteps.get(index) !== key) return;
-                    longPressFired = false;
-                    longPressTimer = setTimeout(() => {
-                        longPressFired = true;
-                        fieldValue = 0;
-                        display.childNodes[0].textContent = `0 ${unit}`;
-                        editorState.profile.steps[index][key] = 0;
-                        updateMaxSectionVisibility();
-                        startMaxTimer();
-                    }, 600);
-                });
-                display.addEventListener('pointerup',     () => clearTimeout(longPressTimer));
-                display.addEventListener('pointerleave',  () => clearTimeout(longPressTimer));
-                display.addEventListener('pointercancel', () => clearTimeout(longPressTimer));
-
                 display.addEventListener('click', (e) => {
                     if (e.target === minusBtn || e.target === plusBtn) return;
-                    if (longPressFired) { longPressFired = false; return; }
                     const current = expandedMaxSteps.get(index) ?? null;
                     if (current === key) {
                         if (shouldUseNumpad()) {
-                            const MAX_CONFIG = {
-                                weight:  { fieldType: 'pe-max-weight',  title: 'MAX WEIGHT', unit: 'g',   min: 0, max: 1000, label: '0\u20131000' },
-                                seconds: { fieldType: 'pe-max-seconds', title: 'MAX TIME',   unit: 'sec', min: 0, max: 300,  label: '0\u2013300' },
-                                volume:  { fieldType: 'pe-max-volume',  title: 'MAX VOLUME', unit: 'ml',  min: 0, max: 1000, label: '0\u20131000' },
-                            };
-                            openNumpadForField(fieldValue, MAX_CONFIG[key], (val) => {
+                            openNumpadForField(fieldValue, numpadConfig(MAX_NUMPAD[key].fieldType, MAX_NUMPAD[key].title, unit, lim), (val) => {
                                 fieldValue = val;
                                 editorState.profile.steps[index][key] = val;
                                 display.childNodes[0].textContent = `${val} ${unit}`;
@@ -1539,14 +1509,14 @@ function renderStepCards() {
         deleteBtn.className = 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
         deleteBtn.setAttribute('aria-label', 'Delete step');
-        deleteBtn.addEventListener('click', () => { editorState.profile.steps.splice(index, 1); renderStepCards(); });
+        deleteBtn.addEventListener('click', () => { removeStepAt(index); renderStepCards(); });
 
         const insertBtn = document.createElement('button');
         insertBtn.type = 'button';
         insertBtn.className = 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         insertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
         insertBtn.setAttribute('aria-label', 'Insert step after');
-        insertBtn.addEventListener('click', () => { editorState.profile.steps.splice(index + 1, 0, makeNewStep()); renderStepCards(); });
+        insertBtn.addEventListener('click', () => { insertStepAfter(index); renderStepCards(); });
 
         fCell.appendChild(deleteBtn);
         fCell.appendChild(insertBtn);
@@ -1709,6 +1679,7 @@ function renderSettingsTab() {
         editorState.profile = deepCopy(newProfile);
         editorState.sourceProfileRecord = sourceRecord || null;
         editorState.sourceProfileId = sourceRecord?.id || null;
+        _baselineProfileJson = JSON.stringify(editorState.profile);
         expandedTempSteps.clear();
         expandedPumpSteps.clear();
         expandedLimSteps.clear();
@@ -1943,26 +1914,7 @@ function describeStep(step, index) {
         }
 
         // Click on value pill to expand/collapse
-        let longPressTimer = null;
-        let longPressFired = false;
-
-        valuePill.addEventListener('pointerdown', () => {
-            if (!expandedReviewField || expandedReviewField.collapseFunc !== collapse) return;
-            longPressFired = false;
-            longPressTimer = setTimeout(() => {
-                longPressFired = true;
-                value = 0;
-                updatePill();
-                onCommit(0);
-                resetTimer();
-            }, 600);
-        });
-        valuePill.addEventListener('pointerup', () => clearTimeout(longPressTimer));
-        valuePill.addEventListener('pointerleave', () => clearTimeout(longPressTimer));
-        valuePill.addEventListener('pointercancel', () => clearTimeout(longPressTimer));
-
         valuePill.addEventListener('click', () => {
-            if (longPressFired) { longPressFired = false; return; }
             if (expandedReviewField && expandedReviewField.collapseFunc === collapse) {
                 if (shouldUseNumpad()) {
                     openNumpadForField(value, {
@@ -2049,7 +2001,7 @@ function describeStep(step, index) {
         );
 
         const tempSpinner = makeNumericSpinner(
-            step.temperature ?? 93, 0.5, '\u00b0C', 0, 110,
+            step.temperature ?? 93, FIELD_LIMITS.temperature.step, '\u00b0C', FIELD_LIMITS.temperature.min, FIELD_LIMITS.temperature.max,
             (val) => { editorState.profile.steps[index].temperature = val; renderReviewGraph(); }
         );
 
@@ -2070,14 +2022,16 @@ function describeStep(step, index) {
         );
 
         if (isFlow) {
+            const fl = FIELD_LIMITS.flow;
             const flowSpinner = makeNumericSpinner(
-                step.flow ?? 0, 0.1, 'mL/s', 0, 15,
+                step.flow ?? 0, fl.step, 'mL/s', fl.min, fl.max,
                 (val) => { editorState.profile.steps[index].flow = val; renderReviewGraph(); }
             );
             lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), flowSpinner]));
         } else {
+            const pr = FIELD_LIMITS.pressure;
             const pressureSpinner = makeNumericSpinner(
-                step.pressure ?? 0, 0.1, 'bar', 0, 16,
+                step.pressure ?? 0, pr.step, 'bar', pr.min, pr.max,
                 (val) => { editorState.profile.steps[index].pressure = val; renderReviewGraph(); }
             );
             lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), pressureSpinner]));
@@ -2088,10 +2042,10 @@ function describeStep(step, index) {
     {
         const limValue = step.limiter?.value ?? 0;
         const limUnit  = isFlow ? 'bar' : 'mL/s';
-        const limMax   = isFlow ? 16 : 15;
+        const limLim   = isFlow ? FIELD_LIMITS.pressureLimit : FIELD_LIMITS.flowLimit;
         if (limValue > 0) {
             const limSpinner = makeNumericSpinner(
-                limValue, 0.1, limUnit, 0, limMax,
+                limValue, limLim.step, limUnit, limLim.min, limLim.max,
                 (val) => {
                     if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: val, range: 0.6 };
                     else editorState.profile.steps[index].limiter.value = val;
@@ -2108,9 +2062,9 @@ function describeStep(step, index) {
     // Expanded → mainRow: non-zero pills  |  extraRow below: zero pills (no ± overlap)
     {
         const MAX_FIELDS = [
-            { key: 'weight',  unit: 'g',   fStep: 1, fMax: 500 },
-            { key: 'seconds', unit: 'sec', fStep: 1, fMax: 300 },
-            { key: 'volume',  unit: 'ml',  fStep: 1, fMax: 500 },
+            { key: 'weight',  unit: 'g',   lim: FIELD_LIMITS.weight },
+            { key: 'seconds', unit: 'sec', lim: FIELD_LIMITS.seconds },
+            { key: 'volume',  unit: 'ml',  lim: FIELD_LIMITS.volume },
         ];
 
         const vals = { weight: step.weight ?? 0, seconds: step.seconds ?? 0, volume: step.volume ?? 0 };
@@ -2149,7 +2103,8 @@ function describeStep(step, index) {
 
         // ── Pill elements (created once per field, moved between rows) ────────
         const pillEls = {};
-        MAX_FIELDS.forEach(({ key, unit, fStep, fMax }) => {
+        MAX_FIELDS.forEach(({ key, unit, lim }) => {
+            const fStep = lim.step, fMax = lim.max;
             const pill = document.createElement('span');
             pill.className = PILL_ACTIVE;
             pill.style.position = 'relative';
@@ -2173,37 +2128,11 @@ function describeStep(step, index) {
 
             pillEls[key] = { pill, minus, textEl, plus };
 
-            // Long press → zero out
-            let lpTimer = null, lpFired = false;
-            pill.addEventListener('pointerdown', (e) => {
-                if (e.target === minus || e.target === plus) return;
-                if (activeMaxField !== key) return;
-                lpFired = false;
-                lpTimer = setTimeout(() => {
-                    lpFired = true;
-                    vals[key] = 0;
-                    editorState.profile.steps[index][key] = 0;
-                    textEl.textContent = `0 ${unit}`;
-                    renderReviewGraph();
-                    updateMaxDisplay();
-                    startMaxTimer();
-                }, 600);
-            });
-            pill.addEventListener('pointerup',     () => clearTimeout(lpTimer));
-            pill.addEventListener('pointerleave',  () => clearTimeout(lpTimer));
-            pill.addEventListener('pointercancel', () => clearTimeout(lpTimer));
-
             pill.addEventListener('click', (e) => {
                 if (e.target === minus || e.target === plus) return;
-                if (lpFired) { lpFired = false; return; }
                 if (activeMaxField === key) {
                     if (shouldUseNumpad()) {
-                        const MAX_CONFIGS = {
-                            weight:  { fieldType: 'pe-max-weight',  title: 'MAX WEIGHT', unit: 'g',   min: 0, max: 500, label: '0\u2013500' },
-                            seconds: { fieldType: 'pe-max-seconds', title: 'MAX TIME',   unit: 'sec', min: 0, max: 300, label: '0\u2013300' },
-                            volume:  { fieldType: 'pe-max-volume',  title: 'MAX VOLUME', unit: 'ml',  min: 0, max: 500, label: '0\u2013500' },
-                        };
-                        openNumpadForField(vals[key], MAX_CONFIGS[key], (val) => {
+                        openNumpadForField(vals[key], numpadConfig(MAX_NUMPAD[key].fieldType, MAX_NUMPAD[key].title, unit, lim), (val) => {
                             vals[key] = val;
                             editorState.profile.steps[index][key] = val;
                             textEl.textContent = `${val} ${unit}`;
@@ -2529,8 +2458,7 @@ function renderReviewTab() {
             reviewDeleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
             reviewDeleteBtn.setAttribute('aria-label', 'Delete step');
             reviewDeleteBtn.addEventListener('click', () => {
-                editorState.profile.steps.splice(i, 1);
-                renderStepCards();
+                removeStepAt(i);
                 renderReviewTab();
             });
 
@@ -2540,8 +2468,7 @@ function renderReviewTab() {
             reviewInsertBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
             reviewInsertBtn.setAttribute('aria-label', 'Insert step after');
             reviewInsertBtn.addEventListener('click', () => {
-                editorState.profile.steps.splice(i + 1, 0, makeNewStep());
-                renderStepCards();
+                insertStepAfter(i);
                 renderReviewTab();
             });
 
@@ -2642,7 +2569,13 @@ function setActiveTab(tabIndex) {
         }
     }
 
-    if (tabIndex === 2) renderReviewTab();
+    // Re-render the tab being shown. Every control closes over its own copy of
+    // the value it edits (captured at render time), so a panel left standing
+    // from an earlier render shows stale numbers AND writes them back on the
+    // next ± tap — silently reverting edits made in another tab.
+    if (tabIndex === 0) renderStepCards();
+    else if (tabIndex === 1) renderSettingsTab();
+    else if (tabIndex === 2) renderReviewTab();
 }
 
 // ─── Title Editing ──────────────────────────────────────────────────────────
@@ -2797,6 +2730,7 @@ async function saveProfile() {
         // Rebind editor to the saved record so repeat saves update in place.
         editorState.sourceProfileRecord = saved;
         editorState.sourceProfileId = saved.id;
+        _baselineProfileJson = JSON.stringify(editorState.profile);
 
         // Hint to selector so it pre-selects the profile we just edited.
         sessionStorage.setItem('lastEditedProfileKey', saved.id);
@@ -2809,10 +2743,59 @@ async function saveProfile() {
     }
 }
 
+// Yes/no dialog matching promptVersionRestore's styling. Replaces window.confirm,
+// which renders as a browser chrome dialog inside the host webview.
+function promptConfirm({ title, message, confirmLabel, cancelLabel }) {
+    return new Promise((resolve) => {
+        const dlg = document.createElement('dialog');
+        dlg.className = 'pe-confirm-dialog rounded-[16px] bg-[var(--box-color)] p-0 border border-[var(--border-color)] max-w-[520px] w-[90vw] shadow-2xl';
+        dlg.style.marginTop = '12vh';
+        dlg.style.marginBottom = 'auto';
+        dlg.innerHTML = `
+            <div class="flex flex-col gap-[16px] p-[24px]">
+                ${title ? `<h3 class="text-[24px] font-bold text-[var(--text-primary)]">${title}</h3>` : ''}
+                <p class="text-[20px] text-[var(--text-primary)]">${message}</p>
+                <div class="flex justify-end gap-[12px] mt-[8px]">
+                    <button type="button" data-act="cancel" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${cancelLabel}</button>
+                    <button type="button" data-act="ok" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold cursor-pointer">${confirmLabel}</button>
+                </div>
+            </div>`;
+
+        function done(result) {
+            try { dlg.close(); } catch (_) {}
+            dlg.remove();
+            resolve(result);
+        }
+        dlg.querySelector('[data-act="cancel"]').addEventListener('click', () => done(false));
+        dlg.querySelector('[data-act="ok"]').addEventListener('click', () => done(true));
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(false); });
+
+        document.body.appendChild(dlg);
+        dlg.showModal();
+    });
+}
+
 async function cancelEditor() {
+    // Cancel used to warn only when a share-code import was pending, so any
+    // other edit — however long the user had been working — was discarded on
+    // a single tap with no confirmation.
     if (_isNewProfileSession && _hasImportedInSession) {
-        const msg = getTranslation('Discard the imported profile? This cannot be undone.');
-        if (!confirm(msg)) return;
+        // Keep this exact string — it is the one already carried in the
+        // translation sheet for this prompt.
+        const ok = await promptConfirm({
+            message: getTranslation('Discard the imported profile? This cannot be undone.'),
+            confirmLabel: getTranslation('Discard'),
+            cancelLabel: getTranslation('Keep editing'),
+        });
+        if (!ok) return;
+    } else if (JSON.stringify(editorState.profile) !== _baselineProfileJson) {
+        const ok = await promptConfirm({
+            title: getTranslation('Discard changes?'),
+            message: getTranslation('Your edits to this profile have not been saved.'),
+            confirmLabel: getTranslation('Discard'),
+            cancelLabel: getTranslation('Keep editing'),
+        });
+        if (!ok) return;
     }
     if (_isNewProfileSession && _sessionImportedIds.length > 0) {
         try {
@@ -2923,9 +2906,9 @@ async function openVersionHistory() {
     editorState.profile = normalizeLegacySteps(deepCopy(chosen.profile));
     const titleDisplay = document.getElementById('editor-title-display');
     if (titleDisplay) titleDisplay.textContent = editorState.profile.title || 'Untitled Profile';
+    // Baseline deliberately not reset: a restored version is unsaved work, so
+    // Cancel must still warn before throwing it away.
     setActiveTab(editorState.activeTab || 0);
-    renderStepCards();
-    renderSettingsTab();
     showToast('Restored — Save to keep this version', 3000, 'success');
 }
 
@@ -2952,6 +2935,7 @@ export async function initializeProfileEditor() {
     editorState.sourceProfileId = profileRecord.id;
     editorState.profile = normalizeLegacySteps(deepCopy(profileRecord.profile));
     editorState.activeTab = 0;
+    _baselineProfileJson = JSON.stringify(editorState.profile);
     _isNewProfileSession = !profileRecord.id;
     _sessionImportedIds = [];
     _hasImportedInSession = false;
@@ -2966,10 +2950,8 @@ export async function initializeProfileEditor() {
     const titleDisplay = document.getElementById('editor-title-display');
     if (titleDisplay) titleDisplay.textContent = editorState.profile.title || 'Untitled Profile';
 
-    // 4. Render tabs
+    // 4. Render tabs — setActiveTab renders whichever panel it shows.
     setActiveTab(0);
-    renderStepCards();
-    renderSettingsTab();
 
     // 5. Wire event listeners
     initTitleEditing();
