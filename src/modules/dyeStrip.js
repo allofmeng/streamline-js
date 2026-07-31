@@ -67,6 +67,13 @@ function visibleFavs() {
         .slice(0, MAX_FAV_CELLS);
 }
 
+// Mirrors visibleFavs: DYE2's recipe editor has a "Show on Streamline Dashboard" toggle
+// that writes showOnStreamlineDashboard, so honour it here the same way alwaysOnDashboard
+// is honoured for favourites. Absent ⇒ shown (see dye2-plugin/KV_CONTRACT.md).
+function visibleRecipes() {
+    return recipeCache.filter(r => r && r.showOnStreamlineDashboard !== false);
+}
+
 function favLabel(fav) {
     const snp = fav.snapshot || {};
     return fav.subtitle || snp.coffeeName || fav.title || 'Favourite';
@@ -113,7 +120,7 @@ export function renderStrip(mode) {
             strip.insertBefore(hint, strip.firstChild);
         }
     } else if (mode === 'R') {
-        const recipes = recipeCache.slice(0, 5);
+        const recipes = visibleRecipes().slice(0, 5);
         if (recipes.length === 0) {
             const hint = document.createElement('span');
             hint.className = 'flex items-center text-[20px] text-[var(--low-contrast-white)] px-2';
