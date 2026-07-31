@@ -25,103 +25,17 @@ let _hasImportedInSession = false;
 // to decide whether there is unsaved work worth warning about.
 let _baselineProfileJson = null;
 
-// Which step indices have their temp ± buttons expanded
-let expandedTempSteps = new Set();
 
-// Which step indices have their pump target ± buttons expanded
-let expandedPumpSteps = new Set();
 
-// Which step indices have their limiter ± buttons expanded
-let expandedLimSteps = new Set();
 
-// Which max field is expanded per step index: Map<stepIndex, 'seconds'|'volume'|'weight'|null>
-let expandedMaxSteps = new Map();
 
-// Which step indices have their exit value ± buttons expanded
-let expandedExitSteps = new Set();
 
-// Which review field is currently expanded (at most one at a time)
-let expandedReviewField = null; // { collapseFunc: fn } | null
-
-// ─── Focus Overlay ───────────────────────────────────────────────────────────
-// 4-div hole approach: keep focal element in-place, surround it with 4 fixed
-// overlay divs (top/right/bottom/left) leaving a rectangular hole. No DOM
-// manipulation of focal elements — stacking context issues are irrelevant.
-
-let _focusOverlay = null; // { top, right, bottom, left } — four divs
-let _focusTarget = null;  // { el, collapse } — the element the hole is cut around
-
-// The overlay divs are position:fixed but the hole is cut from viewport
-// coordinates captured when the field is tapped. The step grid scrolls in both
-// axes, so without this the hole stays put while the field it framed slides
-// away. Capture phase — the grid's scroll doesn't bubble to window. Registered
-// once at module scope; a no-op whenever nothing is focused.
-window.addEventListener('scroll', () => _repositionFocusOverlay(), true);
-window.addEventListener('resize', () => _repositionFocusOverlay());
-
-function _ensureFocusOverlayDivs() {
-    // isConnected, not just non-null: the router rebuilds the page DOM, which
-    // detaches the divs while the reference stays live.
-    if (_focusOverlay && _focusOverlay.top.isConnected) return;
-    _focusOverlay = {};
-    ['top','right','bottom','left'].forEach(side => {
-        const d = document.createElement('div');
-        d.className = 'pe-focus-overlay';
-        d.style.cssText = 'position:fixed;z-index:1000;display:none;cursor:default;';
-        document.body.appendChild(d);
-        _focusOverlay[side] = d;
-    });
-}
-
-function showFocusOverlay(el, collapseCallback) {
-    _ensureFocusOverlayDivs();
-    _focusTarget = { el, collapse: collapseCallback };
-    _repositionFocusOverlay();
-}
-
-function _repositionFocusOverlay() {
-    if (!_focusTarget || !_focusOverlay) return;
-    const { el, collapse: collapseCallback } = _focusTarget;
-    const PAD = 8; // small breathing room around tight-fit bounds
-
-    // Compute union bounding rect of el + all descendants (catches absolute ± buttons)
-    const rects = [el.getBoundingClientRect()];
-    el.querySelectorAll('*').forEach(child => {
-        const cr = child.getBoundingClientRect();
-        if (cr.width > 0 && cr.height > 0) rects.push(cr);
-    });
-    let minT = Infinity, minL = Infinity, maxB = -Infinity, maxR = -Infinity;
-    for (const rc of rects) {
-        if (rc.top    < minT) minT = rc.top;
-        if (rc.left   < minL) minL = rc.left;
-        if (rc.bottom > maxB) maxB = rc.bottom;
-        if (rc.right  > maxR) maxR = rc.right;
-    }
-
-    const t = minT - PAD, l = minL - PAD;
-    const b = maxB + PAD, ri = maxR + PAD;
-    const W = window.innerWidth;
-
-    Object.assign(_focusOverlay.top.style,    { display:'', top:'0',             left:'0',    width:W+'px',              height:Math.max(0,t)+'px'       });
-    Object.assign(_focusOverlay.bottom.style, { display:'', top:b+'px',          left:'0',    width:W+'px',              height:'',        bottom:'0'      });
-    Object.assign(_focusOverlay.left.style,   { display:'', top:Math.max(0,t)+'px', left:'0', width:Math.max(0,l)+'px', height:(b - Math.max(0,t))+'px' });
-    Object.assign(_focusOverlay.right.style,  { display:'', top:Math.max(0,t)+'px', left:ri+'px', right:'0', width:'',  height:(b - Math.max(0,t))+'px' });
-
-    Object.values(_focusOverlay).forEach(d => { d.onclick = () => collapseCallback(); });
-}
-
-function clearFocusOverlay() {
-    _focusTarget = null;
-    if (!_focusOverlay) return;
-    Object.values(_focusOverlay).forEach(d => { d.style.display = 'none'; d.onclick = null; });
-}
 
 // ─── Numpad Helper ─────────────────────────────────────────────────────────
 
 function openNumpadForField(currentVal, numpadConfig, onCommit) {
     // After router navigation the DOM is rebuilt; reset flag if overlay was lost
     if (!document.getElementById('numpad-modal-overlay')) resetNumpadModal();
-    clearFocusOverlay();
     const mockInput = { value: String(currentVal), dispatchEvent: () => {} };
     openModal(mockInput, {
         fieldType: numpadConfig.fieldType || 'pe-generic',
@@ -273,7 +187,12 @@ const FIELD_LIMITS = {
     flowLimit:     { min: 0, max: 8,   step: 0.1 }, // flow limit on a pressure step
     pressureLimit: { min: 0, max: 12,  step: 0.1 }, // pressure limit on a flow step
     weight:        { min: 0, max: 500, step: 1 },
-    seconds:       { min: 0, max: 300, step: 1 },
+    // 127 is the protocol ceiling, not a taste call: frame length goes over the
+    // wire as F8_1_7 (de1app binary.tcl:1053), whose encoder clamps anything
+    // above 127 — "Numbers over 127 are not allowed this F8_1_7; limiting at
+    // 127" (binary.tcl:555-559). The old 300 let the grid show a duration the
+    // machine could never run, with the truncation logged only firmware-side.
+    seconds:       { min: 0, max: 127, step: 1 },
     volume:        { min: 0, max: 500, step: 1 },
 };
 
@@ -328,6 +247,20 @@ function removeStepAt(index) {
     else if (start > index + 1) p.target_volume_count_start = start - 1;
 }
 
+// Deleting a step throws away everything configured on it and there is no undo,
+// so it asks first. Composed from keys the translation sheet already carries
+// ('Delete', 'Step', 'Cancel') rather than adding a new sentence to translate —
+// the question plus the Delete/Cancel buttons say enough without a body. The
+// step's own name is deliberately left out: promptConfirm renders its message
+// as innerHTML and the name is user input.
+function confirmDeleteStep(index) {
+    return promptConfirm({
+        message: `${getTranslation('Delete')} ${getTranslation('Step')} ${index + 1}?`,
+        confirmLabel: getTranslation('Delete'),
+        cancelLabel: getTranslation('Cancel'),
+    });
+}
+
 function insertStepAfter(index) {
     const p = editorState.profile;
     p.steps.splice(index + 1, 0, makeNewStep());
@@ -335,7 +268,68 @@ function insertStepAfter(index) {
     if (start > index + 1) p.target_volume_count_start = start + 1;
 }
 
+// Reorder button for a step. `dir` is -1 (earlier) or +1 (later). At the ends
+// of the run the button stays in place but goes inert, so the footer's button
+// row keeps the same width on every step — a disappearing control would shift
+// delete and insert sideways under the finger.
+function makeMoveBtn(index, dir, total, rerender, big) {
+    // Class strings are literals, not interpolated: Tailwind builds app.css by
+    // scanning source text, so a `w-[${size}px]` would compile to nothing and
+    // silently lose its width.
+    const BOX = big
+        ? 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center rounded-[10px]'
+        : 'pe-step-action-btn w-[36px] h-[36px] flex items-center justify-center rounded-[10px]';
+
+    const target = index + dir;
+    const disabled = target < 0 || target >= total;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `${BOX} ${disabled ? 'cursor-default' : 'text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] cursor-pointer'}`;
+    if (disabled) {
+        btn.style.color = 'var(--low-contrast-white)';
+        btn.style.opacity = '0.35';
+        btn.disabled = true;
+    }
+    const d = dir < 0 ? 'M15 19l-7-7 7-7' : 'M9 5l7 7-7 7';
+    const px = big ? 'h-8 w-8' : 'h-5 w-5';
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="${px}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${d}" /></svg>`;
+    btn.setAttribute('aria-label', dir < 0 ? 'Move step earlier' : 'Move step later');
+    if (!disabled) btn.addEventListener('click', () => { if (moveStep(index, target)) rerender(); });
+    return btn;
+}
+
+// Move a step to a new position. Like removeStepAt/insertStepAfter this has to
+// carry profile.target_volume_count_start with it — a 1-based step index where
+// 0 means None. Reordering steps under it would otherwise silently re-point
+// preinfusion at whichever step happened to land in that slot.
+function moveStep(from, to) {
+    const p = editorState.profile;
+    if (to < 0 || to >= p.steps.length || from === to) return false;
+
+    const [moved] = p.steps.splice(from, 1);
+    p.steps.splice(to, 0, moved);
+
+    const start = p.target_volume_count_start || 0;
+    if (start === 0) return true;            // None — nothing to track
+    let marked = start - 1;                  // to 0-based
+    if (marked === from) {
+        marked = to;                         // the marked step is the one that moved
+    } else if (from < to && marked > from && marked <= to) {
+        marked -= 1;                         // steps it passed shift left
+    } else if (from > to && marked >= to && marked < from) {
+        marked += 1;                         // steps it passed shift right
+    }
+    p.target_volume_count_start = marked + 1;
+    return true;
+}
+
 const TAB_COUNT = 3;
+
+// Stepper ± button. 44px is the WCAG 2.5.5 / iOS HIG touch-target floor; the old
+// expand-on-tap buttons were 60px, which only fitted because they were hidden at
+// rest and drawn outside the cell. Always-visible buttons have to live in the
+// cell's width budget, and 44 is what pays for that.
+const STEPPER_BTN_CLASS = 'bg-[var(--button-grey)] rounded-[14px] w-[44px] h-[44px] flex items-center justify-center shrink-0 cursor-pointer select-none text-xl font-bold text-[var(--text-primary)]';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -405,47 +399,25 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
         debouncedOnChange();
     });
 
-    // Click display to edit:
-    //   - Desktop: single click → inline edit
-    //   - Tablet (numpad mode): two clicks → numpad modal (first click selects, second opens)
+    // Click the value to type one: numpad on tablet, inline input on desktop.
+    // This used to need two taps (first selected, second opened) with a 2s
+    // window in between — the ± are always visible here, so there was never
+    // anything for the first tap to disambiguate.
     display.style.cursor = 'pointer';
-    let _spinnerSelected = false;
-    let _spinnerSelectTimer = null;
     display.addEventListener('click', () => {
+        const commit = (val) => { value = roundTo(val, step); updateDisplay(); onChange(value); };
         if (shouldUseNumpad()) {
-            if (_spinnerSelected) {
-                clearTimeout(_spinnerSelectTimer);
-                _spinnerSelected = false;
-                display.style.outline = '';
-                openNumpadForField(value, {
-                    fieldType: 'pe-settings',
-                    title: (unit || 'VALUE').toUpperCase(),
-                    unit: unit || '',
-                    min: min ?? 0,
-                    max: max ?? 9999,
-                    label: `${min ?? 0}–${max ?? 9999}`
-                }, (val) => {
-                    value = roundTo(val, step);
-                    updateDisplay();
-                    onChange(value);
-                });
-            } else {
-                _spinnerSelected = true;
-                display.style.outline = '2px solid var(--mimoja-blue)';
-                display.style.borderRadius = '4px';
-                clearTimeout(_spinnerSelectTimer);
-                _spinnerSelectTimer = setTimeout(() => {
-                    _spinnerSelected = false;
-                    display.style.outline = '';
-                }, 2000);
-            }
+            openNumpadForField(value, {
+                fieldType: 'pe-settings',
+                title: (unit || 'VALUE').toUpperCase(),
+                unit: unit || '',
+                min: min ?? 0,
+                max: max ?? 9999,
+                label: `${min ?? 0}–${max ?? 9999}`
+            }, commit);
             return;
         }
-        inlineEditValue(display, value, { min, max, step, unit, onCommit: (val) => {
-            value = val;
-            updateDisplay();
-            onChange(value);
-        }});
+        inlineEditValue(display, value, { min, max, step, unit, onCommit: commit });
     });
 
     updateDisplay();
@@ -461,42 +433,137 @@ function createSpinner(initialValue, step, unit, onChange, opts = {}) {
     return wrapper;
 }
 
-// ─── Toggle Button Group ────────────────────────────────────────────────────
+// ─── Grid Stepper ───────────────────────────────────────────────────────────
+// One control for every numeric field in the step grid: [−] [value] [+].
+//
+// `revealOnTap` hides the ± until the value is tapped, so a cell at rest shows
+// only its numbers. Two rules keep that from repeating the old tap-to-expand
+// model's mistakes:
+//
+//  1. Hidden means `visibility:hidden`, not `display:none`. The ± keep their
+//     space, so revealing them cannot reflow the row out from under a finger —
+//     which is the reason the old code positioned them `absolute` outside the
+//     pill, where they overlapped the sticky label column and the next step.
+//  2. Nothing auto-collapses. The old 2s timer expired mid-edit and was a
+//     WCAG 2.2.1 failure. A revealed stepper closes only when another one
+//     opens, tracked by the single `_activeStepper` below (the previous code
+//     spread this across five Sets and a Map that could disagree).
+//
+// Tapping the value opens the numpad on tablet or an inline input on desktop —
+// once revealed, or immediately when `revealOnTap` is false.
+let _activeStepper = null; // { hide: fn } | null
 
-function createToggle(options, activeValue, onChange) {
-    // options: [{label, value}, ...]
+// `startRevealed` steppers are the grid's affordance hint: the Temp row draws
+// its ± on first paint so the control demonstrates itself, and the first tap on
+// any pill anywhere retires them — by then the user has seen what a pill does.
+// Dismissal is sticky for the editing session, otherwise every renderStepCards()
+// (tab switch, insert, delete) would re-arm the hint and it would read as a
+// flicker rather than a one-time lesson. Reset in initializeProfileEditor.
+let _hintSteppers = [];      // hide fns still acting as hints
+let _hintsDismissed = false;
+
+function _dismissHints(exceptHide) {
+    if (!_hintSteppers.length) return;
+    for (const hideFn of _hintSteppers) if (hideFn !== exceptHide) hideFn();
+    _hintSteppers = [];
+    _hintsDismissed = true;
+}
+
+function createGridStepper({ value, lim, numpad, revealOnTap = false, startRevealed = false, offWhenZero = false, format, onChange }) {
+    let current = value;
+    const fmt = format || ((v) => `${roundTo(v, lim.step)}`);
+
     const wrapper = document.createElement('div');
-    wrapper.className = 'flex gap-[8px]';
+    wrapper.className = 'flex items-center gap-[8px]';
 
-    let currentValue = activeValue;
-    const buttons = [];
+    const display = document.createElement('span');
+    display.style.minWidth = '140px';
 
-    function render() {
-        buttons.forEach(({ btn, value }) => {
-            if (value === currentValue) {
-                btn.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
-            } else {
-                btn.className = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[10px] py-[6px] text-[16px] font-semibold cursor-pointer transition-colors';
-            }
-        });
+    function restyle() {
+        // offWhenZero fields (the limiter) read as an outline pill at 0 — white
+        // on --secondary-button-bg was 1.75:1 in the light theme.
+        const on = !offWhenZero || current > 0;
+        const textCls = on ? 'text-white' : 'text-[var(--text-primary)]';
+        const bg = on ? 'bg-[var(--button-primary-bg)]' : '';
+        display.className = `${bg} rounded-[8px] px-[10px] py-[4px] text-[24px] font-semibold cursor-pointer select-none text-center ${textCls}`;
+        display.style.border = on ? '1px solid transparent' : '1px solid var(--secondary-button-outline)';
     }
 
-    options.forEach(({ label, value }) => {
+    function render() {
+        display.textContent = fmt(current);
+        restyle();
+    }
+
+    function commit(val) {
+        current = val;
+        render();
+        onChange(current);
+    }
+
+    function mkBtn(label, delta, ariaLabel) {
         const btn = document.createElement('button');
         btn.type = 'button';
+        btn.className = STEPPER_BTN_CLASS;
         btn.textContent = label;
-        buttons.push({ btn, value });
-
-        btn.addEventListener('click', () => {
-            currentValue = value;
-            render();
-            onChange(value);
+        btn.setAttribute('aria-label', ariaLabel);
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            flashPlusMinusButton(btn);
+            commit(roundTo(clamp(current + delta, lim.min, lim.max), lim.step));
         });
+        return btn;
+    }
 
-        wrapper.appendChild(btn);
+    const minusBtn = mkBtn('−', -lim.step, numpad.title + ' decrease');
+    const plusBtn  = mkBtn('+',       lim.step, numpad.title + ' increase');
+
+    const isHint = revealOnTap && startRevealed && !_hintsDismissed;
+    let revealed = !revealOnTap || isHint;
+    function setRevealed(on) {
+        revealed = on;
+        const v = on ? 'visible' : 'hidden';
+        minusBtn.style.visibility = v;
+        plusBtn.style.visibility = v;
+    }
+    setRevealed(revealed);
+
+    function hide() {
+        if (!revealOnTap) return;
+        setRevealed(false);
+        if (_activeStepper && _activeStepper.hide === hide) _activeStepper = null;
+    }
+
+    if (isHint) _hintSteppers.push(hide);
+
+    display.addEventListener('click', () => {
+        // Any pill tap ends the hint — including a tap on a hinting pill itself,
+        // which keeps its own ± (it is the field being edited) while its peers
+        // drop theirs.
+        _dismissHints(hide);
+        if (revealOnTap && !revealed) {
+            if (_activeStepper) _activeStepper.hide();
+            setRevealed(true);
+            _activeStepper = { hide };
+            return;
+        }
+        // A hinting pill was already revealed, so this tap is the edit itself —
+        // register it as active so the next tap elsewhere collapses it.
+        if (revealOnTap && revealed && !_activeStepper) _activeStepper = { hide };
+        if (shouldUseNumpad()) {
+            openNumpadForField(current, numpad, commit);
+            return;
+        }
+        inlineEditValue(display, current, {
+            min: lim.min, max: lim.max, step: lim.step,
+            onCommit: commit,
+        });
     });
 
     render();
+    wrapper.appendChild(minusBtn);
+    wrapper.appendChild(display);
+    wrapper.appendChild(plusBtn);
+    wrapper._setWidth = (px) => { display.style.minWidth = px; };
     return wrapper;
 }
 
@@ -518,7 +585,10 @@ function renderStepCards() {
     container.style.display = 'grid';
     // Label column grows to fit the longest (translated) row label — min 110px so
     // English stays compact, max-content so longer languages don't clip/overflow.
-    container.style.gridTemplateColumns = `minmax(110px, max-content) repeat(${numSteps}, minmax(300px, 1fr))`;
+    // repeat() rejects a count of 0 and CSS drops the whole declaration, so a
+    // zero-step profile has to omit the step track entirely.
+    const stepCols = numSteps > 0 ? ` repeat(${numSteps}, minmax(380px, 1fr))` : '';
+    container.style.gridTemplateColumns = `minmax(110px, max-content)${stepCols} 180px`;
     container.style.gridTemplateRows = `60px 1fr 1fr 1fr 1fr 60px`;
     container.style.height = '100%';
     container.style.width = '100%';
@@ -583,7 +653,15 @@ function renderStepCards() {
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.value = step.name || '';
-        nameInput.className = 'text-[24px] font-bold text-[var(--text-primary)] bg-transparent outline-none';
+        // Dashed underline, the same affordance the Text tab's editable values
+        // use. Without it a transparent borderless input reads as static text.
+        // It also restores a focus indicator: `outline-none` left this field with
+        // no visible focus state at all.
+        nameInput.className = 'text-[24px] font-bold text-[var(--text-primary)] bg-transparent outline-none underline decoration-dashed';
+        nameInput.style.textDecorationColor = 'var(--low-contrast-white)';
+        nameInput.style.textUnderlineOffset = '4px';
+        nameInput.addEventListener('focus', () => { nameInput.style.textDecorationColor = 'var(--mimoja-blue)'; });
+        nameInput.addEventListener('blur',  () => { nameInput.style.textDecorationColor = 'var(--low-contrast-white)'; });
         const syncSize = () => { nameInput.size = Math.max(4, nameInput.value.length + 1); };
         syncSize();
         nameInput.addEventListener('input', syncSize);
@@ -592,287 +670,91 @@ function renderStepCards() {
         nameWrapper.appendChild(nameInput);
         hCell.appendChild(nameWrapper);
 
-        // Temp + Sensor combined row
+        // Temp + Sensor.
+        //   [−]  93 °C  [+]
+        //   Group
+        // Temp starts with its ± shown as the grid's affordance hint; the first tap
+        // on any pill retires it and Temp behaves like every other row.
         {
-            const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-center px-[16px] py-[8px] border-r border-b border-[var(--border-color)] gap-[8px]');
-            const isExpanded = expandedTempSteps.has(index);
-
+            const tCell = mkCell(R.TEMP, col, 'flex flex-col justify-center items-center px-[16px] py-[8px] border-r border-b border-[var(--border-color)] gap-[10px]');
             const TEMP_LIM = FIELD_LIMITS.temperature;
-            let tempValue = step.temperature || 93;
-            let tempTimer = null;
 
-            // Sensor toggle button
+            const tempStepper = createGridStepper({
+                value: step.temperature || 93,
+                lim: TEMP_LIM,
+                revealOnTap: true,
+                startRevealed: true,
+                numpad: numpadConfig('pe-temp', 'TEMPERATURE', '°C', TEMP_LIM),
+                format: (v) => `${v}°C`,
+                onChange: (val) => {
+                    editorState.profile.steps[index].temperature = val;
+                    renderReviewGraph();
+                },
+            });
+            tempStepper._setWidth('110px');
+
             let sensorValue = step.sensor || 'coffee';
             const sensorBtn = document.createElement('button');
             sensorBtn.type = 'button';
             sensorBtn.className = 'text-[var(--text-primary)] border border-[var(--secondary-button-outline)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-            sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
+            sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Group') : getTranslation('Mix');
             sensorBtn.addEventListener('click', () => {
                 sensorValue = sensorValue === 'coffee' ? 'water' : 'coffee';
-                sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
+                sensorBtn.textContent = sensorValue === 'coffee' ? getTranslation('Group') : getTranslation('Mix');
                 editorState.profile.steps[index].sensor = sensorValue;
             });
 
-            const tempDisplay = document.createElement('span');
-            tempDisplay.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-            tempDisplay.style.position = 'relative';
-            tempDisplay.style.minWidth = '80px';
-            tempDisplay.style.textAlign = 'center';
-            tempDisplay.style.display = 'inline-block';
-            const tempTextSpan = document.createElement('span');
-            tempTextSpan.textContent = `${tempValue}\u00b0C`;
-            tempDisplay.appendChild(tempTextSpan);
-
-            const minusBtn = document.createElement('button');
-            minusBtn.type = 'button';
-            minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            minusBtn.textContent = '\u2212';
-            minusBtn.style.position = 'absolute';
-            minusBtn.style.right = '100%';
-            minusBtn.style.top = '50%';
-            minusBtn.style.transform = 'translateY(-50%)';
-            minusBtn.style.marginRight = '4px';
-            minusBtn.style.display = isExpanded ? '' : 'none';
-
-            const plusBtn = document.createElement('button');
-            plusBtn.type = 'button';
-            plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            plusBtn.textContent = '+';
-            plusBtn.style.position = 'absolute';
-            plusBtn.style.left = '100%';
-            plusBtn.style.top = '50%';
-            plusBtn.style.transform = 'translateY(-50%)';
-            plusBtn.style.marginLeft = '4px';
-            plusBtn.style.display = isExpanded ? '' : 'none';
-
-            tempDisplay.appendChild(minusBtn);
-            tempDisplay.appendChild(plusBtn);
-
-            // Display line: [tempDisplay] [sensorBtn] — always visible, never moves
-            const tempDisplayLine = document.createElement('div');
-            tempDisplayLine.className = 'flex items-center gap-[8px]';
-            tempDisplayLine.appendChild(tempDisplay);
-            tempDisplayLine.appendChild(sensorBtn);
-
-            function collapseTempSpinner() {
-                clearTimeout(tempTimer);
-                expandedTempSteps.delete(index);
-                minusBtn.style.display = 'none';
-                plusBtn.style.display = 'none';
-                sensorBtn.style.opacity = '';
-                clearFocusOverlay();
-            }
-
-            function startTempTimer() {
-                clearTimeout(tempTimer);
-                tempTimer = setTimeout(collapseTempSpinner, 2000);
-            }
-
-            tempDisplay.addEventListener('click', (e) => {
-                if (e.target === minusBtn || e.target === plusBtn) return;
-                if (expandedTempSteps.has(index)) {
-                    if (shouldUseNumpad()) {
-                        openNumpadForField(tempValue, numpadConfig('pe-temp', 'TEMPERATURE', '\u00b0C', TEMP_LIM), (val) => {
-                            tempValue = val;
-                            tempTextSpan.textContent = `${tempValue}\u00b0C`;
-                            editorState.profile.steps[index].temperature = tempValue;
-                            renderReviewGraph();
-                        });
-                        startTempTimer();
-                        return;
-                    }
-                    // Desktop: inline edit on second click
-                    const handled = inlineEditValue(tempTextSpan, tempValue, { min: TEMP_LIM.min, max: TEMP_LIM.max, step: TEMP_LIM.step, unit: '\u00b0C', onCommit: (val) => {
-                        tempValue = val;
-                        tempTextSpan.textContent = `${tempValue}\u00b0C`;
-                        editorState.profile.steps[index].temperature = tempValue;
-                        renderReviewGraph();
-                        collapseTempSpinner();
-                    }});
-                    if (!handled) collapseTempSpinner();
-                } else {
-                    expandedTempSteps.add(index);
-                    minusBtn.style.display = '';
-                    plusBtn.style.display = '';
-                    sensorBtn.style.opacity = '0.3';
-                    showFocusOverlay(tempDisplay, collapseTempSpinner);
-                    startTempTimer();
-                }
-            });
-
-            minusBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                flashPlusMinusButton(minusBtn);
-                tempValue = roundTo(clamp(tempValue - TEMP_LIM.step, TEMP_LIM.min, TEMP_LIM.max), TEMP_LIM.step);
-                tempTextSpan.textContent = `${tempValue}\u00b0C`;
-                editorState.profile.steps[index].temperature = tempValue;
-                startTempTimer();
-            });
-
-            plusBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                flashPlusMinusButton(plusBtn);
-                tempValue = roundTo(clamp(tempValue + TEMP_LIM.step, TEMP_LIM.min, TEMP_LIM.max), TEMP_LIM.step);
-                tempTextSpan.textContent = `${tempValue}\u00b0C`;
-                editorState.profile.steps[index].temperature = tempValue;
-                startTempTimer();
-            });
-
-            if (isExpanded) sensorBtn.style.opacity = '0.3';
-
-            tCell.appendChild(tempDisplayLine);
+            tCell.appendChild(tempStepper);
+            tCell.appendChild(sensorBtn);
         }
 
-        // Pump + Limit combined row — two lines
+        // Pump + Limit — three lines:
+        //   [−]  6.0 mL/s  [+]      (± revealed on tap)
+        //   [Flow]  [Quickly]
+        //   + Limit   /   Limit to [−] 4.0 bar [+]
+        // The pump cell carries the most controls, so its steppers stay quiet
+        // until tapped — the ± keep their space (visibility, not display), so
+        // revealing them never shifts the row.
         {
-            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[16px] border-r border-b border-[var(--border-color)]');
-
-            // ── Line 1: pump ─────────────────────────────────────────────────
-            const pumpLine = document.createElement('div');
-            pumpLine.className = 'flex flex-col gap-[4px]';
+            const pCell = mkCell(R.PUMP, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[10px] border-r border-b border-[var(--border-color)]');
 
             const targetUnit = isFlow ? 'mL/s' : 'bar';
             const PUMP_LIM   = isFlow ? FIELD_LIMITS.flow : FIELD_LIMITS.pressure;
-            const targetMax  = PUMP_LIM.max;
-            const targetMin  = PUMP_LIM.min;
-            const tStep      = PUMP_LIM.step;
-            const isPumpExp  = expandedPumpSteps.has(index);
+            let transValue   = step.transition || 'fast';
 
-            let targetValue = isFlow ? (step.flow || 0) : (step.pressure || 0);
-            let transValue  = step.transition || 'fast';
-            let pumpTimer = null;
-
-            const transBtn = document.createElement('button');
-            transBtn.type = 'button';
-            transBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-            transBtn.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
-
-            const rampText = document.createElement('span');
-            rampText.className = 'text-[24px] text-[var(--text-primary)] select-none';
-            rampText.textContent = getTranslation('ramp');
-
-            const targetDisplay = document.createElement('span');
-            targetDisplay.className = 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none';
-            targetDisplay.textContent = `${roundTo(targetValue, tStep)}`;
-
-            const unitBtn = document.createElement('button');
-            unitBtn.type = 'button';
-            unitBtn.className = 'text-white px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none bg-transparent';
-            unitBtn.textContent = targetUnit;
-
-            const targetWrapper = document.createElement('div');
-            targetWrapper.className = 'flex items-center rounded-[8px]';
-            const wrapDivider = document.createElement('span');
-            wrapDivider.className = 'w-[1px] h-[18px] bg-[var(--text-primary)] opacity-40 shrink-0 self-center';
-            targetWrapper.appendChild(targetDisplay);
-            targetWrapper.appendChild(wrapDivider);
-            targetWrapper.appendChild(unitBtn);
-
-            function updateTargetStyle() {
-                const active = targetValue > 0;
-                targetWrapper.style.background = active ? 'var(--button-primary-bg)' : 'var(--secondary-button-bg)';
-                const txtCls = active ? 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none' : 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none';
-                const unitCls = active ? 'text-white px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none bg-transparent' : 'text-white px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none bg-transparent';
-                targetDisplay.className = txtCls;
-                unitBtn.className = unitCls;
-                wrapDivider.style.opacity = active ? '' : '0';
-            }
-            updateTargetStyle();
-
-            // Absolutely-positioned ± buttons on targetWrapper — no layout shift
-            targetWrapper.style.position = 'relative';
-
-            const targetMinus = document.createElement('button');
-            targetMinus.type = 'button';
-            targetMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            targetMinus.textContent = '\u2212';
-            targetMinus.style.position = 'absolute';
-            targetMinus.style.right = '100%';
-            targetMinus.style.top = '50%';
-            targetMinus.style.transform = 'translateY(-50%)';
-            targetMinus.style.marginRight = '4px';
-            targetMinus.style.display = isPumpExp ? '' : 'none';
-
-            const targetPlus = document.createElement('button');
-            targetPlus.type = 'button';
-            targetPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            targetPlus.textContent = '+';
-            targetPlus.style.position = 'absolute';
-            targetPlus.style.left = '100%';
-            targetPlus.style.top = '50%';
-            targetPlus.style.transform = 'translateY(-50%)';
-            targetPlus.style.marginLeft = '4px';
-            targetPlus.style.display = isPumpExp ? '' : 'none';
-
-            targetWrapper.appendChild(targetMinus);
-            targetWrapper.appendChild(targetPlus);
-
-            // Display line: [targetWrapper] [rampText] [transBtn] — always visible, never moves
-            const pumpDisplayLine = document.createElement('div');
-            pumpDisplayLine.className = 'flex items-center gap-[8px]';
-            pumpDisplayLine.appendChild(targetWrapper);
-            pumpDisplayLine.appendChild(rampText);
-            pumpDisplayLine.appendChild(transBtn);
-
-            function collapsePumpSpinner() {
-                clearTimeout(pumpTimer);
-                expandedPumpSteps.delete(index);
-                targetMinus.style.display = 'none';
-                targetPlus.style.display = 'none';
-                transBtn.style.opacity = '';
-                clearFocusOverlay();
-            }
-
-            function startPumpTimer() {
-                clearTimeout(pumpTimer);
-                pumpTimer = setTimeout(collapsePumpSpinner, 2000);
-            }
-
-            transBtn.addEventListener('click', () => {
-                transValue = transValue === 'fast' ? 'smooth' : 'fast';
-                transBtn.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
-                editorState.profile.steps[index].transition = transValue;
+            // ── Line 1: pump target ──────────────────────────────────────────
+            const targetStepper = createGridStepper({
+                value: isFlow ? (step.flow || 0) : (step.pressure || 0),
+                lim: PUMP_LIM,
+                revealOnTap: true,
+                numpad: isFlow
+                    ? numpadConfig('pe-pump', 'FLOW', 'mL/s', PUMP_LIM)
+                    : numpadConfig('pe-pump', 'PRESSURE', 'bar', PUMP_LIM),
+                format: (v) => `${roundTo(v, PUMP_LIM.step)} ${targetUnit}`,
+                onChange: (val) => {
+                    if (isFlow) editorState.profile.steps[index].flow = val;
+                    else editorState.profile.steps[index].pressure = val;
+                    renderReviewGraph();
+                },
             });
 
-            targetDisplay.addEventListener('click', () => {
-                if (expandedPumpSteps.has(index)) {
-                    if (shouldUseNumpad()) {
-                        const pumpConfig = isFlow
-                            ? numpadConfig('pe-pump', 'FLOW', 'mL/s', PUMP_LIM)
-                            : numpadConfig('pe-pump', 'PRESSURE', 'bar', PUMP_LIM);
-                        openNumpadForField(targetValue, pumpConfig, (val) => {
-                            targetValue = val;
-                            targetDisplay.textContent = `${targetValue}`;
-                            updateTargetStyle();
-                            if (isFlow) editorState.profile.steps[index].flow = targetValue;
-                            else editorState.profile.steps[index].pressure = targetValue;
-                            renderReviewGraph();
-                        });
-                        startPumpTimer();
-                        return;
-                    }
-                    // Desktop: inline edit
-                    const handled = inlineEditValue(targetDisplay, targetValue, { min: targetMin, max: targetMax, step: tStep, onCommit: (val) => {
-                        targetValue = val;
-                        targetDisplay.textContent = `${targetValue}`;
-                        updateTargetStyle();
-                        if (isFlow) editorState.profile.steps[index].flow = targetValue;
-                        else editorState.profile.steps[index].pressure = targetValue;
-                        renderReviewGraph();
-                        collapsePumpSpinner();
-                    }});
-                    if (!handled) collapsePumpSpinner();
-                } else {
-                    expandedPumpSteps.add(index);
-                    targetMinus.style.display = '';
-                    targetPlus.style.display = '';
-                    transBtn.style.opacity = '0.3';
-                    showFocusOverlay(targetWrapper, collapsePumpSpinner);
-                    startPumpTimer();
-                }
-            });
+            // ── Line 2: pump mode + ramp ─────────────────────────────────────
+            // The 'Ramp' label is gone: it was the widest element in the cell,
+            // and its German (row 1721, 'Sanfter Ubergang' = smooth transition)
+            // hardcodes 'smooth', so beside the toggle it read 'Sanfter
+            // Ubergang Schnell' — smooth transition, fast. The toggle says the
+            // whole thing on its own.
+            // Single cycling button, not a segmented pair: every other toggle in
+            // this editor shows the current value and cycles on tap, and the
+            // unit in the value above already says which mode is active.
+            const modeLine = document.createElement('div');
+            modeLine.className = 'flex items-center gap-[8px] flex-wrap justify-center';
 
-            unitBtn.addEventListener('click', () => {
+            const modeBtn = document.createElement('button');
+            modeBtn.type = 'button';
+            modeBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
+            modeBtn.textContent = isFlow ? getTranslation('Flow') : getTranslation('Pressure');
+            modeBtn.addEventListener('click', () => {
                 const s = editorState.profile.steps[index];
                 if (isFlow) {
                     s.pump = 'pressure';
@@ -883,388 +765,174 @@ function renderStepCards() {
                     if (!s.flow) s.flow = PUMP_SEED_FLOW;
                     delete s.pressure;
                 }
-                renderStepCards();
+                renderStepCards(); // units, limits and the limiter axis all change with the mode
             });
 
-            targetMinus.addEventListener('click', () => {
-                flashPlusMinusButton(targetMinus);
-                targetValue = roundTo(clamp(targetValue - tStep, targetMin, targetMax), tStep);
-                targetDisplay.textContent = `${targetValue}`;
-                updateTargetStyle();
-                if (isFlow) editorState.profile.steps[index].flow = targetValue;
-                else editorState.profile.steps[index].pressure = targetValue;
-                startPumpTimer();
+            const transBtn = document.createElement('button');
+            transBtn.type = 'button';
+            transBtn.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
+            transBtn.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
+            transBtn.addEventListener('click', () => {
+                transValue = transValue === 'fast' ? 'smooth' : 'fast';
+                transBtn.textContent = transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly');
+                editorState.profile.steps[index].transition = transValue;
+                renderReviewGraph();
             });
 
-            targetPlus.addEventListener('click', () => {
-                flashPlusMinusButton(targetPlus);
-                targetValue = roundTo(clamp(targetValue + tStep, targetMin, targetMax), tStep);
-                targetDisplay.textContent = `${targetValue}`;
-                updateTargetStyle();
-                if (isFlow) editorState.profile.steps[index].flow = targetValue;
-                else editorState.profile.steps[index].pressure = targetValue;
-                startPumpTimer();
-            });
+            modeLine.appendChild(modeBtn);
+            modeLine.appendChild(transBtn);
 
-            if (isPumpExp) transBtn.style.opacity = '0.3';
-
-            pumpLine.appendChild(pumpDisplayLine);
-
-            // ── Line 2: limiter ───────────────────────────────────────────────
-            const limLine = document.createElement('div');
-            limLine.className = 'flex flex-col gap-[4px]';
-
+            // ── Line 3: limiter ──────────────────────────────────────────────
+            // Off collapses to a single '+ Limit' chip: 'Limit to [−] 0 bar [+]'
+            // spent four elements saying nothing is limited, on the majority of
+            // steps. The chip opens the numpad directly, so there is no
+            // revealed-but-still-zero state and no silently seeded value.
             const limUnit = isFlow ? 'bar' : 'mL/s';
-            // 0 always allowed: 0 = limiter off (saveProfile nulls a 0-value
-            // limiter). A min of 1 on flow steps made the pressure limit
-            // impossible to switch off from the − button or the numpad.
             const LIM_LIM = isFlow ? FIELD_LIMITS.pressureLimit : FIELD_LIMITS.flowLimit;
-            const limMax  = LIM_LIM.max;
-            const limMin  = LIM_LIM.min;
-            const lStep   = LIM_LIM.step;
-            const isLimExp = expandedLimSteps.has(index);
+            const limValue = step.limiter?.value ?? 0;
+            const limNumpad = isFlow
+                ? numpadConfig('pe-lim', 'PRESSURE LIMIT', 'bar', LIM_LIM)
+                : numpadConfig('pe-lim', 'FLOW LIMIT', 'mL/s', LIM_LIM);
 
-            let limValue = step.limiter?.value ?? 0;
-            let limTimer = null;
-
-            const withText = document.createElement('span');
-            withText.className = 'text-[24px] text-[var(--text-primary)] select-none';
-            withText.textContent = getTranslation('Limit to');
-
-            const limDisplay = document.createElement('span');
-            limDisplay.textContent = `${roundTo(limValue, lStep)}`;
-
-            const limDivider = document.createElement('span');
-            limDivider.className = 'w-[1px] h-[18px] bg-[var(--text-primary)] opacity-40 shrink-0 self-center';
-
-            const limUnitText = document.createElement('span');
-            limUnitText.textContent = limUnit;
-
-            const limWrapper = document.createElement('div');
-            limWrapper.className = 'flex items-center rounded-[8px] cursor-pointer';
-            limWrapper.appendChild(limDisplay);
-            limWrapper.appendChild(limDivider);
-            limWrapper.appendChild(limUnitText);
-
-            function updateLimStyle() {
-                const active = limValue > 0;
-                limWrapper.style.background = active ? 'var(--button-primary-bg)' : 'var(--secondary-button-bg)';
-                const txtCls = active ? 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none' : 'font-bold text-[24px] text-white px-[8px] py-[2px] cursor-pointer select-none';
-                const unitCls = active ? 'text-white px-[8px] py-[2px] text-[24px] font-semibold select-none' : 'text-white px-[8px] py-[2px] text-[24px] font-semibold select-none';
-                limDisplay.className = txtCls;
-                limUnitText.className = unitCls;
-                limDivider.style.opacity = active ? '' : '0';
-            }
-            updateLimStyle();
-
-            // Absolutely-positioned ± buttons on limWrapper — no layout shift
-            limWrapper.style.position = 'relative';
-
-            const limMinus = document.createElement('button');
-            limMinus.type = 'button';
-            limMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            limMinus.textContent = '\u2212';
-            limMinus.style.position = 'absolute';
-            limMinus.style.right = '100%';
-            limMinus.style.top = '50%';
-            limMinus.style.transform = 'translateY(-50%)';
-            limMinus.style.marginRight = '4px';
-            limMinus.style.display = isLimExp ? '' : 'none';
-
-            const limPlus = document.createElement('button');
-            limPlus.type = 'button';
-            limPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            limPlus.textContent = '+';
-            limPlus.style.position = 'absolute';
-            limPlus.style.left = '100%';
-            limPlus.style.top = '50%';
-            limPlus.style.transform = 'translateY(-50%)';
-            limPlus.style.marginLeft = '4px';
-            limPlus.style.display = isLimExp ? '' : 'none';
-
-            limWrapper.appendChild(limMinus);
-            limWrapper.appendChild(limPlus);
-
-            const limDisplayLine = document.createElement('div');
-            limDisplayLine.className = 'flex items-center gap-[8px]';
-            limDisplayLine.appendChild(withText);
-            limDisplayLine.appendChild(limWrapper);
-
-            function collapseLimSpinner() {
-                clearTimeout(limTimer);
-                expandedLimSteps.delete(index);
-                limMinus.style.display = 'none';
-                limPlus.style.display = 'none';
-                withText.style.opacity = '';
-                clearFocusOverlay();
+            function writeLim(val) {
+                const s = editorState.profile.steps[index];
+                if (!s.limiter) s.limiter = { value: val, range: 0.6 };
+                else s.limiter.value = val;
+                renderReviewGraph();
             }
 
-            function startLimTimer() {
-                clearTimeout(limTimer);
-                limTimer = setTimeout(collapseLimSpinner, 2000);
+            const limLine = document.createElement('div');
+            // Column, not a row: "Limit to" sits above its stepper as a caption.
+            // Inline it competed with the value for the cell's width and forced
+            // German ("Begrenzen auf") to wrap mid-phrase.
+            limLine.className = 'flex flex-col items-center gap-[4px]';
+
+            if (limValue > 0) {
+                const withText = document.createElement('span');
+                // Caption weight, not body weight — at 24px it read as a peer of
+                // the value it labels.
+                withText.className = 'text-[20px] text-[var(--low-contrast-white)] select-none';
+                withText.textContent = getTranslation('Limit to');
+
+                const limStepper = createGridStepper({
+                    value: limValue,
+                    lim: LIM_LIM,
+                    revealOnTap: true,
+                    offWhenZero: true,
+                    numpad: limNumpad,
+                    format: (v) => `${roundTo(v, LIM_LIM.step)} ${limUnit}`,
+                    onChange: writeLim,
+                });
+                limStepper._setWidth('130px');
+
+                limLine.appendChild(withText);
+                limLine.appendChild(limStepper);
+            } else {
+                const addLimit = document.createElement('button');
+                addLimit.type = 'button';
+                addLimit.className = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[10px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
+                addLimit.textContent = `+ ${getTranslation('Limit')}`;
+                addLimit.addEventListener('click', () => {
+                    const apply = (val) => { writeLim(val); if (val > 0) renderStepCards(); };
+                    if (shouldUseNumpad()) openNumpadForField(0, limNumpad, apply);
+                    else inlineEditValue(addLimit, 0, { min: LIM_LIM.min, max: LIM_LIM.max, step: LIM_LIM.step, onCommit: apply });
+                });
+                limLine.appendChild(addLimit);
             }
 
-            limDisplay.addEventListener('click', () => {
-                if (expandedLimSteps.has(index)) {
-                    if (shouldUseNumpad()) {
-                        const limConfig = isFlow
-                            ? numpadConfig('pe-lim', 'PRESSURE LIMIT', 'bar', LIM_LIM)
-                            : numpadConfig('pe-lim', 'FLOW LIMIT', 'mL/s', LIM_LIM);
-                        openNumpadForField(limValue, limConfig, (val) => {
-                            limValue = val;
-                            limDisplay.textContent = `${limValue}`;
-                            updateLimStyle();
-                            if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: limValue, range: 0.6 };
-                            else editorState.profile.steps[index].limiter.value = limValue;
-                            renderReviewGraph();
-                        });
-                        startLimTimer();
-                        return;
-                    }
-                    // Desktop: inline edit
-                    const handled = inlineEditValue(limDisplay, limValue, { min: limMin, max: limMax, step: lStep, onCommit: (val) => {
-                        limValue = val;
-                        limDisplay.textContent = `${limValue}`;
-                        updateLimStyle();
-                        if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: limValue, range: 0.6 };
-                        else editorState.profile.steps[index].limiter.value = limValue;
-                        renderReviewGraph();
-                        collapseLimSpinner();
-                    }});
-                    if (!handled) collapseLimSpinner();
-                } else {
-                    expandedLimSteps.add(index);
-                    limMinus.style.display = '';
-                    limPlus.style.display = '';
-                    withText.style.opacity = '0.3';
-                    showFocusOverlay(limWrapper, collapseLimSpinner);
-                    startLimTimer();
-                }
-            });
-
-            limMinus.addEventListener('click', () => {
-                flashPlusMinusButton(limMinus);
-                limValue = roundTo(clamp(limValue - lStep, limMin, limMax), lStep);
-                limDisplay.textContent = `${limValue}`;
-                updateLimStyle();
-                if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: limValue, range: 0.6 };
-                else editorState.profile.steps[index].limiter.value = limValue;
-                startLimTimer();
-            });
-
-            limPlus.addEventListener('click', () => {
-                flashPlusMinusButton(limPlus);
-                limValue = roundTo(clamp(limValue + lStep, limMin, limMax), lStep);
-                limDisplay.textContent = `${limValue}`;
-                updateLimStyle();
-                if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: limValue, range: 0.6 };
-                else editorState.profile.steps[index].limiter.value = limValue;
-                startLimTimer();
-            });
-
-            if (isLimExp) withText.style.opacity = '0.3';
-
-            limLine.appendChild(limDisplayLine);
-
-            pCell.appendChild(pumpLine);
+            pCell.appendChild(targetStepper);
+            pCell.appendChild(modeLine);
             pCell.appendChild(limLine);
         }
 
+        // Exit — two lines:
+        //   [Pressure] [is over]
+        //   [−]  9.0 bar  [+]
+        // Type 'off' is a UI-only state (step.exit = null on save); it hides the
+        // condition and value rather than showing a disabled control.
         {
-            const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[6px] border-r border-b border-[var(--border-color)]');
+            const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[8px] border-r border-b border-[var(--border-color)]');
 
-            const exitLine = document.createElement('div');
-            exitLine.className = 'flex flex-col gap-[4px]';
+            const exitDef = step.exit || { type: 'pressure', condition: 'over', value: 0 };
+            let exitType  = exitDef.type || 'pressure';
+            let exitCond  = exitDef.condition || 'over';
+            const exitValue = exitDef.value ?? 0;
 
-            const exitDef  = step.exit || { type: 'pressure', condition: 'over', value: 0 };
-            let exitType   = exitDef.type || 'pressure';
-            let exitCond   = exitDef.condition || 'over';
-            let exitValue  = exitDef.value ?? 0;
-            let exitTimer = null;
+            const TOGGLE_CLASS = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
 
-            const btnGray = 'bg-[var(--button-grey)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-            const btnGrayFlash = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
+            function writeExit(patch) {
+                const s = editorState.profile.steps[index];
+                if (!s.exit) s.exit = { type: exitType, condition: exitCond, value: exitValue };
+                Object.assign(s.exit, patch);
+                renderReviewGraph();
+            }
 
             const typeBtn = document.createElement('button');
             typeBtn.type = 'button';
-            typeBtn.className = btnGrayFlash;
+            typeBtn.className = TOGGLE_CLASS;
             typeBtn.textContent = getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1));
+            typeBtn.addEventListener('click', () => {
+                exitType = EXIT_TYPES[(EXIT_TYPES.indexOf(exitType) + 1) % EXIT_TYPES.length];
+                // Bounds are per-type — pressure tops out at 12 bar, flow at
+                // 8 mL/s — so the value has to come along into the new range.
+                // Switching 11 bar to flow used to leave an 11 mL/s exit, well
+                // over the ceiling the numpad and ± both enforce.
+                const patch = { type: exitType };
+                if (exitType !== 'off') patch.value = clamp(exitValue, 0, EXIT_MAX_MAP[exitType]);
+                writeExit(patch);
+                renderStepCards(); // unit, bounds and the whole line's visibility change with the type
+            });
 
             const condBtn = document.createElement('button');
             condBtn.type = 'button';
-            condBtn.className = btnGrayFlash;
+            condBtn.className = TOGGLE_CLASS;
             condBtn.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
-
-            const isExitExpanded = expandedExitSteps.has(index);
-
-            const valueDisplay = document.createElement('span');
-            valueDisplay.className = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none whitespace-nowrap';
-            valueDisplay.textContent = exitType !== 'off' ? `${exitValue} ${EXIT_UNIT_MAP[exitType]}` : '';
-
-            const exitMinus = document.createElement('button');
-            exitMinus.type = 'button';
-            exitMinus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            exitMinus.textContent = '\u2212';
-            exitMinus.style.position = 'absolute';
-            exitMinus.style.right = '100%';
-            exitMinus.style.top = '50%';
-            exitMinus.style.transform = 'translateY(-50%)';
-            exitMinus.style.marginRight = '4px';
-            exitMinus.style.display = 'none';
-
-            const exitPlus = document.createElement('button');
-            exitPlus.type = 'button';
-            exitPlus.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-            exitPlus.textContent = '+';
-            exitPlus.style.position = 'absolute';
-            exitPlus.style.left = '100%';
-            exitPlus.style.top = '50%';
-            exitPlus.style.transform = 'translateY(-50%)';
-            exitPlus.style.marginLeft = '4px';
-            exitPlus.style.display = 'none';
-
-            // Wrap valueDisplay so ± buttons can be positioned relative to it
-            const valueWrapper = document.createElement('span');
-            valueWrapper.style.position = 'relative';
-            valueWrapper.style.display = 'inline-flex';
-            valueWrapper.appendChild(exitMinus);
-            valueWrapper.appendChild(valueDisplay);
-            valueWrapper.appendChild(exitPlus);
-
-            const exitDisplayLine = document.createElement('div');
-            exitDisplayLine.className = 'flex items-center gap-[8px]';
-            exitDisplayLine.appendChild(typeBtn);
-            exitDisplayLine.appendChild(condBtn);
-            exitDisplayLine.appendChild(valueWrapper);
-
-            function collapseExitSpinner() {
-                clearTimeout(exitTimer);
-                expandedExitSteps.delete(index);
-                exitMinus.style.display = 'none';
-                exitPlus.style.display = 'none';
-                typeBtn.style.opacity = '';
-                condBtn.style.opacity = '';
-                clearFocusOverlay();
-            }
-
-            function startExitTimer() {
-                clearTimeout(exitTimer);
-                exitTimer = setTimeout(collapseExitSpinner, 2000);
-            }
-
-            function applyExitOffState() {
-                const isOff = exitType === 'off';
-                typeBtn.className = isOff ? btnGray : btnGrayFlash;
-                condBtn.style.display      = isOff ? 'none' : '';
-                valueWrapper.style.display = isOff ? 'none' : '';
-                if (isOff) {
-                    clearTimeout(exitTimer);
-                    exitMinus.style.display = 'none';
-                    exitPlus.style.display = 'none';
-                    expandedExitSteps.delete(index);
-                    typeBtn.style.opacity = '';
-                    condBtn.style.opacity = '';
-                }
-            }
-            applyExitOffState();
-
-            typeBtn.addEventListener('click', () => {
-                exitType = EXIT_TYPES[(EXIT_TYPES.indexOf(exitType) + 1) % EXIT_TYPES.length];
-                typeBtn.textContent = getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1));
-                if (exitType !== 'off') valueDisplay.textContent = `${exitValue} ${EXIT_UNIT_MAP[exitType]}`;
-                applyExitOffState();
-                if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                else editorState.profile.steps[index].exit.type = exitType;
-            });
-
             condBtn.addEventListener('click', () => {
                 exitCond = exitCond === 'over' ? 'under' : 'over';
                 condBtn.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
-                if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                else editorState.profile.steps[index].exit.condition = exitCond;
+                writeExit({ condition: exitCond });
             });
 
-            valueDisplay.addEventListener('click', () => {
-                if (expandedExitSteps.has(index)) {
-                    if (exitType !== 'off' && shouldUseNumpad()) {
-                        openNumpadForField(exitValue, {
-                            fieldType: 'pe-exit',
-                            title: 'EXIT ' + exitType.toUpperCase(),
-                            unit: EXIT_UNIT_MAP[exitType] || '',
-                            min: 0,
-                            max: EXIT_MAX_MAP[exitType] || 100,
-                            label: '0\u2013' + (EXIT_MAX_MAP[exitType] || 100)
-                        }, (val) => {
-                            exitValue = val;
-                            valueDisplay.textContent = `${exitValue} ${EXIT_UNIT_MAP[exitType]}`;
-                            if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                            else editorState.profile.steps[index].exit.value = exitValue;
-                            renderReviewGraph();
-                        });
-                        startExitTimer();
-                        return;
-                    }
-                    if (!inlineEditValue(valueDisplay, exitValue, {
-                        min: 0, max: EXIT_MAX_MAP[exitType] || 100,
-                        step: EXIT_STEP_MAP[exitType], unit: EXIT_UNIT_MAP[exitType],
-                        onCommit(val) {
-                            exitValue = val;
-                            valueDisplay.textContent = `${exitValue} ${EXIT_UNIT_MAP[exitType]}`;
-                            if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                            else editorState.profile.steps[index].exit.value = exitValue;
-                            renderReviewGraph();
-                        }
-                    })) collapseExitSpinner();
-                } else {
-                    expandedExitSteps.add(index);
-                    exitMinus.style.display = '';
-                    exitPlus.style.display = '';
-                    typeBtn.style.opacity = '0.3';
-                    condBtn.style.opacity = '0.3';
-                    showFocusOverlay(valueWrapper, collapseExitSpinner);
-                    startExitTimer();
-                }
-            });
+            const exitTopLine = document.createElement('div');
+            exitTopLine.className = 'flex items-center gap-[8px] flex-wrap justify-center';
+            exitTopLine.appendChild(typeBtn);
+            exitCell.appendChild(exitTopLine);
 
-            exitMinus.addEventListener('click', () => {
-                flashPlusMinusButton(exitMinus);
-                exitValue = roundTo(clamp(exitValue - EXIT_STEP_MAP[exitType], 0, EXIT_MAX_MAP[exitType]), EXIT_STEP_MAP[exitType]);
-                valueDisplay.textContent = `${exitValue} ${EXIT_UNIT_MAP[exitType]}`;
-                if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                else editorState.profile.steps[index].exit.value = exitValue;
-                startExitTimer();
-            });
+            if (exitType !== 'off') {
+                condBtn.style.display = '';
+                exitTopLine.appendChild(condBtn);
 
-            exitPlus.addEventListener('click', () => {
-                flashPlusMinusButton(exitPlus);
-                exitValue = roundTo(clamp(exitValue + EXIT_STEP_MAP[exitType], 0, EXIT_MAX_MAP[exitType]), EXIT_STEP_MAP[exitType]);
-                valueDisplay.textContent = `${exitValue} ${EXIT_UNIT_MAP[exitType]}`;
-                if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                else editorState.profile.steps[index].exit.value = exitValue;
-                startExitTimer();
-            });
-
-            if (isExitExpanded) {
-                typeBtn.style.opacity = '0.3';
-                condBtn.style.opacity = '0.3';
-                exitMinus.style.display = '';
-                exitPlus.style.display = '';
+                const EXIT_LIM = { min: 0, max: EXIT_MAX_MAP[exitType], step: EXIT_STEP_MAP[exitType] };
+                const exitStepper = createGridStepper({
+                    value: exitValue,
+                    lim: EXIT_LIM,
+                    revealOnTap: true,
+                    numpad: {
+                        fieldType: 'pe-exit',
+                        title: 'EXIT ' + exitType.toUpperCase(),
+                        unit: EXIT_UNIT_MAP[exitType] || '',
+                        min: EXIT_LIM.min, max: EXIT_LIM.max,
+                        label: `${EXIT_LIM.min}–${EXIT_LIM.max}`,
+                    },
+                    format: (v) => `${roundTo(v, EXIT_LIM.step)} ${EXIT_UNIT_MAP[exitType]}`,
+                    onChange: (val) => writeExit({ value: val }),
+                });
+                exitStepper._setWidth('130px');
+                exitCell.appendChild(exitStepper);
             }
-
-            exitLine.appendChild(exitDisplayLine);
-
-            exitCell.appendChild(exitLine);
         }
 
+        // Max — one stepper per limit, stacked.
+        //   [−]  0 g    [+]      outline = this limit is off
+        //   [−]  30 sec [+]      filled  = active
+        //   [−]  0 ml   [+]
+        // All three are shown because all three are live on the machine: whichever
+        // trips first ends the step. The old row colored exactly one of them blue
+        // by a weight > seconds > volume priority, which described nothing the
+        // machine does, and it floated the inactive pills absolutely above and
+        // below the active one — over the Pump and Exit rows either side of it.
         {
-            const maxCell = mkCell(R.MAX, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] border-r border-b border-[var(--border-color)] gap-[6px]');
-
-            const maxTopRow = document.createElement('div');
-            maxTopRow.className = 'flex items-center gap-[8px] flex-wrap';
-
-            const maxExtrasRow = document.createElement('div');
-            maxExtrasRow.className = 'flex items-center gap-[8px]';
-            maxExtrasRow.style.display = 'none';
+            const maxCell = mkCell(R.MAX, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] border-r border-b border-[var(--border-color)] gap-[4px]');
 
             const MAX_FIELDS = [
                 { key: 'weight',  unit: 'g',   lim: FIELD_LIMITS.weight },
@@ -1272,244 +940,41 @@ function renderStepCards() {
                 { key: 'volume',  unit: 'ml',  lim: FIELD_LIMITS.volume },
             ];
 
-            const fieldRefs = [];
-            let maxTimer = null;
-
-            const blueDisplayClass = 'bg-[var(--button-primary-bg)] text-white rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-            const grayDisplayClass = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
-
-            const maxPlaceholder = document.createElement('span');
-            maxPlaceholder.className = grayDisplayClass;
-            maxPlaceholder.textContent = getTranslation('None');
-            maxTopRow.appendChild(maxPlaceholder);
-
-            function collapseMaxSpinner() {
-                clearTimeout(maxTimer);
-                expandedMaxSteps.delete(index);
-                updateMaxSectionVisibility();
-                clearFocusOverlay();
-            }
-
-            function startMaxTimer() {
-                clearTimeout(maxTimer);
-                maxTimer = setTimeout(collapseMaxSpinner, 2000);
-            }
-
-            function updateMaxSectionVisibility() {
-                const activeKey = expandedMaxSteps.get(index) ?? null;
-                const nonZeroCount = fieldRefs.filter(r => r.getValue() > 0).length;
-                const allZero = nonZeroCount === 0;
-
-                // Update blue/gray class
-                fieldRefs.forEach(ref => {
-                    let isBlue;
-                    if (nonZeroCount === 0) {
-                        isBlue = false;
-                    } else if (nonZeroCount === 1) {
-                        isBlue = ref.getValue() > 0;
-                    } else {
-                        const weightVal = fieldRefs.find(r => r.key === 'weight')?.getValue() ?? 0;
-                        const secsVal   = fieldRefs.find(r => r.key === 'seconds')?.getValue() ?? 0;
-                        if (weightVal > 0)    isBlue = ref.key === 'weight';
-                        else if (secsVal > 0) isBlue = ref.key === 'seconds';
-                        else                  isBlue = ref.key === 'volume';
-                    }
-                    ref.display.className = isBlue ? blueDisplayClass : grayDisplayClass;
-                });
-
-                // Reset section positioning before rebuild
-                fieldRefs.forEach(ref => {
-                    ref.section.style.position = '';
-                    ref.section.style.top = '';
-                    ref.section.style.bottom = '';
-                    ref.section.style.left = '';
-                    ref.section.style.transform = '';
-                    ref.section.style.whiteSpace = '';
-                    ref.section.style.marginTop = '';
-                    ref.section.style.marginBottom = '';
-                });
-
-                // In edit mode prev/next sections are nested inside curr.section —
-                // extract them before clearing so they aren't lost inside curr's subtree
-                fieldRefs.forEach(ref => {
-                    if (ref.section.parentNode && ref.section.parentNode !== maxTopRow) {
-                        ref.section.parentNode.removeChild(ref.section);
-                    }
-                });
-
-                maxTopRow.innerHTML = '';
-                maxExtrasRow.style.display = 'none';
-                maxExtrasRow.innerHTML = '';
-
-                if (activeKey === null) {
-                    // Collapsed: horizontal row, non-zero only (or placeholder)
-                    maxTopRow.className = 'flex items-center gap-[8px]';
-                    if (allZero) {
-                        maxTopRow.appendChild(maxPlaceholder);
-                    } else {
-                        fieldRefs.forEach(ref => {
-                            ref.minusBtn.style.display = 'none';
-                            ref.plusBtn.style.display  = 'none';
-                            if (ref.getValue() > 0) maxTopRow.appendChild(ref.section);
-                        });
-                    }
-                } else {
-                    // Edit: active pill stays in flow (no horizontal shift).
-                    // Prev floats above via absolute, next floats below — both anchored to curr.section.
-                    maxTopRow.className = 'flex items-center gap-[8px]';
-                    const activeIdx = fieldRefs.findIndex(r => r.key === activeKey);
-                    const n = fieldRefs.length;
-                    const prev = fieldRefs[(activeIdx - 1 + n) % n];
-                    const curr = fieldRefs[activeIdx];
-                    const next = fieldRefs[(activeIdx + 1) % n];
-
-                    fieldRefs.forEach(ref => {
-                        ref.minusBtn.style.display = ref.key === activeKey ? '' : 'none';
-                        ref.plusBtn.style.display  = ref.key === activeKey ? '' : 'none';
-                    });
-
-                    // curr stays in normal flow, centered in container
-                    maxTopRow.className = 'flex items-center justify-center gap-[8px]';
-                    curr.section.style.position = 'relative';
-                    maxTopRow.appendChild(curr.section);
-
-                    // prev floats above curr, centered over it
-                    prev.section.style.position = 'absolute';
-                    prev.section.style.bottom = '100%';
-                    prev.section.style.left = '50%';
-                    prev.section.style.transform = 'translateX(-50%)';
-                    prev.section.style.marginBottom = '6px';
-                    prev.section.style.whiteSpace = 'nowrap';
-                    curr.section.appendChild(prev.section);
-
-                    // next floats below curr, centered over it
-                    next.section.style.position = 'absolute';
-                    next.section.style.top = '100%';
-                    next.section.style.left = '50%';
-                    next.section.style.transform = 'translateX(-50%)';
-                    next.section.style.marginTop = '6px';
-                    next.section.style.whiteSpace = 'nowrap';
-                    curr.section.appendChild(next.section);
-                }
-            }
-
-            maxPlaceholder.addEventListener('click', () => {
-                expandedMaxSteps.set(index, 'weight');
-                updateMaxSectionVisibility();
-                startMaxTimer();
-                showFocusOverlay(maxTopRow, collapseMaxSpinner);
-            });
-
             MAX_FIELDS.forEach(({ key, unit, lim }) => {
-                const fStep = lim.step, fMax = lim.max;
-                const isThisExpanded = (expandedMaxSteps.get(index) ?? null) === key;
-                let fieldValue = step[key] || 0;
-
-                const display = document.createElement('span');
-                display.className = grayDisplayClass;
-                display.textContent = `${fieldValue} ${unit}`;
-                display.style.position = 'relative';
-
-                const minusBtn = document.createElement('button');
-                minusBtn.type = 'button';
-                minusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-                minusBtn.textContent = '\u2212';
-                minusBtn.style.position = 'absolute';
-                minusBtn.style.right = '100%';
-                minusBtn.style.top = '50%';
-                minusBtn.style.transform = 'translateY(-50%)';
-                minusBtn.style.marginRight = '4px';
-                minusBtn.style.display = isThisExpanded ? '' : 'none';
-
-                const plusBtn = document.createElement('button');
-                plusBtn.type = 'button';
-                plusBtn.className = 'bg-[var(--button-grey)] rounded-[18px] w-[60px] h-[60px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
-                plusBtn.textContent = '+';
-                plusBtn.style.position = 'absolute';
-                plusBtn.style.left = '100%';
-                plusBtn.style.top = '50%';
-                plusBtn.style.transform = 'translateY(-50%)';
-                plusBtn.style.marginLeft = '4px';
-                plusBtn.style.display = isThisExpanded ? '' : 'none';
-
-                display.appendChild(minusBtn);
-                display.appendChild(plusBtn);
-
-                const section = document.createElement('span');
-                section.appendChild(display);
-
-                fieldRefs.push({ key, minusBtn, plusBtn, display, section, getValue: () => fieldValue });
-
-                display.addEventListener('click', (e) => {
-                    if (e.target === minusBtn || e.target === plusBtn) return;
-                    const current = expandedMaxSteps.get(index) ?? null;
-                    if (current === key) {
-                        if (shouldUseNumpad()) {
-                            openNumpadForField(fieldValue, numpadConfig(MAX_NUMPAD[key].fieldType, MAX_NUMPAD[key].title, unit, lim), (val) => {
-                                fieldValue = val;
-                                editorState.profile.steps[index][key] = val;
-                                display.childNodes[0].textContent = `${val} ${unit}`;
-                                renderReviewGraph();
-                                updateMaxSectionVisibility();
-                            });
-                            startMaxTimer();
-                            return;
-                        }
-                        if (!inlineEditValue(display, fieldValue, {
-                            min: 0, max: fMax, step: fStep, unit,
-                            onCommit(val) {
-                                fieldValue = val;
-                                editorState.profile.steps[index][key] = val;
-                                display.childNodes[0].textContent = `${val} ${unit}`;
-                                renderReviewGraph();
-                                updateMaxSectionVisibility();
-                            }
-                        })) collapseMaxSpinner();
-                    } else {
-                        expandedMaxSteps.set(index, key);
-                        updateMaxSectionVisibility();
-                        startMaxTimer();
-                        showFocusOverlay(maxTopRow, collapseMaxSpinner);
-                    }
+                const stepper = createGridStepper({
+                    value: step[key] || 0,
+                    lim,
+                    revealOnTap: true,
+                    offWhenZero: true,
+                    numpad: numpadConfig(MAX_NUMPAD[key].fieldType, MAX_NUMPAD[key].title, unit, lim),
+                    format: (v) => `${roundTo(v, lim.step)} ${unit}`,
+                    onChange: (val) => {
+                        editorState.profile.steps[index][key] = val;
+                        renderReviewGraph();
+                    },
                 });
-
-                minusBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    flashPlusMinusButton(minusBtn);
-                    fieldValue = roundTo(clamp(fieldValue - fStep, 0, fMax), fStep);
-                    display.childNodes[0].textContent = `${fieldValue} ${unit}`;
-                    editorState.profile.steps[index][key] = fieldValue;
-                    updateMaxSectionVisibility();
-                    startMaxTimer();
-                });
-
-                plusBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    flashPlusMinusButton(plusBtn);
-                    fieldValue = roundTo(clamp(fieldValue + fStep, 0, fMax), fStep);
-                    display.childNodes[0].textContent = `${fieldValue} ${unit}`;
-                    editorState.profile.steps[index][key] = fieldValue;
-                    updateMaxSectionVisibility();
-                    startMaxTimer();
-                });
-
+                stepper._setWidth('120px');
+                maxCell.appendChild(stepper);
             });
-
-            updateMaxSectionVisibility();
-
-            maxCell.appendChild(maxTopRow);
-            maxCell.appendChild(maxExtrasRow);
         }
 
-        // Footer: delete + insert
-        const fCell = mkCell(R.FOOTER, col, 'flex justify-center items-center gap-[40px] px-[16px] py-[8px] border-r border-[var(--border-color)]');
+        // Footer: move left / delete / insert / move right.
+        // gap drops from 40px to 16px — four 60px buttons plus 40px gaps would be
+        // 360px in a 380px column.
+        const fCell = mkCell(R.FOOTER, col, 'flex justify-center items-center gap-[16px] px-[16px] py-[8px] border-r border-[var(--border-color)]');
+
+        fCell.appendChild(makeMoveBtn(index, -1, numSteps, renderStepCards, true));
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
         deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
         deleteBtn.setAttribute('aria-label', 'Delete step');
-        deleteBtn.addEventListener('click', () => { removeStepAt(index); renderStepCards(); });
+        deleteBtn.addEventListener('click', async () => {
+            if (!await confirmDeleteStep(index)) return;
+            removeStepAt(index);
+            renderStepCards();
+        });
 
         const insertBtn = document.createElement('button');
         insertBtn.type = 'button';
@@ -1520,8 +985,24 @@ function renderStepCards() {
 
         fCell.appendChild(deleteBtn);
         fCell.appendChild(insertBtn);
+        fCell.appendChild(makeMoveBtn(index, +1, numSteps, renderStepCards, true));
     });
 
+    // ── Add-step column ───────────────────────────────────────────────────────
+    // Full-height so it reads as a column, and so deleting the last step leaves
+    // something to click. Every other way to add a step lives in a step's own
+    // footer, which means an empty profile used to be a dead end: no columns, no
+    // "+", and Save rejects a profile with no steps.
+    const addCell = mkCell(`1 / ${TOTAL_ROWS + 1}`, numSteps + 2, 'flex items-center justify-center');
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'pe-step-action-btn w-[60px] h-[60px] flex items-center justify-center text-[var(--mimoja-blue)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
+    addBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>';
+    addBtn.setAttribute('aria-label', 'Insert a step');
+    addBtn.title = getTranslation('Insert a step');
+    // -1 when there are no steps → splice(0, 0, …), which is what we want.
+    addBtn.addEventListener('click', () => { insertStepAfter(numSteps - 1); renderStepCards(); });
+    addCell.appendChild(addBtn);
 }
 
 function renderSettingsTab() {
@@ -1680,12 +1161,6 @@ function renderSettingsTab() {
         editorState.sourceProfileRecord = sourceRecord || null;
         editorState.sourceProfileId = sourceRecord?.id || null;
         _baselineProfileJson = JSON.stringify(editorState.profile);
-        expandedTempSteps.clear();
-        expandedPumpSteps.clear();
-        expandedLimSteps.clear();
-        expandedMaxSteps.clear();
-        expandedExitSteps.clear();
-        expandedReviewField = null;
         const titleDisplay = document.getElementById('editor-title-display');
         if (titleDisplay) titleDisplay.textContent = editorState.profile.title || 'Untitled Profile';
         renderStepCards();
@@ -1758,7 +1233,8 @@ function renderSettingsTab() {
                 return;
             }
             shareImportBtn.disabled = true;
-            shareImportBtn.textContent = getTranslation('Importing…');
+            // No ellipsis: the sheet carries 'Importing' (row 1813), not 'Importing…'.
+            shareImportBtn.textContent = getTranslation('Importing');
             shareStatus.textContent = '';
             try {
                 const vizSettings = await getPluginSettings('visualizer.reaplugin');
@@ -1828,7 +1304,9 @@ function describeStep(step, index) {
     const PROSE_CLASS = 'text-[20px] text-[var(--text-primary)] select-none';
     const PILL_ACTIVE   = 'text-[var(--button-primary-bg)] text-[20px] font-semibold cursor-pointer select-none inline-flex underline decoration-dashed underline-offset-[3px] px-[4px] rounded-[4px]';
     const TOGGLE_CLASS  = 'text-[var(--button-primary-bg)] text-[20px] font-semibold cursor-pointer select-none underline decoration-dashed underline-offset-[3px] px-[4px]';
-    const BTN_CLASS     = 'bg-[var(--button-grey)] rounded-[18px] w-[40px] h-[40px] flex items-center justify-center cursor-pointer select-none text-xl font-bold text-[var(--text-primary)] z-[10]';
+    // Zero-valued max fields: same pill, muted, so "not set" is legible without
+    // spending a sentence on it.
+    const PILL_MUTED    = 'text-[var(--low-contrast-white)] text-[20px] font-semibold cursor-pointer select-none inline-flex underline decoration-dashed underline-offset-[3px] px-[4px] rounded-[4px]';
 
     function makeProseSpan(text) {
         const span = document.createElement('span');
@@ -1845,128 +1323,49 @@ function describeStep(step, index) {
         return span;
     }
 
-    function makeNumericSpinner(initialValue, step, unit, min, max, onCommit) {
+    // An editable value inside a sentence. The dashed underline already says
+    // "tappable", so a tap goes straight to the numpad (tablet) or an inline
+    // input (desktop). No ± here: this is the read-it-as-prose view, and 40px
+    // buttons floated around a word mid-sentence were what overlapped the
+    // neighbouring lines. Fine adjustment lives in the grid, which has real
+    // steppers now.
+    function makeValuePill(initialValue, lim, unit, onCommit, opts = {}) {
         let value = initialValue;
-        let collapseTimer = null;
 
-        const wrapper = document.createElement('span');
-        wrapper.style.display = 'inline-flex';
-        wrapper.style.alignItems = 'center';
-        wrapper.style.position = 'relative';
+        const pill = document.createElement('span');
+        pill.addEventListener('mouseenter', () => { pill.style.backgroundColor = 'var(--button-grey)'; });
+        pill.addEventListener('mouseleave', () => { pill.style.backgroundColor = ''; });
 
-        const valuePill = document.createElement('span');
-        valuePill.className = PILL_ACTIVE;
-        valuePill.textContent = `${roundTo(value, step)} ${unit}`;
-        valuePill.addEventListener('mouseenter', () => { valuePill.style.backgroundColor = 'var(--button-grey)'; });
-        valuePill.addEventListener('mouseleave', () => { valuePill.style.backgroundColor = ''; });
-
-        const minusBtn = document.createElement('span');
-        minusBtn.className = BTN_CLASS;
-        minusBtn.textContent = '\u2212';
-        minusBtn.style.position = 'absolute';
-        minusBtn.style.right = '100%';
-        minusBtn.style.top = '50%';
-        minusBtn.style.transform = 'translateY(-50%)';
-        minusBtn.style.marginRight = '4px';
-
-        const plusBtn = document.createElement('span');
-        plusBtn.className = BTN_CLASS;
-        plusBtn.textContent = '+';
-        plusBtn.style.position = 'absolute';
-        plusBtn.style.left = '100%';
-        plusBtn.style.top = '50%';
-        plusBtn.style.transform = 'translateY(-50%)';
-        plusBtn.style.marginLeft = '4px';
-
-        function hideBtns() {
-            minusBtn.style.display = 'none';
-            plusBtn.style.display = 'none';
+        function render() {
+            pill.textContent = `${roundTo(value, lim.step)} ${unit}`;
+            pill.className = (opts.mutedWhenZero && value === 0) ? PILL_MUTED : PILL_ACTIVE;
         }
 
-        function showBtns() {
-            minusBtn.style.display = '';
-            plusBtn.style.display = '';
+        function commit(val) {
+            value = val;
+            render();
+            onCommit(value);
         }
 
-        function updatePill() {
-            valuePill.textContent = `${roundTo(value, step)} ${unit}`;
-            valuePill.className = PILL_ACTIVE;
-        }
-
-        function collapse() {
-            clearTimeout(collapseTimer);
-            hideBtns();
-            expandedReviewField = null;
-            clearFocusOverlay();
-        }
-
-        function resetTimer() {
-            clearTimeout(collapseTimer);
-            collapseTimer = setTimeout(collapse, 2000);
-        }
-
-        function expand() {
-            if (expandedReviewField) expandedReviewField.collapseFunc();
-            showBtns();
-            expandedReviewField = { collapseFunc: collapse };
-            showFocusOverlay(wrapper, collapse);
-            resetTimer();
-        }
-
-        // Click on value pill to expand/collapse
-        valuePill.addEventListener('click', () => {
-            if (expandedReviewField && expandedReviewField.collapseFunc === collapse) {
-                if (shouldUseNumpad()) {
-                    openNumpadForField(value, {
-                        fieldType: 'pe-review',
-                        title: unit.toUpperCase(),
-                        unit, min, max,
-                        label: `${min}\u2013${max}`
-                    }, (val) => {
-                        value = val;
-                        valuePill.textContent = `${roundTo(value, step)} ${unit}`;
-                        onCommit(value);
-                        resetTimer();
-                    });
-                    return;
-                }
-                if (!inlineEditValue(valuePill, value, {
-                    min, max, step, unit,
-                    onCommit(val) {
-                        value = val;
-                        valuePill.textContent = `${roundTo(value, step)} ${unit}`;
-                        onCommit(value);
-                        resetTimer();
-                    }
-                })) collapse();
-            } else {
-                expand();
+        pill.addEventListener('click', () => {
+            if (shouldUseNumpad()) {
+                openNumpadForField(value, {
+                    fieldType: opts.fieldType || 'pe-review',
+                    title: (opts.title || unit || 'VALUE').toUpperCase(),
+                    unit,
+                    min: lim.min, max: lim.max,
+                    label: `${lim.min}–${lim.max}`,
+                }, commit);
+                return;
             }
+            inlineEditValue(pill, value, {
+                min: lim.min, max: lim.max, step: lim.step, unit,
+                onCommit: commit,
+            });
         });
 
-        minusBtn.addEventListener('click', () => {
-            flashPlusMinusButton(minusBtn);
-            value = roundTo(clamp(value - step, min, max), step);
-            updatePill();
-            onCommit(value);
-            resetTimer();
-        });
-
-        plusBtn.addEventListener('click', () => {
-            flashPlusMinusButton(plusBtn);
-            value = roundTo(clamp(value + step, min, max), step);
-            updatePill();
-            onCommit(value);
-            resetTimer();
-        });
-
-        // Always render all three nodes; ± hidden until expanded
-        wrapper.appendChild(minusBtn);
-        wrapper.appendChild(valuePill);
-        wrapper.appendChild(plusBtn);
-        hideBtns();
-
-        return wrapper;
+        render();
+        return pill;
     }
 
     function makeLine(children) {
@@ -1991,18 +1390,19 @@ function describeStep(step, index) {
     {
         let sensorValue = step.sensor || 'coffee';
         const sensorToggle = makeToggle(
-            sensorValue === 'water' ? getTranslation('Water') : getTranslation('Coffee'),
+            sensorValue === 'water' ? getTranslation('Mix') : getTranslation('Group'),
             (span) => {
                 sensorValue = sensorValue === 'coffee' ? 'water' : 'coffee';
-                span.textContent = sensorValue === 'coffee' ? getTranslation('Coffee') : getTranslation('Water');
+                span.textContent = sensorValue === 'coffee' ? getTranslation('Group') : getTranslation('Mix');
                 editorState.profile.steps[index].sensor = sensorValue;
                 renderReviewGraph();
             }
         );
 
-        const tempSpinner = makeNumericSpinner(
-            step.temperature ?? 93, FIELD_LIMITS.temperature.step, '\u00b0C', FIELD_LIMITS.temperature.min, FIELD_LIMITS.temperature.max,
-            (val) => { editorState.profile.steps[index].temperature = val; renderReviewGraph(); }
+        const tempSpinner = makeValuePill(
+            step.temperature ?? 93, FIELD_LIMITS.temperature, '\u00b0C',
+            (val) => { editorState.profile.steps[index].temperature = val; renderReviewGraph(); },
+            { fieldType: 'pe-review-temp', title: 'TEMPERATURE' }
         );
 
         lines.push(makeLine([sensorToggle, getTranslation('to'), tempSpinner]));
@@ -2023,16 +1423,18 @@ function describeStep(step, index) {
 
         if (isFlow) {
             const fl = FIELD_LIMITS.flow;
-            const flowSpinner = makeNumericSpinner(
-                step.flow ?? 0, fl.step, 'mL/s', fl.min, fl.max,
-                (val) => { editorState.profile.steps[index].flow = val; renderReviewGraph(); }
+            const flowSpinner = makeValuePill(
+                step.flow ?? 0, fl, 'mL/s',
+                (val) => { editorState.profile.steps[index].flow = val; renderReviewGraph(); },
+                { fieldType: 'pe-review-flow', title: 'FLOW' }
             );
             lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), flowSpinner]));
         } else {
             const pr = FIELD_LIMITS.pressure;
-            const pressureSpinner = makeNumericSpinner(
-                step.pressure ?? 0, pr.step, 'bar', pr.min, pr.max,
-                (val) => { editorState.profile.steps[index].pressure = val; renderReviewGraph(); }
+            const pressureSpinner = makeValuePill(
+                step.pressure ?? 0, pr, 'bar',
+                (val) => { editorState.profile.steps[index].pressure = val; renderReviewGraph(); },
+                { fieldType: 'pe-review-pressure', title: 'PRESSURE' }
             );
             lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), pressureSpinner]));
         }
@@ -2044,22 +1446,25 @@ function describeStep(step, index) {
         const limUnit  = isFlow ? 'bar' : 'mL/s';
         const limLim   = isFlow ? FIELD_LIMITS.pressureLimit : FIELD_LIMITS.flowLimit;
         if (limValue > 0) {
-            const limSpinner = makeNumericSpinner(
-                limValue, limLim.step, limUnit, limLim.min, limLim.max,
+            const limSpinner = makeValuePill(
+                limValue, limLim, limUnit,
                 (val) => {
                     if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: val, range: 0.6 };
                     else editorState.profile.steps[index].limiter.value = val;
                     renderReviewGraph();
-                }
+                },
+                { fieldType: 'pe-review-limit', title: 'LIMIT' }
             );
             lines.push(makeLine([getTranslation('Limit to'), limSpinner]));
         }
     }
 
     // Line 4 — Max (weight / seconds / volume)
-    // Collapsed + all-zero  → "+ max" placeholder
-    // Collapsed + any non-zero → "Up to [non-zero pills]"
-    // Expanded → mainRow: non-zero pills  |  extraRow below: zero pills (no ± overlap)
+    // All three are listed because all three are live: whichever trips first
+    // ends the step. Unset ones are muted rather than hidden, so there is always
+    // somewhere to tap to set them — the old version needed an expanded/
+    // collapsed mode, a "+ max" placeholder, a 2s timer and a focus overlay to
+    // solve that, and floated its pills over the neighbouring lines.
     {
         const MAX_FIELDS = [
             { key: 'weight',  unit: 'g',   lim: FIELD_LIMITS.weight },
@@ -2067,204 +1472,16 @@ function describeStep(step, index) {
             { key: 'volume',  unit: 'ml',  lim: FIELD_LIMITS.volume },
         ];
 
-        const vals = { weight: step.weight ?? 0, seconds: step.seconds ?? 0, volume: step.volume ?? 0 };
-        let maxExpanded = false, activeMaxField = null, maxTimer = null;
-
-        // ── Stable container (never destroyed) ───────────────────────────────
-        const lineWrapper = document.createElement('span');
-        lineWrapper.style.cssText = 'display:inline-flex;flex-direction:column;gap:4px;position:relative;';
-
-        const mainRow = document.createElement('span');
-        mainRow.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
-
-        const extraRow = document.createElement('span');
-        extraRow.style.cssText = 'display:none;align-items:center;gap:6px;';
-
-        lineWrapper.appendChild(mainRow);
-        lineWrapper.appendChild(extraRow);
-
-        // ── Static text nodes (moved, never recreated) ────────────────────────
-        const upToText = document.createElement('span');
-        upToText.className = PROSE_CLASS;
-        upToText.textContent = getTranslation('Up to');
-
-        const placeholder = document.createElement('span');
-        placeholder.className = PILL_ACTIVE;
-        placeholder.textContent = getTranslation('+ max');
-        placeholder.addEventListener('click', () => {
-            if (expandedReviewField) expandedReviewField.collapseFunc();
-            maxExpanded = true;
-            activeMaxField = MAX_FIELDS[0].key; // activate first pill immediately
-            expandedReviewField = { _isMax: true, collapseFunc: collapseMax };
-            updateMaxDisplay();
-            showFocusOverlay(lineWrapper, collapseMax);
-            startMaxTimer();
-        });
-
-        // ── Pill elements (created once per field, moved between rows) ────────
-        const pillEls = {};
+        const parts = [getTranslation('Up to')];
         MAX_FIELDS.forEach(({ key, unit, lim }) => {
-            const fStep = lim.step, fMax = lim.max;
-            const pill = document.createElement('span');
-            pill.className = PILL_ACTIVE;
-            pill.style.position = 'relative';
-
-            const minus = document.createElement('span');
-            minus.className = BTN_CLASS;
-            minus.textContent = '\u2212';
-            minus.style.cssText = 'position:absolute;right:100%;top:50%;transform:translateY(-50%);margin-right:4px;display:none;';
-
-            const textEl = document.createElement('span');
-            textEl.textContent = `${vals[key]} ${unit}`;
-
-            const plus = document.createElement('span');
-            plus.className = BTN_CLASS;
-            plus.textContent = '+';
-            plus.style.cssText = 'position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:4px;display:none;';
-
-            pill.appendChild(minus);
-            pill.appendChild(textEl);
-            pill.appendChild(plus);
-
-            pillEls[key] = { pill, minus, textEl, plus };
-
-            pill.addEventListener('click', (e) => {
-                if (e.target === minus || e.target === plus) return;
-                if (activeMaxField === key) {
-                    if (shouldUseNumpad()) {
-                        openNumpadForField(vals[key], numpadConfig(MAX_NUMPAD[key].fieldType, MAX_NUMPAD[key].title, unit, lim), (val) => {
-                            vals[key] = val;
-                            editorState.profile.steps[index][key] = val;
-                            textEl.textContent = `${val} ${unit}`;
-                            renderReviewGraph();
-                            updateMaxDisplay();
-                        });
-                        startMaxTimer();
-                        return;
-                    }
-                    if (!inlineEditValue(pill, vals[key], {
-                        min: 0, max: fMax, step: fStep, unit,
-                        onCommit(val) {
-                            vals[key] = val;
-                            editorState.profile.steps[index][key] = val;
-                            textEl.textContent = `${val} ${unit}`;
-                            renderReviewGraph();
-                            updateMaxDisplay();
-                        }
-                    })) {
-                        activeMaxField = null;
-                        if (expandedReviewField && expandedReviewField._isMax) expandedReviewField = null;
-                        updateMaxDisplay();
-                    }
-                } else {
-                    if (expandedReviewField && !expandedReviewField._isMax) expandedReviewField.collapseFunc();
-                    activeMaxField = key;
-                    maxExpanded = true;
-                    expandedReviewField = { _isMax: true, collapseFunc: collapseMax };
-                    updateMaxDisplay();
-                    showFocusOverlay(lineWrapper, collapseMax);
-                    startMaxTimer();
-                }
-            });
-
-            minus.addEventListener('click', (e) => {
-                e.stopPropagation();
-                flashPlusMinusButton(minus);
-                const wasZero = vals[key] === 0;
-                vals[key] = roundTo(clamp(vals[key] - fStep, 0, fMax), fStep);
-                editorState.profile.steps[index][key] = vals[key];
-                textEl.textContent = `${vals[key]} ${unit}`;
-                renderReviewGraph();
-                if (wasZero !== (vals[key] === 0)) updateMaxDisplay();
-                startMaxTimer();
-            });
-
-            plus.addEventListener('click', (e) => {
-                e.stopPropagation();
-                flashPlusMinusButton(plus);
-                const wasZero = vals[key] === 0;
-                vals[key] = roundTo(clamp(vals[key] + fStep, 0, fMax), fStep);
-                editorState.profile.steps[index][key] = vals[key];
-                textEl.textContent = `${vals[key]} ${unit}`;
-                renderReviewGraph();
-                if (wasZero !== (vals[key] === 0)) updateMaxDisplay();
-                startMaxTimer();
-            });
+            parts.push(makeValuePill(
+                step[key] ?? 0, lim, unit,
+                (val) => { editorState.profile.steps[index][key] = val; renderReviewGraph(); },
+                { mutedWhenZero: true, fieldType: MAX_NUMPAD[key].fieldType, title: MAX_NUMPAD[key].title }
+            ));
         });
 
-        function collapseMax() {
-            clearTimeout(maxTimer);
-            activeMaxField = null;
-            maxExpanded = false;
-            if (expandedReviewField && expandedReviewField._isMax) expandedReviewField = null;
-            updateMaxDisplay();
-            clearFocusOverlay();
-        }
-
-        function startMaxTimer() {
-            clearTimeout(maxTimer);
-            maxTimer = setTimeout(collapseMax, 2000);
-        }
-
-        // Move stable nodes between rows — no destroy/recreate, no event listener loss.
-        // Option B: when editing, hide non-active non-zero siblings; show zero siblings to right.
-        function updateMaxDisplay() {
-            // Clear rows completely (removes transient wrappers like zeroGroup spans)
-            mainRow.innerHTML = '';
-            extraRow.innerHTML = '';
-            extraRow.style.display = 'none';
-            mainRow.style.gap = '6px';
-
-            const anyNonZero = MAX_FIELDS.some(f => vals[f.key] > 0);
-
-            // Collapsed + all zero → placeholder only
-            if (!maxExpanded && !anyNonZero) {
-                mainRow.style.gap = '6px';
-                mainRow.appendChild(placeholder);
-                return;
-            }
-
-            mainRow.appendChild(upToText);
-
-            // Show/hide ± buttons
-            MAX_FIELDS.forEach(({ key }) => {
-                const ref = pillEls[key];
-                ref.minus.style.display = activeMaxField === key ? '' : 'none';
-                ref.plus.style.display  = activeMaxField === key ? '' : 'none';
-            });
-
-            if (activeMaxField !== null) {
-                // Edit mode: active pill with ±, zero-value siblings grouped to right
-                mainRow.style.gap = '52px';
-                mainRow.appendChild(pillEls[activeMaxField].pill);
-                const zeroSiblings = MAX_FIELDS.filter(f => f.key !== activeMaxField && vals[f.key] === 0);
-                if (zeroSiblings.length > 0) {
-                    const zeroGroup = document.createElement('span');
-                    zeroGroup.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
-                    zeroSiblings.forEach(f => zeroGroup.appendChild(pillEls[f.key].pill));
-                    mainRow.appendChild(zeroGroup);
-                }
-            } else {
-                // No active field: show all non-zero inline, zero pills in extraRow if expanded
-                mainRow.style.gap = '6px';
-                const zeroKeys = [];
-                MAX_FIELDS.forEach(({ key }) => {
-                    if (vals[key] > 0) {
-                        mainRow.appendChild(pillEls[key].pill);
-                    } else if (maxExpanded) {
-                        zeroKeys.push(key);
-                    }
-                });
-                if (zeroKeys.length > 0) {
-                    zeroKeys.forEach(key => extraRow.appendChild(pillEls[key].pill));
-                    extraRow.style.display = 'inline-flex';
-                    extraRow.style.gap = '6px';
-                }
-            }
-        }
-
-        updateMaxDisplay();
-        lines.push(lineWrapper);
+        lines.push(makeLine(parts));
     }
 
     // Line 4 — Exit condition
@@ -2277,15 +1494,21 @@ function describeStep(step, index) {
         if (exitType !== 'off' && exitValue !== 0) {
             const exitTypeToggle = makeToggle(
                 getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1)),
-                (span) => {
+                () => {
                     const nonOff = EXIT_TYPES.filter(t => t !== 'off');
                     const idx = nonOff.indexOf(exitType);
                     exitType = nonOff[(idx + 1) % nonOff.length];
-                    span.textContent = getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1));
-                    if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                    else editorState.profile.steps[index].exit.type = exitType;
-                    // Update the spinner's unit display — rebuild is simplest via re-render
-                    renderReviewGraph();
+                    // Carry the value into the new type's range: pressure allows
+                    // 12 bar, flow only 8 mL/s.
+                    exitValue = clamp(exitValue, 0, EXIT_MAX_MAP[exitType]);
+                    const s = editorState.profile.steps[index];
+                    if (!s.exit) s.exit = { type: exitType, condition: exitCond, value: exitValue };
+                    else { s.exit.type = exitType; s.exit.value = exitValue; }
+                    // Full tab rebuild, not just the chart. The value pill closed
+                    // over the old type's unit and bounds when it was built, so
+                    // renderReviewGraph() alone left it reading "2.0 bar" on a
+                    // flow exit — and still enforcing pressure's ceiling of 12.
+                    renderReviewTab();
                 }
             );
 
@@ -2300,15 +1523,17 @@ function describeStep(step, index) {
                 }
             );
 
-            const exitSpinner = makeNumericSpinner(
-                exitValue, EXIT_STEP_MAP[exitType], EXIT_UNIT_MAP[exitType], 0, EXIT_MAX_MAP[exitType],
+            const exitSpinner = makeValuePill(
+                exitValue,
+                { min: 0, max: EXIT_MAX_MAP[exitType], step: EXIT_STEP_MAP[exitType] },
+                EXIT_UNIT_MAP[exitType],
                 (val) => {
                     exitValue = val;
                     if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: val };
                     else editorState.profile.steps[index].exit.value = val;
                     renderReviewGraph();
                 }
-            );
+                ,{ fieldType: 'pe-review-exit', title: 'EXIT' }            );
 
             lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle, exitCondToggle, exitSpinner]));
         }
@@ -2318,6 +1543,10 @@ function describeStep(step, index) {
 }
 
 function renderReviewGraph() {
+    // The panel stays in the DOM when hidden, so every grid edit used to replot
+    // into a zero-size container. setActiveTab(2) re-renders on entry, so
+    // skipping the work while another tab is up loses nothing.
+    if (editorState.activeTab !== 2) return;
     const profile = editorState.profile;
     const graphDiv = document.getElementById('review-graph');
     if (!graphDiv || typeof Plotly === 'undefined') return;
@@ -2421,7 +1650,6 @@ function renderReviewGraph() {
 
 function renderReviewTab() {
     // Collapse any open review spinner since DOM is being rebuilt
-    if (expandedReviewField) { expandedReviewField.collapseFunc(); expandedReviewField = null; }
 
     const profile = editorState.profile;
     if (!profile) return;
@@ -2457,7 +1685,8 @@ function renderReviewTab() {
             reviewDeleteBtn.className = 'pe-step-action-btn w-[36px] h-[36px] flex items-center justify-center text-[var(--mimoja-blue-v2)] hover:bg-[var(--button-grey)] rounded-[10px] cursor-pointer';
             reviewDeleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>';
             reviewDeleteBtn.setAttribute('aria-label', 'Delete step');
-            reviewDeleteBtn.addEventListener('click', () => {
+            reviewDeleteBtn.addEventListener('click', async () => {
+                if (!await confirmDeleteStep(i)) return;
                 removeStepAt(i);
                 renderReviewTab();
             });
@@ -2472,8 +1701,10 @@ function renderReviewTab() {
                 renderReviewTab();
             });
 
+            nameActions.appendChild(makeMoveBtn(i, -1, steps.length, renderReviewTab, false));
             nameActions.appendChild(reviewDeleteBtn);
             nameActions.appendChild(reviewInsertBtn);
+            nameActions.appendChild(makeMoveBtn(i, +1, steps.length, renderReviewTab, false));
             nameRow.appendChild(nameEl);
             nameRow.appendChild(nameActions);
             row.appendChild(nameRow);
@@ -2555,9 +1786,9 @@ function setActiveTab(tabIndex) {
     document.querySelectorAll('.editor-tab-btn').forEach((btn) => {
         const idx = parseInt(btn.dataset.tab, 10);
         if (idx === tabIndex) {
-            btn.className = 'editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide bg-[var(--button-primary-bg)] text-white';
+            btn.className = 'editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide uppercase bg-[var(--button-primary-bg)] text-white';
         } else {
-            btn.className = 'editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide text-[var(--button-primary-bg)] bg-transparent';
+            btn.className = 'editor-tab-btn font-bold px-[28px] h-[44px] rounded-[44px] transition-colors text-[20px] tracking-wide uppercase text-[var(--button-primary-bg)] bg-transparent';
         }
     });
 
@@ -2755,7 +1986,7 @@ function promptConfirm({ title, message, confirmLabel, cancelLabel }) {
             <div class="flex flex-col gap-[16px] p-[24px]">
                 ${title ? `<h3 class="text-[24px] font-bold text-[var(--text-primary)]">${title}</h3>` : ''}
                 <p class="text-[20px] text-[var(--text-primary)]">${message}</p>
-                <div class="flex justify-end gap-[12px] mt-[8px]">
+                <div class="flex flex-wrap justify-end gap-[12px] mt-[8px]">
                     <button type="button" data-act="cancel" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${cancelLabel}</button>
                     <button type="button" data-act="ok" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold cursor-pointer">${confirmLabel}</button>
                 </div>
@@ -2780,20 +2011,28 @@ async function cancelEditor() {
     // other edit — however long the user had been working — was discarded on
     // a single tap with no confirmation.
     if (_isNewProfileSession && _hasImportedInSession) {
-        // Keep this exact string — it is the one already carried in the
-        // translation sheet for this prompt.
+        // Keep this exact message — it is the one already carried in the
+        // translation sheet for this prompt. The buttons are 'Delete'/'Cancel':
+        // confirming really does DELETE the imported record from the server
+        // (deleteProfile below), and labelling the destructive button 'Cancel'
+        // would collide with the dismiss button's meaning on a dialog whose
+        // question is itself about cancelling.
         const ok = await promptConfirm({
             message: getTranslation('Discard the imported profile? This cannot be undone.'),
-            confirmLabel: getTranslation('Discard'),
-            cancelLabel: getTranslation('Keep editing'),
+            confirmLabel: getTranslation('Delete'),
+            cancelLabel: getTranslation('Cancel'),
         });
         if (!ok) return;
     } else if (JSON.stringify(editorState.profile) !== _baselineProfileJson) {
+        // 'Undo changes' and 'Cancel' are both carried by the translation sheet;
+        // the four strings this replaced (Discard changes? / Your edits to this
+        // profile have not been saved. / Discard / Keep editing) were none of
+        // them, so the whole dialog rendered in English everywhere. The confirm
+        // button restates the question verbatim so the two can't drift apart.
         const ok = await promptConfirm({
-            title: getTranslation('Discard changes?'),
-            message: getTranslation('Your edits to this profile have not been saved.'),
-            confirmLabel: getTranslation('Discard'),
-            cancelLabel: getTranslation('Keep editing'),
+            message: `${getTranslation('Undo changes')}?`,
+            confirmLabel: getTranslation('Undo changes'),
+            cancelLabel: getTranslation('Cancel'),
         });
         if (!ok) return;
     }
@@ -2832,32 +2071,70 @@ function normalizeLegacySteps(profile) {
 }
 
 // Version picker. Returns the chosen ProfileRecord, or null on cancel.
+// Picking a row selects it; Confirm applies it. A row used to restore on the
+// single tap that selected it, which put an unconfirmed, unod-oable profile
+// swap one stray tap away — and restoring discards unsaved edits.
 function promptVersionRestore(versions) {
     return new Promise((resolve) => {
+        const ROW_BASE     = 'text-left px-[16px] py-[14px] rounded-[10px] border-2 bg-[var(--box-color)] cursor-pointer';
+        const ROW_IDLE     = `${ROW_BASE} border-[var(--border-color)] hover:border-[var(--mimoja-blue)]`;
+        const ROW_SELECTED = `${ROW_BASE} border-[var(--mimoja-blue)]`;
+
         const dlg = document.createElement('dialog');
         dlg.className = 'pe-history-dialog rounded-[16px] bg-[var(--box-color)] p-0 border border-[var(--border-color)] max-w-[560px] w-[90vw] shadow-2xl';
         dlg.style.marginTop = '8vh';
         dlg.style.marginBottom = 'auto';
 
-        const rows = versions.map((v, i) => {
-            const when = new Date(v.createdAt);
-            const label = isNaN(when.getTime()) ? '' : when.toLocaleString();
-            return `
-                <button type="button" data-idx="${i}" class="text-left px-[16px] py-[14px] rounded-[10px] border border-[var(--border-color)] bg-[var(--box-color)] hover:border-[var(--mimoja-blue)] cursor-pointer">
-                    <div class="text-[20px] font-semibold text-[var(--text-primary)]">${v.profile?.title || 'Untitled'}</div>
-                    <div class="text-[16px] text-[var(--text-primary)]" style="opacity:0.6">${label}</div>
-                </button>`;
-        }).join('');
-
         dlg.innerHTML = `
             <div class="flex flex-col gap-[16px] p-[24px]">
-                <h3 class="text-[24px] font-bold text-[var(--text-primary)]">${getTranslation('Version history')}</h3>
-                <p class="text-[18px] text-[var(--text-primary)]">${getTranslation('Restore a previous version. Your current version is kept until you Save.')}</p>
-                <div class="flex flex-col gap-[10px] max-h-[46vh] overflow-y-auto">${rows}</div>
-                <div class="flex justify-end mt-[8px]">
+                <h3 class="text-[24px] font-bold text-[var(--text-primary)]">${getTranslation('Version')}</h3>
+                <div data-rows class="flex flex-col gap-[10px] max-h-[46vh] overflow-y-auto"></div>
+                <div class="flex flex-wrap justify-end gap-[12px] mt-[8px]">
                     <button type="button" data-act="cancel" class="px-[18px] py-[10px] rounded-[10px] bg-[var(--button-grey)] text-[var(--text-primary)] text-[20px] font-semibold cursor-pointer">${getTranslation('Cancel')}</button>
+                    <button type="button" data-act="ok" class="hidden px-[18px] py-[10px] rounded-[10px] bg-[var(--mimoja-blue)] text-white text-[20px] font-semibold cursor-pointer">${getTranslation('Confirm')}</button>
                 </div>
             </div>`;
+
+        const rowsHost  = dlg.querySelector('[data-rows]');
+        const confirmBtn = dlg.querySelector('[data-act="ok"]');
+        let selected = null;
+
+        // Rows are built as DOM, not interpolated markup: the title is
+        // user-supplied text and this dialog is rendered with innerHTML.
+        const rowBtns = versions.map((v, i) => {
+            const when  = new Date(v.createdAt);
+            const label = isNaN(when.getTime()) ? '' : when.toLocaleString();
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = ROW_IDLE;
+            btn.dataset.idx = String(i);
+            btn.setAttribute('aria-pressed', 'false');
+
+            const title = document.createElement('div');
+            title.className = 'text-[20px] font-semibold text-[var(--text-primary)]';
+            title.textContent = v.profile?.title || 'Untitled';
+
+            const stamp = document.createElement('div');
+            stamp.className = 'text-[16px] text-[var(--text-primary)]';
+            stamp.style.opacity = '0.6';
+            stamp.textContent = label;
+
+            btn.appendChild(title);
+            btn.appendChild(stamp);
+            btn.addEventListener('click', () => {
+                selected = v;
+                rowBtns.forEach((b) => {
+                    const on = b === btn;
+                    b.className = on ? ROW_SELECTED : ROW_IDLE;
+                    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+                });
+                confirmBtn.classList.remove('hidden');
+            });
+
+            rowsHost.appendChild(btn);
+            return btn;
+        });
 
         function done(result) {
             try { dlg.close(); } catch (_) {}
@@ -2866,9 +2143,7 @@ function promptVersionRestore(versions) {
         }
 
         dlg.querySelector('[data-act="cancel"]').addEventListener('click', () => done(null));
-        dlg.querySelectorAll('button[data-idx]').forEach((btn) => {
-            btn.addEventListener('click', () => done(versions[+btn.dataset.idx]));
-        });
+        confirmBtn.addEventListener('click', () => done(selected));
         dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
 
         document.body.appendChild(dlg);
@@ -2900,6 +2175,20 @@ async function openVersionHistory() {
 
     const chosen = await promptVersionRestore(versions);
     if (!chosen) return;
+
+    // Restoring replaces the whole in-memory profile, so any unsaved edits are
+    // gone the instant a version is picked — the one genuinely destructive part
+    // of this flow, and it used to happen with no warning at all. (The server
+    // side is safe either way: saving hides the prior version rather than
+    // deleting it, and it stays restorable from this same picker.)
+    if (JSON.stringify(editorState.profile) !== _baselineProfileJson) {
+        const ok = await promptConfirm({
+            message: `${getTranslation('Undo changes')}?`,
+            confirmLabel: getTranslation('Undo changes'),
+            cancelLabel: getTranslation('Cancel'),
+        });
+        if (!ok) return;
+    }
 
     // Load the snapshot into the editor. Saving mints a new current version and
     // hides this restored state's predecessor — a non-destructive revert.
@@ -2939,12 +2228,11 @@ export async function initializeProfileEditor() {
     _isNewProfileSession = !profileRecord.id;
     _sessionImportedIds = [];
     _hasImportedInSession = false;
-    expandedTempSteps.clear();
-    expandedPumpSteps.clear();
-    expandedLimSteps.clear();
-    expandedMaxSteps.clear();
-    expandedExitSteps.clear();
-    expandedReviewField = null;
+    // Re-arm the ± hint for each editing session, but not for the re-renders
+    // within one (tab switch, step insert/delete).
+    _hintSteppers = [];
+    _hintsDismissed = false;
+    _activeStepper = null;
 
     // 3. Populate title
     const titleDisplay = document.getElementById('editor-title-display');
