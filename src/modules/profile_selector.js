@@ -631,14 +631,18 @@ function renderProfiles() {
             if (!profile) return;
 
             const isHidden = profileRecord.visibility === 'hidden';
-            console.log('renderProfiles: Processing profile', profile.title, 'isHidden:', isHidden);
+            // Per-profile tracing, so a 71-profile library emitted ~140 console
+            // messages every time this list rendered. On iOS each one is a
+            // WebKit -> Dart -> evaluateJavaScript round trip through the host's
+            // console bridge (reaprime#519), so these stay off unless setDebug(true).
+            logger.debug('renderProfiles: Processing profile', profile.title, 'isHidden:', isHidden);
 
             if (!isShowingHidden && isHidden) {
-                console.log('renderProfiles: Skipping hidden profile', profile.title);
+                logger.debug('renderProfiles: Skipping hidden profile', profile.title);
                 return;
             }
             visibleProfileCount++;
-            console.log('renderProfiles: Adding profile to list', profile.title);
+            logger.debug('renderProfiles: Adding profile to list', profile.title);
 
             const div = document.createElement('div');
             div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center no-select';
