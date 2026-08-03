@@ -426,25 +426,95 @@
          otherwise become the containing block). Stacked 96px up from the bottom edge —
          clear of the help button's 56px round slot at bottom:20px, which is where it lands
          on any host helpOverlay.js doesn't recognise as a webview. -->
-    <button id="exit-dashboard-btn" title="Exit to Decent dashboard (long-press to hide)" aria-label="Exit to Decent dashboard"
+    <button id="exit-dashboard-btn" title="Exit to Decent dashboard (drag to move, long-press to hide)" aria-label="Exit to Decent dashboard"
         class="has-context-menu flex items-center justify-center text-[var(--mimoja-blue)]"
         style="display:none; position:fixed; z-index:8000; right:max(20px, env(safe-area-inset-right)); bottom:calc(96px + env(safe-area-inset-bottom)); width:36px; height:36px; opacity:0.45; background:transparent; border:none;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M12 3 3 10.5V21a1 1 0 0 0 1 1h5v-6h6v6h5a1 1 0 0 0 1-1V10.5L12 3z"/></svg>
     </button>
     <!-- ReaPrime's injected skin-api.js defines decentApp.exitToDashboard() and runs from
          <head>, so it is already there by the time this runs. Absent in a plain browser ->
-         button never shows. Long-press hides it for the session only: sessionStorage, not
-         localStorage, so there is no need for a Settings toggle to get it back. -->
+         button never shows.
+
+         Gestures, split by movement rather than by mode (no drag handle, no edit state):
+           tap            -> exit to dashboard
+           press + move   -> drag anywhere; position saved to localStorage, survives restart
+           press + hold   -> hide for this session only (sessionStorage, so a restart
+                             brings it back — no Settings toggle needed to undo it)
+         Not ui.js's setupPressAndHold: that one has no move-cancel, so any drag would
+         also trip the hide callback. -->
     <script type="module">
-        import { setupPressAndHold } from './src/modules/ui.js';
         const exit = window.decentApp?.exitToDashboard;
         const btn = document.getElementById('exit-dashboard-btn');
+        const POS_KEY = 'exitBtnPos';
+        const HOLD_MS = 600, DRAG_SLOP = 8;
+
+        // Saved position is viewport px. Clamp on apply: the tablet can rotate or the
+        // window can shrink between sessions, and an off-screen button is unreachable.
+        const applyPos = (left, top) => {
+            const x = Math.max(0, Math.min(left, window.innerWidth - btn.offsetWidth));
+            const y = Math.max(0, Math.min(top, window.innerHeight - btn.offsetHeight));
+            Object.assign(btn.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto' });
+            return { left: x, top: y };
+        };
+
         if (exit && window.__DECENT_HOST__ && !sessionStorage.getItem('exitBtnHidden')) {
             btn.style.display = 'flex';
-            setupPressAndHold(btn, () => exit(), () => {
-                sessionStorage.setItem('exitBtnHidden', '1');
-                btn.style.display = 'none';
+            btn.style.touchAction = 'none'; // else the browser pans/scrolls instead of dragging
+
+            const saved = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+            if (saved) applyPos(saved.left, saved.top);
+            window.addEventListener('resize', () => {
+                const p = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+                if (p) applyPos(p.left, p.top);
             });
+
+            let timer, dragging = false, held = false, dx = 0, dy = 0;
+
+            btn.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                btn.setPointerCapture(e.pointerId);
+                const r = btn.getBoundingClientRect();
+                dx = e.clientX - r.left;
+                dy = e.clientY - r.top;
+                dragging = false;
+                held = false;
+                timer = setTimeout(() => {
+                    if (dragging) return;
+                    held = true;
+                    btn.classList.remove('long-press-active');
+                    sessionStorage.setItem('exitBtnHidden', '1');
+                    btn.style.display = 'none';
+                }, HOLD_MS);
+                btn.classList.add('long-press-active');
+            });
+
+            btn.addEventListener('pointermove', (e) => {
+                if (held || !btn.hasPointerCapture(e.pointerId)) return;
+                const left = e.clientX - dx, top = e.clientY - dy;
+                if (!dragging) {
+                    const r = btn.getBoundingClientRect();
+                    if (Math.hypot(left - r.left, top - r.top) < DRAG_SLOP) return;
+                    dragging = true;
+                    clearTimeout(timer);
+                    btn.classList.remove('long-press-active');
+                }
+                applyPos(left, top);
+            });
+
+            const endPress = (e) => {
+                clearTimeout(timer);
+                btn.classList.remove('long-press-active');
+                if (btn.hasPointerCapture(e.pointerId)) btn.releasePointerCapture(e.pointerId);
+                if (dragging) {
+                    const r = btn.getBoundingClientRect();
+                    localStorage.setItem(POS_KEY, JSON.stringify({ left: r.left, top: r.top }));
+                } else if (!held) {
+                    exit();
+                }
+                dragging = false;
+            };
+            btn.addEventListener('pointerup', endPress);
+            btn.addEventListener('pointercancel', endPress);
         }
     </script>
 
