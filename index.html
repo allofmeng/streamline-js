@@ -421,6 +421,33 @@
         </div>
     </div>
 
+    <!-- Exit back to the Decent dashboard. Sits outside #scaled-content so position:fixed
+         resolves against the viewport (the scaled content carries a transform, which would
+         otherwise become the containing block). Stacked 96px up from the bottom edge —
+         clear of the help button's 56px round slot at bottom:20px, which is where it lands
+         on any host helpOverlay.js doesn't recognise as a webview. -->
+    <button id="exit-dashboard-btn" title="Exit to Decent dashboard (long-press to hide)" aria-label="Exit to Decent dashboard"
+        class="has-context-menu flex items-center justify-center text-[var(--mimoja-blue)]"
+        style="display:none; position:fixed; z-index:8000; right:max(20px, env(safe-area-inset-right)); bottom:calc(96px + env(safe-area-inset-bottom)); width:36px; height:36px; opacity:0.45; background:transparent; border:none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M12 3 3 10.5V21a1 1 0 0 0 1 1h5v-6h6v6h5a1 1 0 0 0 1-1V10.5L12 3z"/></svg>
+    </button>
+    <!-- ReaPrime's injected skin-api.js defines decentApp.exitToDashboard() and runs from
+         <head>, so it is already there by the time this runs. Absent in a plain browser ->
+         button never shows. Long-press hides it for the session only: sessionStorage, not
+         localStorage, so there is no need for a Settings toggle to get it back. -->
+    <script type="module">
+        import { setupPressAndHold } from './src/modules/ui.js';
+        const exit = window.decentApp?.exitToDashboard;
+        const btn = document.getElementById('exit-dashboard-btn');
+        if (exit && window.__DECENT_HOST__ && !sessionStorage.getItem('exitBtnHidden')) {
+            btn.style.display = 'flex';
+            setupPressAndHold(btn, () => exit(), () => {
+                sessionStorage.setItem('exitBtnHidden', '1');
+                btn.style.display = 'none';
+            });
+        }
+    </script>
+
     <!-- Phase B: DYE2 P/F/R strip toggle + auto-fav/recipe strip. Defaults to P
          (existing profile favourites) so the header is unchanged until opted into. -->
     <script type="module">
