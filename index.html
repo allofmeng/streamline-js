@@ -428,12 +428,18 @@
          on any host helpOverlay.js doesn't recognise as a webview. -->
     <button id="exit-dashboard-btn" title="Exit to Decent dashboard (drag to move, long-press to hide)" aria-label="Exit to Decent dashboard"
         class="has-context-menu flex items-center justify-center text-[var(--mimoja-blue)]"
-        style="display:none; position:fixed; z-index:8000; right:max(20px, env(safe-area-inset-right)); bottom:calc(96px + env(safe-area-inset-bottom)); width:36px; height:36px; opacity:0.45; background:transparent; border:none;">
+        style="display:none; position:fixed; z-index:8000; right:max(20px, env(safe-area-inset-right)); bottom:calc(96px + env(safe-area-inset-bottom)); width:36px; height:36px; opacity:0.7; background:transparent; border:none;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M12 3 3 10.5V21a1 1 0 0 0 1 1h5v-6h6v6h5a1 1 0 0 0 1-1V10.5L12 3z"/></svg>
     </button>
-    <!-- ReaPrime's injected skin-api.js defines decentApp.exitToDashboard() and runs from
-         <head>, so it is already there by the time this runs. Absent in a plain browser ->
-         button never shows.
+    <!-- Visibility is decided by "are we in a webview", NOT by the presence of a host
+         API. The old gate required window.__DECENT_HOST__ *and* decentApp.exitToDashboard
+         at parse time; on the Android in-app webview neither is guaranteed (the host may
+         brand only its UA, and an injected skin-api.js can land after this module runs),
+         so the button never appeared. Same UA detection as helpOverlay.js/app.js, plus
+         the host global when it is there.
+
+         The exit call is resolved on tap instead, so a late-injected host API still works.
+         No API at all -> log + toast rather than a dead button.
 
          Gestures, split by movement rather than by mode (no drag handle, no edit state):
            tap            -> exit to dashboard
@@ -443,8 +449,24 @@
          Not ui.js's setupPressAndHold: that one has no move-cancel, so any drag would
          also trip the hide callback. -->
     <script type="module">
-        const exit = window.decentApp?.exitToDashboard;
         const btn = document.getElementById('exit-dashboard-btn');
+        const ua = navigator.userAgent;
+        const isIOS = /iPad|iPhone|iPod/.test(ua);
+        const inWebView = (/Android/.test(ua) && /wv/.test(ua))
+            || (isIOS && window.navigator.standalone !== true && !/Safari\//.test(ua))
+            || ua.includes('Decent')
+            || !!window.__DECENT_HOST__;
+
+        // Called on tap, not at load: the host can inject its API after this module runs.
+        // Keep the method on its object so `this` survives the call.
+        const exit = () => {
+            const app = window.decentApp;
+            if (app && typeof app.exitToDashboard === 'function') { app.exitToDashboard(); return; }
+            console.log('[exit-btn] no host exit API', JSON.stringify({
+                decentApp: app ? Object.keys(app) : null, host: window.__DECENT_HOST__ || null, ua,
+            }));
+            window.app?.ui?.showToast?.('No dashboard exit API in this host', 3000, 'error');
+        };
         const POS_KEY = 'exitBtnPos';
         const HOLD_MS = 600, DRAG_SLOP = 8;
 
@@ -457,7 +479,13 @@
             return { left: x, top: y };
         };
 
-        if (exit && window.__DECENT_HOST__ && !sessionStorage.getItem('exitBtnHidden')) {
+        console.log('[exit-btn] init', JSON.stringify({
+            inWebView, host: window.__DECENT_HOST__ || null,
+            hasApi: typeof window.decentApp?.exitToDashboard === 'function',
+            hidden: !!sessionStorage.getItem('exitBtnHidden'), ua,
+        }));
+
+        if (inWebView && !sessionStorage.getItem('exitBtnHidden')) {
             btn.style.display = 'flex';
             btn.style.touchAction = 'none'; // else the browser pans/scrolls instead of dragging
 
