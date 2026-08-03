@@ -15,7 +15,7 @@
 // in the stored `workflow`). Legacy items without `workflow` fall back to
 // snapshot+copyMask / dashboardVariables.
 
-import { API_BASE_URL, getWorkflow, updateWorkflow, getDye2KvArray } from './api.js';
+import { API_BASE_URL, getWorkflow, updateWorkflow, getDye2KvArray, getPlugins } from './api.js';
 import { applyWorkflowToMainPageUI } from './profileManager.js';
 import { logger } from './logger.js';
 
@@ -28,6 +28,12 @@ const MODE_KEY = 'streamline.dyeStripMode';
 const ENABLED_KEY = 'streamline.dye2Enabled';
 const PLUGIN_BASE = `${API_BASE_URL}/plugins/dye2.reaplugin`; // …/api/v1/plugins/dye2.reaplugin
 const MAX_FAV_CELLS = 4; // + a trailing "VIEW ALL AUTO FAV" cell
+
+// Plugin update check (see checkPluginVersion below).
+const PLUGIN_ID = 'dye2.reaplugin';
+const PLUGIN_LATEST_RELEASE = 'https://api.github.com/repos/allofmeng/dye2/releases/latest';
+const PLUGIN_RELEASES_PAGE = 'https://github.com/allofmeng/dye2/releases/latest';
+const NAG_KEY = 'streamline.dye2UpdateNagged'; // sessionStorage: prompt once per app run
 
 // Cell classes mirror the existing profile favourite buttons (index.html) so the
 // F/R strip is visually identical to the P strip.
@@ -341,6 +347,85 @@ function closePluginOverlay(refresh) {
     }
 }
 
+// ─── Plugin update check ───────────────────────────────────────────────────────
+//
+// Streamline is a read-only consumer of DYE2's KV contract, so an outdated plugin
+// shows up here as missing keys / empty strips rather than an error. Compare the
+// installed version the bridge reports (GET /plugins -> version) against the latest
+// GitHub release tag of allofmeng/dye2 and prompt once per app run. Every failure
+// mode is silent-skip: offline, GitHub rate limit, no release, plugin not installed,
+// or a bridge that reports no version — none of those mean "out of date".
+//
+// The prompt is inline-styled like openPluginOverlay's overlay, not Tailwind: any
+// new utility class would need a CSS rebuild to exist in app.css (see CLAUDE.md).
+
+// ponytail: numeric compare only — dye2 tags are plain vMAJOR.MINOR.PATCH. If it
+// ever ships `-beta` tags, borrow settings.js's compareVersions, which orders them.
+function isOlderVersion(a, b) {
+    const nums = (v) => String(v || '').trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+    const x = nums(a), y = nums(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+        const d = (x[i] || 0) - (y[i] || 0);
+        if (d !== 0) return d < 0;
+    }
+    return false;
+}
+
+function promptPluginUpdate(installed, latest) {
+    const dlg = document.createElement('dialog');
+    dlg.id = 'dye2-update-dialog';
+    dlg.style.cssText =
+        'border:0;border-radius:24px;padding:0;background:transparent;color:var(--text-primary);';
+    dlg.innerHTML = `
+        <div style="background:var(--bgmain-color,#fff);border-radius:24px;padding:36px 40px;max-width:640px;display:flex;flex-direction:column;gap:18px;">
+            <div style="font-size:30px;font-weight:700;color:var(--mimoja-blue);">DYE2 update available</div>
+            <div style="font-size:23px;line-height:1.4;">
+                Installed <b>v${installed}</b>, latest is <b>v${latest}</b>.
+                Download the new plugin and install it from Settings to keep the dashboard strips working.
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:14px;padding-top:6px;">
+                <button id="dye2-update-later" style="padding:10px 26px;border:2px solid var(--mimoja-blue);background:transparent;color:var(--mimoja-blue);border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Later</button>
+                <button id="dye2-update-open" style="padding:10px 26px;border:0;background:var(--mimoja-blue);color:#fff;border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Download</button>
+            </div>
+        </div>`;
+    document.body.appendChild(dlg);
+    const close = () => { dlg.close(); dlg.remove(); };
+    dlg.querySelector('#dye2-update-later').addEventListener('click', close);
+    dlg.querySelector('#dye2-update-open').addEventListener('click', () => {
+        close();
+        // Same-frame nav, no _blank/window.open: in the tablet webview the host
+        // intercepts the external URL and hands it to the OS browser.
+        window.location.href = PLUGIN_RELEASES_PAGE;
+    });
+    dlg.showModal();
+}
+
+export async function checkPluginVersion() {
+    try {
+        if (sessionStorage.getItem(NAG_KEY)) return;
+    } catch (e) { /* private mode — just prompt */ }
+    try {
+        const [plugins, release] = await Promise.all([
+            getPlugins(),
+            fetch(PLUGIN_LATEST_RELEASE, { headers: { Accept: 'application/vnd.github+json' } })
+                .then(r => (r.ok ? r.json() : null))
+                .catch(() => null),
+        ]);
+        const installed = (plugins || []).find(p => p?.id === PLUGIN_ID)?.version;
+        const latest = release?.tag_name?.trim().replace(/^v/i, '');
+        if (!installed || !latest) {
+            logger.info(`dyeStrip: version check skipped (installed=${installed || '?'}, latest=${latest || '?'})`);
+            return;
+        }
+        if (!isOlderVersion(installed, latest)) return;
+        logger.info(`dyeStrip: DYE2 plugin v${installed} is older than v${latest}`);
+        try { sessionStorage.setItem(NAG_KEY, '1'); } catch (e) { /* private mode */ }
+        promptPluginUpdate(installed, latest);
+    } catch (e) {
+        logger.error('dyeStrip version check failed', e);
+    }
+}
+
 // ─── Toggle + init ─────────────────────────────────────────────────────────────
 
 export function setStripMode(mode) {
@@ -419,6 +504,7 @@ export async function enableDye2Ui() {
     if (dyeBtn) dyeBtn.style.display = '';
     wireOnce();
     try { await loadDyeStripData(); } catch (e) { logger.error('dyeStrip load failed', e); }
+    checkPluginVersion(); // not awaited — a GitHub round-trip must not hold up the header
     let saved = 'P';
     try { saved = localStorage.getItem(MODE_KEY) || 'P'; } catch (e) { /* private mode */ }
     setStripMode(saved);
