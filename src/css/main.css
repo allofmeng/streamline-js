@@ -506,3 +506,68 @@ body {
 [data-theme='dark'] .pe-save-dialog::backdrop {
   background: rgba(0, 0, 0, 0.55);
 }
+
+/* Profile editor scrollbars. The steps grid scrolls sideways and the summary
+   columns scroll down, but on a touch device Chromium uses overlay scrollbars
+   that fade out — so there was nothing on screen saying the panel scrolls at
+   all. Declaring ::-webkit-scrollbar switches that pane back to a classic
+   space-taking scrollbar, which is what makes the trough permanently visible;
+   the colours just make it legible.
+
+   Neutral translucent rather than var(--mimoja-blue): dark mode redefines that
+   token to #292c38, which would vanish against a dark panel. These id
+   selectors outrank the app-wide [data-theme="dark"] scrollbar rules in
+   dark-mode.css, so both themes are set here. */
+#editor-steps-container,
+#review-steps-col,
+#review-right-col {
+  scrollbar-color: rgba(0, 0, 0, 0.42) rgba(0, 0, 0, 0.10); /* Firefox + Chromium 121+ */
+  scrollbar-gutter: stable;
+}
+#editor-steps-container::-webkit-scrollbar,
+#review-steps-col::-webkit-scrollbar,
+#review-right-col::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+#editor-steps-container::-webkit-scrollbar-track,
+#review-steps-col::-webkit-scrollbar-track,
+#review-right-col::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.10);
+  border-radius: 8px;
+}
+#editor-steps-container::-webkit-scrollbar-thumb,
+#review-steps-col::-webkit-scrollbar-thumb,
+#review-right-col::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.42);
+  border-radius: 8px;
+  /* Inset the thumb so the track reads as a groove either side of it. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+#editor-steps-container::-webkit-scrollbar-thumb:hover,
+#review-steps-col::-webkit-scrollbar-thumb:hover,
+#review-right-col::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.62);
+}
+
+[data-theme='dark'] #editor-steps-container,
+[data-theme='dark'] #review-steps-col,
+[data-theme='dark'] #review-right-col {
+  scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.10);
+}
+[data-theme='dark'] #editor-steps-container::-webkit-scrollbar-track,
+[data-theme='dark'] #review-steps-col::-webkit-scrollbar-track,
+[data-theme='dark'] #review-right-col::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.10);
+}
+[data-theme='dark'] #editor-steps-container::-webkit-scrollbar-thumb,
+[data-theme='dark'] #review-steps-col::-webkit-scrollbar-thumb,
+[data-theme='dark'] #review-right-col::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.42);
+}
+[data-theme='dark'] #editor-steps-container::-webkit-scrollbar-thumb:hover,
+[data-theme='dark'] #review-steps-col::-webkit-scrollbar-thumb:hover,
+[data-theme='dark'] #review-right-col::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.62);
+}

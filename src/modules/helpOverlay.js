@@ -54,7 +54,7 @@ const PAGES = {
         { sel: '#cancel-settings-btn', title: 'Cancel', tip: 'Discard changes and go back.' },
     ],
     profile_selector: [
-        { sel: '#add_profile', title: 'Add profile', tip: 'Upload a file or import a share code.', below: true },
+        { sel: '#add_profile', title: 'Add profile', tip: 'Start a new profile from scratch, upload a file, or import a share code.', below: true },
         { sel: '#view_profile', title: 'View all', tip: 'Show all hidden profiles.' },
         { sel: '#search_profile', title: 'Search', tip: 'Search your profiles.' },
         { sel: '#ai_generate_profile', title: 'Decent Profile Generator', tip: 'Design your next espresso profile in a few simple steps.', below: true },
@@ -67,7 +67,7 @@ const PAGES = {
         { sel: '#confirm-profile-btn', title: 'Confirm', tip: 'Use this profile for your next shot.' },
     ],
     profile_editor: [
-        { sel: '#editor-title-display', title: 'Profile name', tip: 'Tap the title to rename the profile.', right: true },
+        { sel: '#editor-title-display', title: 'Profile name', tip: 'Tap the title to rename. Saving under a new name leaves the original untouched and keeps this as a separate profile.', right: true },
         { sel: '.editor-tab-btn[data-tab="0"]', title: 'Grid view', tip: 'Edit the profile as step cards.' },
         { sel: '.editor-tab-btn[data-tab="2"]', title: 'Text view', tip: 'Edit the profile as plain sentences, with a graph preview.' },
         { sel: '.editor-tab-btn[data-tab="1"]', title: 'Settings view', tip: 'Profile-wide settings (dose, yield, temperature…).' },
@@ -80,8 +80,11 @@ const PAGES = {
         { sel: '#review-steps-list', title: 'Text review', tip: 'Each step in plain words. Tap any blue value to edit it.' },
         { sel: '#review-graph', title: 'Graph preview', tip: 'Live preview of the profile’s pressure / flow curve.' },
         { sel: '#review-settings-list', title: 'Profile settings', tip: 'Profile-wide settings. Tap any blue value to edit it.' },
+        // Hidden (Tailwind `hidden`) on a default or an unsaved profile, so
+        // visibleRect skips this mark on its own — no extra condition needed.
+        { sel: '#editor-history-btn', title: 'Version history', tip: 'Restore an earlier version of this profile.' },
         { sel: '#editor-cancel-btn', title: 'Cancel', tip: 'Discard changes and exit the editor.' },
-        { sel: '#editor-save-btn', title: 'Save', tip: 'Save your changes to the profile.' },
+        { sel: '#editor-save-btn', title: 'Save', tip: 'Saves over this profile. To keep the original too, rename it first.' },
     ],
 };
 

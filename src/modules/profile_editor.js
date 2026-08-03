@@ -1196,9 +1196,12 @@ function renderSettingsTab() {
                     const validation = validateProfileStructure(parsed);
                     if (!validation.isValid) throw new Error(validation.errorMessage);
                     reloadEditorWithProfile(parsed, null);
-                    showToast(`Loaded: ${parsed.title || 'Profile'}`, 2500, 'success');
+                    showToast(`${getTranslation('Import')}: ${parsed.title || 'Profile'}`, 2500, 'success');
                 } catch (err) {
-                    showToast(`Error: ${err.message}`, 4000, 'error');
+                    // '# Errors' is a section-header row in the translation sheet,
+                    // so every cell carries a literal '# ' ("# Fehler", "# 错误").
+                    // Strip it — the translated word is what we want, not the hash.
+                    showToast(`${getTranslation('# Errors').replace(/^#\s*/, '')}: ${err.message}`, 4000, 'error');
                 }
             };
             fileInput.click();
@@ -1860,11 +1863,11 @@ function executionChanged(orig, edited) {
 
 async function saveProfile() {
     if (!editorState.profile.title?.trim()) {
-        showToast('Profile needs a name', 3000, 'error');
+        showToast(getTranslation('Invalid name'), 3000, 'error');
         return;
     }
     if (!editorState.profile.steps?.length) {
-        showToast('Add at least one step', 3000, 'error');
+        showToast(getTranslation('Insert a step'), 3000, 'error');
         return;
     }
 
@@ -1872,35 +1875,56 @@ async function saveProfile() {
         const { updateProfile, uploadProfileWithParent, updateProfileVisibility } = await import('./api.js');
         const { availableProfiles, remapFavorite } = await import('./profileManager.js');
 
-        // No-op save guard — if the profile is byte-identical to its source,
-        // skip writing a new KV record. Prevents duplicating a default the user
-        // opened but didn't actually modify.
-        const sourceProfileJson = editorState.sourceProfileRecord?.profile
-            ? JSON.stringify(editorState.sourceProfileRecord.profile)
-            : null;
-        if (sourceProfileJson && sourceProfileJson === JSON.stringify(editorState.profile)) {
-            showToast('No changes to save', 2000, 'info');
-            if (editorState.sourceProfileId) {
-                sessionStorage.setItem('lastEditedProfileKey', editorState.sourceProfileId);
-            }
-            setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 500);
-            return;
-        }
-
         // Overwrite-in-place is the default: editing an existing user profile and
         // keeping its title updates the same record (no "(2)" cruft on a
         // draft→test→tweak loop). Renaming via the inline title editor is the
         // explicit save-as — titleChanged below routes it to a new record.
-        const src = editorState.sourceProfileRecord;
+        //
+        // A brand-new profile arrives as a stub record carrying id null (see the
+        // Add Profile handler in profile_selector.js), so key off the id, not the
+        // record: with the stub as `src` the no-op guard below saw the untouched
+        // defaults as "unchanged" and silently dropped the whole profile.
+        const src = editorState.sourceProfileRecord?.id ? editorState.sourceProfileRecord : null;
+
+        // Compare against the source put through the same normalisation the
+        // editor ran on load (initializeProfileEditor). Without it every profile
+        // still carrying legacy fields reads as modified the instant it opens —
+        // normalizeLegacySteps strips the off-pump pressure/flow keys from the
+        // editor's copy but not from the source record.
+        const sourceProfile = src?.profile ? normalizeLegacySteps(deepCopy(src.profile)) : null;
+        const sourceProfileJson = sourceProfile ? JSON.stringify(sourceProfile) : null;
+
+        // No-op save guard — nothing changed, so there is nothing worth writing.
+        // Two shapes of "nothing changed":
+        //  - an existing profile reopened and saved untouched (compare to source);
+        //  - a brand-new profile saved straight off the Add Profile template,
+        //    which has no source record, so compare to the load-time baseline.
+        //    Blocking it keeps a generic "New Profile" of stock defaults out of
+        //    the list; the user still has to name it or edit something.
+        // An uploaded file also has no source record and also resets the
+        // baseline, but saving it verbatim is the whole point of uploading —
+        // _hasImportedInSession excludes it from the template check.
+        // Either way stay on the editor rather than bouncing to the selector: the
+        // user pressed Save meaning to keep something, and navigating away reads
+        // as success. The toast names the way forward — renaming is the save-as
+        // route (titleChanged below), which does mint a record.
+        const editedJson = JSON.stringify(editorState.profile);
+        const unchanged = sourceProfileJson
+            ? sourceProfileJson === editedJson
+            : (!_hasImportedInSession && editedJson === _baselineProfileJson);
+        if (unchanged) {
+            showToast(getTranslation('Pick a new name to save'), 3000, 'info');
+            return;
+        }
 
         // Title change at save = user intent to save as a brand-new profile.
         const sourceTitle = (src?.profile?.title || '').trim();
         const currentTitle = editorState.profile.title.trim();
         const titleChanged = sourceTitle && currentTitle !== sourceTitle;
 
-        // Decide before stripping legacy fields (source still carries them too,
-        // so the comparison is apples-to-apples).
-        const execChanged = !src || executionChanged(src.profile, editorState.profile);
+        // Both sides normalised (see above), so a legacy field the editor drops
+        // on load can't masquerade as an execution change and fork the profile.
+        const execChanged = !src || executionChanged(sourceProfile, editorState.profile);
 
         // Auto-suffix title only when minting a NEW record (a save-as, a fresh
         // profile, or a default forked on execution change). An in-place PUT can
@@ -1966,11 +1990,13 @@ async function saveProfile() {
         // Hint to selector so it pre-selects the profile we just edited.
         sessionStorage.setItem('lastEditedProfileKey', saved.id);
 
-        showToast('Profile saved!', 2000, 'success');
+        showToast(getTranslation('Saved profile'), 2000, 'success');
         setTimeout(() => { loadPage('src/profiles/profile_selector.html'); }, 1000);
     } catch (err) {
         console.error('Profile save failed:', err);
-        showToast(`Save failed: ${err.message}`, 4000, 'error');
+        // Every failure path here is a write to Rea Prime (POST/PUT), so the
+        // sheet's upload wording is the accurate one. err.message stays English.
+        showToast(`${getTranslation('Upload failed!')} ${err.message}`, 4000, 'error');
     }
 }
 
