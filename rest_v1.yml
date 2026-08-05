@@ -88,19 +88,21 @@ paths:
   /api/v1/devices/scan:
     get:
       summary: Scan for Devices
-      description: Triggers a device scan. When connect=true (default), uses the ConnectionManager to scan and automatically connect to preferred or single devices. When connect=false, performs a scan-only without automatic connections.
+      description: Triggers a device scan. When connect=true (default), scans first and automatically fills missing machine and scale slots without replacing connected devices. When connect=false, performs discovery only.
       tags: [Devices]
       parameters:
         - name: connect
-          description: Whether to use the ConnectionManager to automatically connect to preferred/discovered devices during scanning. Default is 'true'.
+          description: Whether to scan first and automatically connect missing preferred/discovered devices. Defaults to true.
           in: query
           schema:
             type: boolean
+            default: true
         - name: quick
-          description: If this flag is set to true, REA will return immediately after calling this function, returning an empty array. Useful if you want to poll for new devices manually
+          description: If true, Decaid returns an empty array immediately while the same scan-first policy continues in the background. Useful when polling for device updates manually.
           in: query
           schema:
             type: boolean
+            default: false
       responses:
         "200":
           description: Scan started successfully
@@ -335,6 +337,12 @@ paths:
       responses:
         "200":
           description: Profile updated successfully
+        "400":
+          description: Malformed JSON body
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
   /api/v1/machine/shotSettings:
     post:
       summary: Update Shot Settings
@@ -349,6 +357,12 @@ paths:
       responses:
         "200":
           description: Shot settings updated successfully
+        "400":
+          description: Malformed JSON body
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
   /api/v1/machine/capabilities:
     get:
       summary: List machine capabilities
@@ -402,9 +416,13 @@ paths:
         "200":
           description: Setpoint accepted
         "400":
-          description: Temperature missing or out of range 0.0–80.0
+          description: Temperature missing or out of range 0.0–80.0, or malformed JSON
         "404":
           description: Machine connected but does not support cup warmer
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
   /api/v1/machine/ledStrip:
     get:
       summary: Get LED strip configuration
@@ -440,9 +458,13 @@ paths:
         "200":
           description: Configuration accepted
         "400":
-          description: Invalid request body
+          description: Invalid request body or malformed JSON
         "404":
           description: Machine connected but does not support LED strip
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
 
   /api/v1/machine/ledStrip/commit:
     post:
@@ -464,6 +486,10 @@ paths:
           description: Commit accepted
         "404":
           description: Machine connected but does not support LED strip
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
 
   /api/v1/machine/ledStrip/reset:
     post:
@@ -490,6 +516,10 @@ paths:
                 $ref: "#/components/schemas/LedStripState"
         "404":
           description: Machine connected but does not support LED strip
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
   /api/v1/machine/settings:
     get:
       summary: Get machine settings
@@ -514,7 +544,13 @@ paths:
               $ref: "#/components/schemas/De1SettingsRequest"
       responses:
         "202":
-          description: Settings update accepted
+          description: Settings update accepted (one grouped serialized device write)
+        "400":
+          description: Malformed JSON body
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
 
   /api/v1/machine/settings/advanced:
     get:
@@ -540,7 +576,13 @@ paths:
               $ref: "#/components/schemas/De1AdvancedSettingsRequest"
       responses:
         "202":
-          description: Advanced settings update accepted
+          description: Advanced settings update accepted (one grouped serialized device write)
+        "400":
+          description: Malformed JSON body
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
 
   /api/v1/machine/settings/reset:
     delete:
@@ -552,7 +594,9 @@ paths:
       tags: [Machine]
       responses:
         "202":
-          description: Reset accepted
+          description: Reset accepted (one grouped serialized device write)
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
         "500":
           description: No DE1 connected
 
@@ -581,6 +625,12 @@ paths:
       responses:
         "202":
           description: Calibration settings updated successfully
+        "400":
+          description: Malformed JSON body
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
 
   /api/v1/machine/waterLevels:
     post:
@@ -595,11 +645,46 @@ paths:
       responses:
         "202":
           description: Levels updated
+        "400":
+          description: Malformed JSON body
+        "503":
+          description: Machine disconnected mid-write and no replacement appeared within the bounded wait
+        "500":
+          description: No machine was ever connected
 
   /api/v1/machine/firmware:
+    get:
+      summary: Get firmware catalog and update availability
+      description: |
+        Returns the bundled firmware catalog with per-artifact eligibility.
+        Does not require a machine connection; when offline, machine fields
+        are null and eligibility is unknown.
+      tags: [Machine]
+      responses:
+        "200":
+          description: Firmware catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FirmwareCatalog"
     post:
-      summary: Push new firmware to the machine
-      description: Send a firmware file to machine, the call will wait until the firmware upgrade is complete (which might be a long time)
+      summary: Push raw firmware to the machine (developer/recovery)
+      description: |
+        Send a raw firmware file to the machine. Returns an NDJSON progress
+        stream. Rejects an empty body with 400. Returns 409 if an update is
+        already in progress. Returns 503 if no machine is connected.
+
+        A successful stream emits `erasing`, zero or more `uploading` events,
+        then `done`. A failed stream emits `erasing`, zero or more `uploading`
+        events, then `error` with `progress: -1.0`.
+
+        Upload progress is emitted in approximately one-percent increments.
+        The final `uploading` value may be close to or equal to `1.0`. Only the
+        subsequent `done` event indicates that CRC verification completed
+        successfully. The erase and CRC verification phases do not emit
+        intermediate percentage updates. The stream emits `erasing` when the
+        operation starts and remains silent during verification until either
+        `done` or `error`.
       tags: [Machine]
       requestBody:
         required: true
@@ -607,19 +692,108 @@ paths:
           application/octet-stream:
       responses:
         "200":
-          description: Firmware update successful. Need to restart machine to load new firmware
-        "500":
-          description: Something went wrong during the firmware upgrade process. Check the response and Decent logs
+          description: NDJSON progress stream (see FirmwareProgressEvent)
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/FirmwareProgressEvent"
+        "400":
+          description: Empty request body
+        "409":
+          description: Firmware update already in progress
+        "503":
+          description: No machine connected
+    delete:
+      summary: Cancel an in-progress firmware update
+      description: |
+        Idempotent. Returns 202 with the resulting operation state.
+        Safe to call when no update is in progress or no machine is connected.
+      tags: [Machine]
+      responses:
+        "202":
+          description: Cancellation accepted/satisfied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FirmwareCancellationResponse"
+
+  /api/v1/machine/firmware/apply:
+    post:
+      summary: Apply a managed firmware artifact
+      description: |
+        Resolves, loads, and validates a bundled firmware artifact before
+        starting the upload. Returns an NDJSON progress stream on success.
+        Accepts optional `force: true` to bypass version-newer policy
+        (never bypasses integrity or compatibility checks).
+      tags: [Machine]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artifactId]
+              properties:
+                artifactId:
+                  type: string
+                  description: Stable artifact ID from the catalog
+                force:
+                  type: boolean
+                  default: false
+                  description: Allow downgrade/reinstall (default false)
+      responses:
+        "200":
+          description: NDJSON progress stream
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/FirmwareProgressEvent"
+        "400":
+          description: Missing or malformed artifactId
+        "404":
+          description: Unknown artifact ID
+        "409":
+          description: Firmware update already in progress
+        "422":
+          description: Artifact validation, compatibility, or version-policy failure
+        "503":
+          description: No machine connected
 
   # Scale API
   /api/v1/scale/tare:
     put:
       summary: Tare Scale
-      description: Tares the connected scale.
+      description: |
+        Tares the connected scale. If `blockTareDuringShot` is enabled and an
+        app-tracked espresso shot is actively brewing (not idle/finished), the
+        request is rejected with `400` rather than tared — see
+        `blockTareDuringShot` in `ReaSettings`. In-app tares issued by the shot
+        sequencer itself (e.g. arm-before-pour) are unaffected; only
+        externally-issued tare requests are blocked.
+
+        This only applies to shots the app itself tracks. `full` gateway mode
+        is an explicit policy exemption: the skin owns the shot there, so the
+        lockout never blocks a tare, regardless of any app-tracked (including
+        stale or unexpected) shot state.
       tags: [Scale]
       responses:
         "200":
           description: Scale tared successfully
+        "400":
+          description: >
+            Blocked: `blockTareDuringShot` is enabled and an app-tracked shot
+            is currently brewing. Explicitly exempted in `full` gateway mode
+            regardless of tracked shot state. Response body has
+            `type: "block_tare_during_shot"`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  details:
+                    type: string
         "404":
           description: Scale not found
 
@@ -781,7 +955,22 @@ paths:
       summary: Update current workflow
       description: |
         Updates the current workflow. This is the **recommended method** for applying changes
-        to the machine and brewing parameters in one atomic operation.
+        to the machine and brewing parameters in one ordered mutation.
+
+        Each HTTP request is an independent mutation. Requests are processed in FIFO order,
+        and partial request bodies are deep-merged against the workflow state when that request
+        reaches the front of the queue. The server does not debounce or combine separate
+        requests. Machine side effects from workflow PUT requests do not execute concurrently,
+        so a request may wait behind an in-flight machine operation. Each response describes
+        the workflow resulting from that request. High-frequency clients should throttle input
+        on the client side rather than relying on server-side debounce.
+
+        Machine-write failures return an error response before the controller workflow is
+        committed. The machine writes are multi-step and may be partially applied; retrying
+        the same request re-attempts the requested settings.
+
+        Bodies are limited to 1 MiB. At most eight workflow requests may be active or queued,
+        and a request that waits more than 30 seconds for its turn is skipped.
 
         You can update the complete workflow or just specific fields:
         - **context**: Set dose, grinder, coffee, and people metadata (recommended)
@@ -888,8 +1077,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "408":
+          description: The client did not finish sending the request body within the timeout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Request body exceeds the 1 MiB workflow payload limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Eight workflow requests are already active or queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
-          description: Internal server error during DE1 side-effect writes
+          description: A required direct machine write failed; the controller workflow remains unchanged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >
+            The request waited more than 30 seconds for its turn and was
+            skipped, or the machine disconnected mid-write and no replacement
+            machine appeared within the bounded wait (10 seconds). In both
+            cases the controller workflow is unchanged.
           content:
             application/json:
               schema:
@@ -1093,7 +1310,13 @@ paths:
       description: |
         Updates an existing shot record. Supports partial updates — only the fields
         included in the request body will be changed, all other fields are preserved
-        from the existing record. Commonly used to add or update shot notes or metadata.
+        from the existing record. Use annotations for all post-shot data. The legacy
+        shotNotes and metadata request fields are deprecated but remain accepted and
+        map to annotations.espressoNotes and annotations.extras. When canonical and
+        legacy forms are both supplied, canonical fields win, including explicit nulls.
+        A null canonical field clears that field; annotations: null clears all post-shot
+        annotations and ignores legacy values in the same request. Legacy aliases in
+        responses mirror the resulting canonical values and never retain cleared data.
       tags: [Shots History]
       parameters:
         - in: path
@@ -1110,15 +1333,17 @@ paths:
               $ref: "#/components/schemas/ShotRecord"
             examples:
               updateNotes:
-                summary: Update only shot notes
+                summary: Update only espresso notes
                 value:
-                  shotNotes: "Tasted great, slightly fruity"
-              updateMetadata:
-                summary: Update only metadata
+                  annotations:
+                    espressoNotes: "Tasted great, slightly fruity"
+              updateAnnotations:
+                summary: Update rating and custom annotations
                 value:
-                  metadata:
-                    rating: 4.5
-                    favorite: true
+                  annotations:
+                    enjoyment: 4.5
+                    extras:
+                      favorite: true
       responses:
         "200":
           description: Shot updated successfully
@@ -1651,6 +1876,16 @@ paths:
                   type: string
                   format: date-time
                   nullable: true
+                freezeDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+                unfreezeDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+                frozen:
+                  type: boolean
                 notes:
                   type: string
                   nullable: true
@@ -1756,6 +1991,26 @@ paths:
                   format: double
                   nullable: true
                   description: Remaining weight in grams
+                buyDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+                openDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+                bestBeforeDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+                freezeDate:
+                  type: string
+                  format: date-time
+                  nullable: true
+                unfreezeDate:
+                  type: string
+                  format: date-time
+                  nullable: true
                 frozen:
                   type: boolean
                 archived:
@@ -2935,7 +3190,7 @@ paths:
   /api/v1/webui/skins/install/github-branch:
     post:
       summary: Install skin from GitHub branch
-      description: Downloads and installs a WebUI skin from a GitHub branch archive
+      description: Downloads and installs a WebUI skin from a GitHub branch archive, persisting the branch source for future update checks
       tags: [WebUI]
       requestBody:
         required: true
@@ -3235,10 +3490,17 @@ paths:
               properties:
                 userPresenceEnabled:
                   type: boolean
-                  description: Whether user presence tracking is enabled
+                  description: >
+                    Whether user presence tracking is enabled. Must be a boolean;
+                    any other type is rejected with 400.
                 sleepTimeoutMinutes:
                   type: integer
-                  description: Minutes of inactivity before the machine is put to sleep
+                  description: >
+                    Minutes of inactivity before the app puts the machine to
+                    sleep. Must be a JSON integer; non-integer types are
+                    rejected with 400. Integer values are normalized into
+                    0..240. `0` disables the app-side idle sleep timer.
+                    Partial updates are supported.
             examples:
               enablePresence:
                 summary: Enable presence tracking with 30 minute timeout
@@ -3265,6 +3527,17 @@ paths:
                     type: boolean
                   sleepTimeoutMinutes:
                     type: integer
+                    minimum: 0
+                    maximum: 240
+        "400":
+          description: >
+            Invalid field value — `userPresenceEnabled` was not a boolean, or
+            `sleepTimeoutMinutes` was not an integer, or the request body was
+            malformed. No setting is changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Internal Server Error
           content:
@@ -3583,6 +3856,9 @@ paths:
         - workflow.json — current workflow/recipe
         - settings.json — all settings, wake schedules, device preferences
         - store.json — all KV store namespaces and key/value pairs
+        - steams.json — all steam records
+        - beans.json — all beans and batches
+        - grinders.json — all grinders
       tags: [Data Management]
       responses:
         "200":
@@ -3598,16 +3874,29 @@ paths:
                 type: string
               description: 'attachment; filename="decent_export_{timestamp}.zip"'
         "500":
-          description: Internal server error
+          description: Export failed atomically; the response identifies failed sections and no partial ZIP is returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/data/import:
     post:
       summary: Import app data from archive
       description: |
         Imports app data from a ZIP archive previously created by the export
-        endpoint. Each JSON file in the archive is processed independently —
-        missing files are skipped. Unknown files are ignored for forward
-        compatibility. Use the onConflict parameter to control how duplicate
-        records are handled.
+        endpoint. Each recognized JSON section is processed independently.
+        Missing sections are allowed, but the archive must contain at least one
+        recognized selected section. Unknown files and metadata.json alone do
+        not constitute an importable backup. Metadata is optional for legacy
+        archives without metadata.json, but is validated when present. Use the
+        onConflict parameter to control how duplicate records are handled.
+
+        A 200 response means every processed section completed without errors.
+        A 207 response means recognized sections were processed but at least
+        one section returned or encountered an error, including when all
+        recognized sections failed. Warnings and conflict skips do not cause
+        207. Sections are not imported transactionally; a successful section
+        is not rolled back when another section fails.
       tags: [Data Management]
       parameters:
         - in: query
@@ -3629,11 +3918,13 @@ paths:
               format: binary
       responses:
         "200":
-          description: Import completed successfully
+          description: At least one recognized section was processed and all processed sections completed without errors
           content:
             application/json:
               schema:
                 type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/SectionImportResult"
                 properties:
                   profiles:
                     $ref: "#/components/schemas/SectionImportResult"
@@ -3645,8 +3936,22 @@ paths:
                     $ref: "#/components/schemas/SectionImportResult"
                   store:
                     $ref: "#/components/schemas/SectionImportResult"
+                  steams:
+                    $ref: "#/components/schemas/SectionImportResult"
+                  beans:
+                    $ref: "#/components/schemas/SectionImportResult"
+                  grinders:
+                    $ref: "#/components/schemas/SectionImportResult"
+        "207":
+          description: Recognized sections were processed, but one or more sections contain errors
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/SectionImportResult"
         "400":
-          description: Invalid archive, unsupported format version, or invalid onConflict value
+          description: Invalid ZIP, malformed or unsupported metadata, unknown requested selection, no recognized data sections, or invalid onConflict value
           content:
             application/json:
               schema:
@@ -3666,10 +3971,16 @@ paths:
         instance over the network. Supports three modes:
         - **pull**: imports data from the target into this instance
         - **push**: exports data from this instance to the target
-        - **two_way**: performs pull then push (returns 207 if one phase fails)
+        - **two_way**: performs pull then push only after a complete pull by default
 
-        Only the specified sections are synced. If no sections are provided,
-        all available sections are synced.
+        Pull, push, and two_way requests may omit sections, which means all
+        locally registered sections. An explicitly empty sections list is
+        invalid for every mode.
+        Duplicate names are deduplicated in first-occurrence order and
+        unknown names return 400. Semantic status is derived from section
+        results rather than HTTP 200 alone. Existing direct section maps stay
+        under pull and push; phase metadata is additive under phases. Legacy
+        remote import result maps are supported.
       tags: [Data Management]
       requestBody:
         required: true
@@ -3702,8 +4013,21 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [profiles, shots, workflow, settings, store, beans, grinders]
-                  description: Data sections to sync. Defaults to all sections if omitted.
+                    enum: [profiles, shots, workflow, settings, store, steams, beans, grinders]
+                  minItems: 1
+                  uniqueItems: false
+                  description: |
+                    Data sections to sync. Optional for every mode; omission
+                    means all locally registered sections. An explicitly empty
+                    list is invalid for every mode. Duplicate names are
+                    deduplicated in first-occurrence order.
+                continueOnPullFailure:
+                  type: boolean
+                  default: false
+                  description: |
+                    Two_way only. When true, allows push after pull is partial
+                    or failed. It is false by default and is not inferred from
+                    overwrite conflict handling.
       responses:
         "200":
           description: Sync completed successfully
@@ -3712,13 +4036,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/SyncResult"
         "207":
-          description: Partial success (two_way mode, one phase failed)
+          description: Incomplete two-way synchronization with meaningful progress
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SyncResult"
         "400":
-          description: Validation error (missing required fields, invalid mode, etc.)
+          description: Validation error (missing required fields, invalid mode, empty or unknown sections, etc.)
           content:
             application/json:
               schema:
@@ -3729,16 +4053,11 @@ paths:
                   message:
                     type: string
         "502":
-          description: Target Bridge unreachable or returned an error
+          description: Unsuccessful single-direction synchronization or two-way synchronization with no complete or partial phase
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                  message:
-                    type: string
+                $ref: "#/components/schemas/SyncResult"
 
   /api/v1/info:
     get:
@@ -3865,12 +4184,52 @@ paths:
                       type: string
                     message:
                       type: string
+  /api/v1/debug/flow-smoothing:
+    get:
+      summary: Get runtime display-flow smoothing (debug builds only)
+      description: |
+        Returns the process-local display-flow smoothing configuration. Available
+        only when the app is built with a non-empty `simulate` Dart define.
+      tags: [Debug]
+      responses:
+        "200":
+          description: Current smoothing configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowSmoothingConfig"
+        "404":
+          description: Endpoint not available (non-debug build)
+    post:
+      summary: Set runtime display-flow smoothing (debug builds only)
+      description: |
+        Atomically updates and resets the display-flow estimator. Values are
+        process-local and do not affect the Kalman control-flow estimator.
+      tags: [Debug]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlowSmoothingConfig"
+      responses:
+        "200":
+          description: Updated smoothing configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlowSmoothingConfig"
+        "400":
+          description: Invalid JSON, type, or range
+        "404":
+          description: Endpoint not available (non-debug build)
+
   /api/v1/debug/scale/{command}:
     post:
       summary: Control mock scale (simulate mode only)
       description: |
         Debug endpoints for controlling the simulated scale. Only available
-        when the app is launched with `--dart-define=simulate=1`.
+        when the app is launched with a non-empty `simulate` Dart define.
         Returns 404 on production builds.
       tags: [Debug]
       parameters:
@@ -3897,6 +4256,47 @@ paths:
                     enum: [stalled, resumed, disconnected]
         "400":
           description: No scale connected or scale is not a MockScale
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "404":
+          description: Unknown command or endpoint not available (non-simulate build)
+
+  /api/v1/debug/machine/{command}:
+    post:
+      summary: Control mock machine (simulate mode only)
+      description: |
+        Debug endpoints for controlling the simulated machine. Only available
+        when the app is launched with a non-empty `simulate` Dart define.
+        Returns 404 on production builds.
+      tags: [Debug]
+      parameters:
+        - name: command
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [disconnect]
+          description: |
+            - `disconnect` — simulate machine disconnect (emits disconnected
+              state; no automatic reconnect)
+      responses:
+        "200":
+          description: Command executed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [disconnected]
+        "400":
+          description: No machine connected or machine is not a MockDe1
           content:
             application/json:
               schema:
@@ -4165,6 +4565,21 @@ paths:
 
 components:
   schemas:
+    FlowSmoothingConfig:
+      type: object
+      required: [windowMs, movingAverageSamples]
+      properties:
+        windowMs:
+          type: integer
+          minimum: 100
+          maximum: 2000
+          example: 600
+        movingAverageSamples:
+          type: integer
+          minimum: 1
+          maximum: 50
+          example: 10
+
     AppUpdateState:
       type: object
       description: Snapshot of the app-update state machine.
@@ -4258,8 +4673,14 @@ components:
             by this field. Initial set:
             scaleConnectFailed, machineConnectFailed,
             scaleDisconnected, machineDisconnected,
-            adapterOff, bluetoothPermissionDenied, scanFailed.
+            adapterOff, bluetoothPermissionDenied, scanFailed,
+            profileUploadFailed.
             New kinds may be added without a version bump.
+
+            profileUploadFailed is raised when a profile upload to the
+            machine fails and is being retried. It persists across phase
+            transitions and is retracted when a retry succeeds, the machine
+            disconnects, or the retry cycle is disposed.
         severity:
           type: string
           enum: [warning, error]
@@ -4827,7 +5248,7 @@ components:
       type: object
       properties:
         gatewayMode:
-          description: Control whether Decent acts as gateway. Disabled means gateway is disabled, full means full gateway mode. Tracking means decent will not show graphs, but will control the shot (stop at weight)
+          description: Control whether Decaid acts as gateway. Disabled means gateway is disabled, full means full gateway mode. Tracking means Decaid will not show graphs, but will control the shot (stop at weight)
           type: string
           enum: ["disabled", "full", "tracking"]
           nullable: true
@@ -4866,6 +5287,9 @@ components:
           example: "disabled"
         blockOnNoScale:
           description: When true, shots will be blocked from starting if no scale is connected.
+          type: boolean
+        blockTareDuringShot:
+          description: When true, PUT /api/v1/scale/tare is rejected (400) while an app-tracked espresso shot is actively brewing, to prevent a stray programmatic tare from ruining stop-at-weight mid-pour. Default false. Does not affect the shot sequencer's own arm-before-pour tare, nor a manual tare via the scale's physical button. Full gateway mode is an explicit policy exemption — the skin owns the shot there, so this is ignored regardless of any app-tracked shot state.
           type: boolean
         stopHotWaterAtWeight:
           description: When true (default) and a scale is connected, hot water dispensing tares the scale and stops at the configured hot-water volume target treated as grams. The machine's own volume/time stop remains a backstop. Ignored in full gateway mode (a skin owns the machine). Set false to use only the machine's native volume/time stop.
@@ -4914,7 +5338,7 @@ components:
           type: array
           items:
             type: string
-            enum: [machine, scale, sensor]
+            enum: [machine, scale, sensor, bengle]
           nullable: true
         themeMode:
           description: App theme mode
@@ -4958,6 +5382,9 @@ components:
           example: "disabled"
         blockOnNoScale:
           description: When true, shots will be blocked from starting if no scale is connected.
+          type: boolean
+        blockTareDuringShot:
+          description: When true, PUT /api/v1/scale/tare is rejected (400) while an app-tracked espresso shot is actively brewing, to prevent a stray programmatic tare from ruining stop-at-weight mid-pour. Default false. Does not affect the shot sequencer's own arm-before-pour tare, nor a manual tare via the scale's physical button. Full gateway mode is an explicit policy exemption — the skin owns the shot there, so this is ignored regardless of any app-tracked shot state.
           type: boolean
         stopHotWaterAtWeight:
           description: When true (default) and a scale is connected, hot water dispensing tares the scale and stops at the configured hot-water volume target treated as grams. The machine's own volume/time stop remains a backstop. Ignored in full gateway mode (a skin owns the machine).
@@ -5004,7 +5431,7 @@ components:
           type: array
           items:
             type: string
-            enum: [machine, scale, sensor]
+            enum: [machine, scale, sensor, bengle]
         themeMode:
           description: App theme mode
           type: string
@@ -5243,6 +5670,38 @@ components:
           description: Rinse flow rate
           example: 6.0
 
+    ShotAnnotations:
+      type: object
+      nullable: true
+      description: |
+        Post-shot measurements, extraction data, ratings, notes, and custom data.
+        On shot updates, null clears the complete annotations object.
+      properties:
+        actualDoseWeight:
+          type: number
+          nullable: true
+        actualYield:
+          type: number
+          nullable: true
+        drinkTds:
+          type: number
+          nullable: true
+        drinkEy:
+          type: number
+          nullable: true
+        enjoyment:
+          type: number
+          nullable: true
+        espressoNotes:
+          type: string
+          nullable: true
+          description: Null clears the note and its legacy shotNotes alias on update.
+        extras:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Null clears custom data and its legacy metadata alias on update.
+
     ShotRecord:
       type: object
       properties:
@@ -5256,6 +5715,8 @@ components:
             $ref: "#/components/schemas/ShotSnapshot"
         workflow:
           $ref: "#/components/schemas/WorkflowRequest"
+        annotations:
+          $ref: "#/components/schemas/ShotAnnotations"
         stopReason:
           type: string
           nullable: true
@@ -5272,24 +5733,14 @@ components:
         shotNotes:
           type: string
           nullable: true
-          description: Optional notes about the shot (e.g., tasting notes, observations)
+          deprecated: true
+          description: "Deprecated request alias for annotations.espressoNotes; response value mirrors the canonical field"
         metadata:
           type: object
           nullable: true
           additionalProperties: true
-          description: |
-            Optional flexible metadata dictionary for future extensibility.
-            Can store arbitrary key-value pairs such as:
-            - rating: numerical rating (1-5)
-            - tags: array of strings for categorization
-            - favorite: boolean flag
-            - barista: string name
-            - customFields: any application-specific data
-          example:
-            rating: 4.5
-            tags: ["morning", "sweet"]
-            favorite: true
-            barista: "Alice"
+          deprecated: true
+          description: "Deprecated request alias for annotations.extras; response value mirrors the canonical field"
 
     ShotRecordSummary:
       type: object
@@ -5304,32 +5755,7 @@ components:
         workflow:
           $ref: "#/components/schemas/WorkflowRequest"
         annotations:
-          type: object
-          nullable: true
-          description: Post-shot annotations (enjoyment, tasting notes, extraction data)
-          properties:
-            actualDoseWeight:
-              type: number
-              nullable: true
-            actualYield:
-              type: number
-              nullable: true
-            drinkTds:
-              type: number
-              nullable: true
-            drinkEy:
-              type: number
-              nullable: true
-            enjoyment:
-              type: number
-              nullable: true
-            espressoNotes:
-              type: string
-              nullable: true
-            extras:
-              type: object
-              nullable: true
-              additionalProperties: true
+          $ref: "#/components/schemas/ShotAnnotations"
         stopReason:
           type: string
           nullable: true
@@ -5341,13 +5767,13 @@ components:
           type: string
           nullable: true
           deprecated: true
-          description: "Legacy field — use annotations.espressoNotes instead"
+          description: "Legacy response alias mirroring annotations.espressoNotes"
         metadata:
           type: object
           nullable: true
           additionalProperties: true
           deprecated: true
-          description: "Legacy field — use annotations.extras instead"
+          description: "Legacy response alias mirroring annotations.extras"
 
     ShotSnapshot:
       type: object
@@ -5597,7 +6023,7 @@ components:
         sourceUrl:
           type: string
           nullable: true
-          description: Source URL or identifier (e.g., 'github_release:owner/repo@v1.0.0')
+          description: Source URL or identifier (e.g., 'github_release:owner/repo@v1.0.0' or 'github_branch:owner/repo@main')
         lastModified:
           type: string
           nullable: true
@@ -5693,6 +6119,10 @@ components:
       type: object
       description: Result of importing a single data section from an archive
       properties:
+        status:
+          type: string
+          enum: [complete, partial, failed]
+          description: Semantic result for this section. Errors with progress are partial; errors without progress are failed.
         imported:
           type: integer
           description: Number of records successfully imported
@@ -5710,23 +6140,91 @@ components:
             type: string
           description: Warning messages (e.g., platform mismatch for device preferences)
 
-    SyncResult:
+    SyncPhaseResult:
       type: object
-      description: Result of a data sync operation. Contains per-phase results keyed by direction.
+      required: [status, complete, partial]
       properties:
-        pull:
-          type: object
-          description: Per-section results for the pull phase (present for pull and two_way modes)
-          additionalProperties:
-            $ref: "#/components/schemas/SectionImportResult"
-        push:
-          type: object
-          description: Per-section results for the push phase (present for push and two_way modes)
-          additionalProperties:
-            $ref: "#/components/schemas/SectionImportResult"
+        status:
+          type: string
+          enum: [complete, partial, failed, skipped]
+        complete:
+          type: boolean
+        partial:
+          type: boolean
         error:
           type: string
-          description: Error message if a phase failed (present in 207 responses)
+        message:
+          type: string
+        reason:
+          type: string
+        statusCode:
+          type: integer
+          format: int32
+
+    SyncLegacyPhaseResult:
+      type: object
+      required: [error, message]
+      description: Fatal phase details preserved at the legacy pull or push path
+      properties:
+        status:
+          oneOf:
+            - type: string
+              enum: [complete, partial, failed, skipped]
+            - type: integer
+              format: int32
+        complete:
+          type: boolean
+        partial:
+          type: boolean
+        error:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+        statusCode:
+          type: integer
+          format: int32
+
+    SyncResult:
+      type: object
+      required: [status, complete, partial, mode, phases]
+      description: |
+        Semantic result of a data sync operation. Direct section results are
+        preserved under pull and push for compatibility. Phase metadata is
+        additive under phases.
+      properties:
+        status:
+          type: string
+          enum: [complete, partial, failed]
+        complete:
+          type: boolean
+        partial:
+          type: boolean
+        mode:
+          type: string
+          enum: [pull, push, two_way]
+        pull:
+          oneOf:
+            - type: object
+              description: Per-section results for the pull phase, preserved at direct paths
+              additionalProperties:
+                $ref: "#/components/schemas/SectionImportResult"
+            - $ref: "#/components/schemas/SyncLegacyPhaseResult"
+        push:
+          oneOf:
+            - type: object
+              description: Per-section results for the push phase, preserved at direct paths
+              additionalProperties:
+                $ref: "#/components/schemas/SectionImportResult"
+            - $ref: "#/components/schemas/SyncLegacyPhaseResult"
+        phases:
+          type: object
+          properties:
+            pull:
+              $ref: "#/components/schemas/SyncPhaseResult"
+            push:
+              $ref: "#/components/schemas/SyncPhaseResult"
 
     WorkflowContext:
       type: object
@@ -6122,3 +6620,148 @@ components:
           type: integer
           description: Offset used
           example: 0
+
+    FirmwareCatalog:
+      type: object
+      description: Bundled firmware catalog with per-artifact eligibility.
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/FirmwareCatalogEntry"
+        machine:
+          type: object
+          nullable: true
+          description: Connected machine info (null when no machine connected)
+          properties:
+            model:
+              type: string
+              example: DE1Pro
+            build:
+              type: integer
+              nullable: true
+              example: 1351
+        recommendedArtifactId:
+          type: string
+          nullable: true
+          example: de1-1352
+        updateAvailable:
+          type: boolean
+          nullable: true
+        operation:
+          $ref: "#/components/schemas/FirmwareOperationState"
+
+    FirmwareCatalogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          example: de1-1352
+        source:
+          type: string
+          enum: [bundled]
+        machineFamily:
+          type: string
+          example: de1
+        supportedModels:
+          type: array
+          items:
+            type: string
+        build:
+          type: integer
+          example: 1352
+        versionLabel:
+          type: string
+          example: "1352"
+        imageFormat:
+          type: string
+          example: de1
+        byteLength:
+          type: integer
+          example: 123456
+        sha256:
+          type: string
+          example: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        channel:
+          type: string
+          example: stable
+        releaseNotes:
+          type: string
+        eligibility:
+          $ref: "#/components/schemas/FirmwareEligibility"
+
+    FirmwareEligibility:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [applicable, notApplicable, unknown]
+        reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - machine_not_connected
+              - machine_model_unknown
+              - installed_build_unknown
+              - model_incompatible
+              - artifact_invalid
+              - not_newer
+
+    FirmwareOperationState:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [idle, erasing, uploading, verifying, cancelling]
+          example: idle
+
+    FirmwareCancellationResponse:
+      type: object
+      required: [operation]
+      properties:
+        operation:
+          $ref: "#/components/schemas/FirmwareOperationState"
+
+    FirmwareProgressEvent:
+      type: object
+      description: |
+        NDJSON event streamed during a firmware update. One event per line.
+        The stream stays open while final verification is pending.
+
+        Successful sequence:
+
+        1. `{"status":"erasing","progress":0.0}`
+        2. Zero or more `{"status":"uploading","progress":0.45}` events
+        3. `{"status":"done","progress":1.0}`
+
+        Failure sequence:
+
+        1. `{"status":"erasing","progress":0.0}`
+        2. Zero or more `{"status":"uploading","progress":0.45}` events
+        3. `{"status":"error","progress":-1.0,"error":"..."}`
+
+        An `error` event may terminate the sequence after any previously
+        emitted events. Verification failure or timeout emits `error`, never
+        `done`.
+
+        Upload progress is emitted in approximately one-percent increments.
+        The final `uploading` value may be close to or equal to `1.0`. Only the
+        subsequent `done` event indicates that CRC verification completed
+        successfully. The erase and CRC verification phases do not emit
+        intermediate percentage updates. The stream emits `erasing` when the
+        operation starts and remains silent during verification until either
+        `done` or `error`.
+      properties:
+        status:
+          type: string
+          enum: [erasing, uploading, done, error]
+          example: uploading
+        progress:
+          type: number
+          format: float
+          description: 0.0 to 1.0 for normal events; -1.0 for error events
+          example: 0.45
+        error:
+          type: string
+          description: Error message (only present on status=error)
