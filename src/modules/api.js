@@ -4,6 +4,7 @@ import { createSocketSlot } from './socket-slot.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { buildCalibrateBody, calResponseHasBody } from './loadcell-cal.js';
 import { deriveDisplayAction } from './screensaver-policy.js';
+import { splitNdjson, advanceFirmwareState, initialFirmwareState } from './firmware-progress.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
 export const REA_PORT = 8080;
@@ -1789,13 +1790,49 @@ export async function setWaterLevels(refillLevel) {
     return true;
 }
 
-export async function uploadFirmware(firmwareFile) {
+// Pushes the raw file and drives onProgress from the NDJSON stream the endpoint
+// answers with (erasing -> uploading* -> done | error). Resolves on `done`,
+// rejects on `error` or a truncated stream — a stream that ends without `done`
+// means CRC verification never confirmed, so it is NOT a success.
+export async function uploadFirmware(firmwareFile, onProgress) {
     const response = await fetch(`${API_BASE_URL}/machine/firmware`, {
         method: 'POST',
         body: firmwareFile,
     });
-    if (!response.ok) throw new Error('Failed to upload firmware');
-    return response.json();
+    if (!response.ok) {
+        const byStatus = {
+            400: 'Firmware file is empty',
+            409: 'A firmware update is already in progress',
+            503: 'No machine connected',
+        };
+        throw new Error(byStatus[response.status] || `Failed to upload firmware (${response.status})`);
+    }
+
+    // No streaming body (old middleware, or a proxy that buffered it): the POST
+    // still completed, so treat it as a legacy success rather than failing.
+    if (!response.body?.getReader) return;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let state = initialFirmwareState;
+
+    for (;;) {
+        const { value, done: streamDone } = await reader.read();
+        const chunk = streamDone ? '' : decoder.decode(value, { stream: true });
+        const { events, rest } = splitNdjson(buffer, chunk, streamDone);
+        buffer = rest;
+
+        for (const event of events) {
+            state = advanceFirmwareState(state, event);
+            if (state.phase) onProgress?.(state);
+        }
+        if (state.phase === 'error') throw new Error(state.error);
+        if (state.phase === 'done') return;
+        if (streamDone) break;
+    }
+
+    throw new Error('Firmware stream ended before the update was confirmed');
 }
 
 export async function getPlugins() {

@@ -15,6 +15,7 @@ import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.j
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { setMachineModel, isBengleMachine } from './machine.js';
 import { resolveMilkProbePresence } from './steam-mode.js';
+import { readTimeToReadyFrame, heatingSecondsLeft } from './heating-countdown.js';
 import { isCupWarmerOn, readCupWarmerTarget, resolvePrewarm, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { initTimePicker } from './time-picker-modal.js';
@@ -186,12 +187,10 @@ let latestScaleWeightFlow = null; // server-smoothed g/s from ScaleSnapshot; nul
 let latestScaleBattery = null;
 window.getLatestScaleBattery = () => latestScaleBattery;
 window.getIsScaleConnected = () => isScaleConnected;
-let heatingStartTime = null;
-let heatingStartTemp = 0;
 let isConnectingScale = false;
-let timeToReadyMessage = null;
-let isHeatingFromTimeToReady = false; // Flag to track if we're currently in a heating phase from time-to-ready
-let timeToReadyStatus = null; // Track the status from time-to-ready data
+// Latest time-to-ready estimate ({ deadline, at } | null). The ttr socket owns the
+// number, the DE1 snapshot owns "am I heating" — see heating-countdown.js.
+let ttrHeating = null;
 
 // Scale reconnect text state — driven by /ws/v1/devices scanning flag + wake grace window
 let isScaleScanning = false;
@@ -472,36 +471,9 @@ async function pollForUploadConfirmation(shotId, timeout = 30000) {
     return new Promise(checkUploadStatus);
 }
 
+// Records the estimate only — handleData does the painting.
 function handleTimeToReadyData(data) {
-    if (data.status === 'heating' && data.remainingTimeMs > 0) {
-        const totalSeconds = Math.round(data.remainingTimeMs / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        timeToReadyStatus = data.status; // Store the status globally
-
-        // Check if we're close to reaching the target (within 10 seconds)
-        if (totalSeconds <= 15) {
-            timeToReadyStatus = 'reached';
-        }
-
-        // logger.debug("time to read data",data);
-        if (minutes > 5) {
-            timeToReadyMessage = `Heating`;
-        } else {
-            timeToReadyMessage = `Heating: ${totalSeconds}s remaining`;
-        }
-
-        // Update the machine status directly when heating info is received
-        isHeatingFromTimeToReady = true; // Set flag to indicate we're in a heating phase
-    } else {
-        timeToReadyMessage = null;
-        timeToReadyStatus = data.status; // Update status to reflect current state
-        isHeatingFromTimeToReady = false; // Clear flag when not heating
-
-        // When heating is complete (reached), let handleData take over
-        if (data.status === 'reached') {
-            timeToReadyStatus = 'reached';
-        }
-    }
+    ttrHeating = readTimeToReadyFrame(data, Date.now());
 }
 
 // The screensaver is a pure function of the machine's CONFIRMED state.
@@ -578,12 +550,14 @@ function handleData(data) {
     const { state, substate } = data.state;
     const wasHeating = isHeatingState(previousState.state, previousState.substate);
     const isHeating = isHeatingState(state, substate);
+    // 0 = no fresh estimate; the snapshot still decides whether we're heating at all.
+    const heatingSeconds = isHeating ? heatingSecondsLeft(ttrHeating, Date.now()) : 0;
     let statusString;
 
-    // Reset heating timer if state changes FROM heating
+    // Drop a stale estimate as soon as the machine leaves any heating state, so a
+    // later heat-up can't briefly inherit the previous one.
     if (wasHeating && !isHeating) {
-        heatingStartTime = null;
-        heatingStartTemp = 0;
+        ttrHeating = null;
     }
 
     // Determine the status string based on state and substate
@@ -594,14 +568,10 @@ function handleData(data) {
         statusString = "Sleeping";
     } else {
         applyScreensaverAction(state);
-        if (isHeating && isHeatingFromTimeToReady) {
-            // When heating and we're in a heating phase from time-to-ready,
-            // rely solely on timeToReadyMessage from the time-to-ready WebSocket
-            // Don't show temperature details here anymore
-            statusString = timeToReadyMessage || "Heating";
-        } else if (isHeating) {
-            // When heating but not in a time-to-ready phase, show generic heating
-            statusString = "Heating";
+        if (isHeating) {
+            // English on purpose: ui.updateMachineStatus pattern-matches this string
+            // and translates at render time (ui.js heatingStatusParts).
+            statusString = heatingSeconds > 0 ? `Heating: ${heatingSeconds}s remaining` : "Heating";
         } else {
             const formattedState = formatStateString(state);
             const formattedSubstate = formatStateString(substate);
@@ -626,7 +596,9 @@ function handleData(data) {
     // Detect DE1 reconnection
     if (state !== MachineState.ERROR && !isDe1Connected) {
         isDe1Connected = true;
-        ui.updateMachineStatus({ status: statusString }); // Update status to reflect actual machine state
+        // No paint here: the full-payload updateMachineStatus below runs in this same
+        // tick. Painting statusString without the isHeating flags made the reconnect
+        // frame fall through to the generic renderer (plain text, no coloured spans).
         if (state !== MachineState.SLEEPING) {
             logger.info('DE1 machine reconnected. Loading initial data.');
             loadInitialData(); // Refresh all configuration data
@@ -767,7 +739,7 @@ function handleData(data) {
         timeValue: data.elapsedTime, // Use elapsed time from data if available
         isClickable: (substate === 'preinfusion' || substate === 'pouring'), // Make preinfusion/pouring steps clickable
         isHeating: isHeating, // Pass heating state to UI
-        isHeatingFromTimeToReady: isHeatingFromTimeToReady, // Pass time-to-ready heating state to UI
+        isHeatingFromTimeToReady: heatingSeconds > 0, // countdown available -> render the two-colour form
         steamTemperature: data.steamTemperature // Steam boiler temp — gates the steam "Heating" message
     });
     ui.updateSleepButton(state);
@@ -918,17 +890,31 @@ async function handleWeightClick() {
         const maxAttempts = 15;
         const poll = setInterval(async () => {
             attempts++;
+
+            // Checked BEFORE the give-up branch: weight arriving on the last tick
+            // must still count as success, not as a "Scale Not Found" toast.
+            //
+            // Weight already flowing = connected, whatever the transport. A USB or
+            // integrated scale never produces a `state: "connected"` row in
+            // /devices (no BLE connect handshake — it sits at "discovered"), so
+            // the devices check below would run out the clock and toast "Scale
+            // Not Found" at a scale that is plainly working. handleScaleData is
+            // the app's authority on this everywhere else; defer to it here too.
+            if (isScaleConnected) {
+                clearInterval(poll);
+                isConnectingScale = false;
+                return;
+            }
+
             if (attempts > maxAttempts) {
                 clearInterval(poll);
                 ui.showToast('Scale Not Found', 3000, 'error');
                 isConnectingScale = false;
                 renderScaleDisconnectedText();
-                // If scale connection failed, hide the container if it was never truly connected
-                if (!isScaleConnected) {
-                    const scaleInfoContainer = document.getElementById('scale-info-container');
-                    if (scaleInfoContainer) {
-                        scaleInfoContainer.style.display = 'none';
-                    }
+                // Never truly connected, so hide the container.
+                const scaleInfoContainer = document.getElementById('scale-info-container');
+                if (scaleInfoContainer) {
+                    scaleInfoContainer.style.display = 'none';
                 }
                 return;
             }

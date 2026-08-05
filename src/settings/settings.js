@@ -128,6 +128,13 @@ function escapeHtml(str) {
 
 let screensaverImagesCache = [];
 
+// A firmware upload outlives the page that started it: the fetch streams on
+// while the settings router swaps HTML underneath. These two survive the swap so
+// a re-render of the Firmware page can repaint the bar and keep Upload disabled
+// instead of pretending nothing is happening. See window.uploadFirmware.
+let firmwareUploadInFlight = false;
+let lastFirmwareProgress = null;
+
 // Enhanced cache for settings data with loading states
 let settingsCache = {
     rea: null,
@@ -5205,8 +5212,28 @@ export function renderMachineInformationSettings() {
     `;
 }
 
+// Phase -> user-facing line. Shared by the live progress callback and the page
+// re-render, so a rejoined update reads identically to one watched throughout.
+function firmwareProgressLabel(progress) {
+    if (!progress) return '';
+    const { phase, percent } = progress;
+    return {
+        erasing: getTranslation('Erasing...'),
+        // 100% here is "bytes sent", not "update applied" — only `done` is that.
+        uploading: percent >= 100
+            ? getTranslation('Verifying...')
+            : `${getTranslation('Uploading...')} ${percent}%`,
+        done: getTranslation('Firmware update complete'),
+    }[phase] || '';
+}
+
 export function renderFirmwareUpdateSettings() {
     const appInfo = settingsCache.appInfo;
+    // Currently installed DE1 firmware, so the version you're about to overwrite is
+    // on the same page as the Upload button (Machine Info also shows it, :5167).
+    // Read from the cache only — no fetch: this page isn't gated on machineInfo
+    // loading, so it can render before the info lands, hence the em dash fallback.
+    const de1Version = settingsCache.machineInfo?.version;
     const appInfoDetails = appInfo ? `
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
@@ -5237,6 +5264,11 @@ export function renderFirmwareUpdateSettings() {
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
+            <div class="content-stretch flex items-center justify-between relative w-full">
+                <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]"><span data-i18n-key="Firmware">Firmware</span> <span data-i18n-key="Version">Version</span></p>
+                <p id="de1-firmware-version" class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${de1Version || '—'}</p>
+            </div>
+
             <div class="content-stretch flex flex-col items-start relative w-full">
                 <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
                     <div class="content-stretch flex items-center justify-between relative w-full">
@@ -5249,8 +5281,8 @@ export function renderFirmwareUpdateSettings() {
                             ${getTranslation('Select')} ${getTranslation('File')}
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.">
-                        Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="Select a firmware file to upload to the machine. Restart the machine once the update is done.">
+                        Select a firmware file to upload to the machine. Restart the machine once the update is done.
                     </p>
                 </div>
             </div>
@@ -5263,16 +5295,29 @@ export function renderFirmwareUpdateSettings() {
                         </div>
                         <button id="firmware-upload-btn" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                                 disabled onclick="window.uploadFirmware()" data-i18n-key="Upload">
-                            Upload
+                            ${firmwareUploadInFlight ? getTranslation('Uploading...') : 'Upload'}
                         </button>
                     </div>
                     <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="This may take several minutes. Do not power off the machine during the update.">
                         This may take several minutes. Do not power off the machine during the update.
                     </p>
+                    <!-- Filled by window.uploadFirmware from the NDJSON progress stream. Hidden
+                         via inline display, not the hidden attribute: the flex utility would override it.
+                         Seeded from lastFirmwareProgress so leaving this page and coming back
+                         mid-update rejoins the bar where it is, not at zero-and-hidden. -->
+                    <div id="firmware-progress" class="w-full flex flex-col gap-2" style="display:${lastFirmwareProgress ? 'flex' : 'none'}">
+                        <p id="firmware-progress-label" class="text-[22px] text-[var(--text-primary)]">${firmwareProgressLabel(lastFirmwareProgress)}</p>
+                        <div class="w-full h-[10px] rounded-full bg-[#c9c9c9] overflow-hidden">
+                            <div id="firmware-progress-bar" class="h-full bg-[#385a92] transition-[width] duration-200" style="width:${lastFirmwareProgress?.phase === 'erasing' ? 0 : (lastFirmwareProgress?.percent ?? 0)}%"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <input type="file" id="firmware-file-input" class="hidden" accept=".bin,.fw,.dfu"
+            <!-- No accept filter: firmware ships as .dat as well as .bin/.fw/.dfu, and a
+                 picker that hides the file you were given is worse than no filter at all.
+                 The endpoint validates the payload (400 on empty, error event on bad CRC). -->
+            <input type="file" id="firmware-file-input" class="hidden"
                    onchange="window.onFirmwareFileSelected(this)">
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -6654,6 +6699,14 @@ export async function initializeSettings() {
     };
 
     window.uploadFirmware = async function() {
+        // One POST holds the NDJSON stream open for the whole update, so a second
+        // click (e.g. after navigating away and back, which re-renders the button
+        // enabled) would only earn a 409 from the endpoint.
+        if (firmwareUploadInFlight) {
+            ui.showToast(getTranslation('A firmware update is already in progress'), 4000, 'info');
+            return;
+        }
+
         const input = document.getElementById('firmware-file-input');
         const file = input?.files[0];
         if (!file) return;
@@ -6664,17 +6717,62 @@ export async function initializeSettings() {
             uploadBtn.textContent = getTranslation('Uploading...');
         }
 
+        // Erase and CRC verification emit no percentages, so the bar sits still at
+        // both ends of the upload; the label names the phase so a stalled-looking
+        // bar reads as "Erasing…" / "Verifying…" rather than as a hang.
+        //
+        // Elements are looked up per tick, not cached: the settings router swaps
+        // page HTML while the upload keeps streaming, so a cached node goes stale
+        // (detached) the moment the user leaves and comes back.
+        const showProgress = ({ phase, percent }) => {
+            lastFirmwareProgress = { phase, percent };
+            const panel = document.getElementById('firmware-progress');
+            const label = document.getElementById('firmware-progress-label');
+            const bar = document.getElementById('firmware-progress-bar');
+            if (panel) panel.style.display = 'flex';
+            if (label) label.textContent = firmwareProgressLabel(lastFirmwareProgress);
+            if (bar) bar.style.width = `${phase === 'erasing' ? 0 : percent}%`;
+        };
+
+        firmwareUploadInFlight = true;
+        // A reload or a nav away aborts the POST mid-flash, which bricks nothing
+        // but leaves the machine on a half-written image until it is redone. The
+        // browser shows its own generic confirm here; the string is for the hosts
+        // that surface it.
+        const blockUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
+        window.addEventListener('beforeunload', blockUnload);
+        // Erase and verify are minutes of silence — long enough for the tablet to
+        // sleep and background the webview if the user has the lock switched off.
+        // Only touched when it was off, and put back the way it was found.
+        const wakeLockWasOff = !isWakeLockEnabled();
+        if (wakeLockWasOff) await enableWakeLock().catch(e => logger.warn('Wake-lock for firmware upload failed:', e));
+
         try {
             ui.showToast(`${getTranslation('Uploading...')} firmware — this may take several minutes`, 10000, 'info');
-            await uploadFirmware(file);
-            ui.showToast('Firmware uploaded successfully. Restart the machine to apply.', 8000, 'success');
+            showProgress({ phase: 'erasing', percent: 0 });
+            await uploadFirmware(file, showProgress);
+            showProgress({ phase: 'done', percent: 100 });
+            ui.showToast('Firmware update done. Restart the machine.', 8000, 'success');
         } catch (error) {
             logger.error('Error uploading firmware:', error);
-            ui.showToast(`Firmware upload failed: ${error.message}`, 5000, 'error');
-            if (uploadBtn) {
-                uploadBtn.disabled = false;
-                uploadBtn.textContent = getTranslation('Upload');
+            lastFirmwareProgress = null;
+            const label = document.getElementById('firmware-progress-label');
+            const bar = document.getElementById('firmware-progress-bar');
+            if (label) {
+                label.textContent = `${getTranslation('Firmware update failed')}: ${error.message}`;
+                label.classList.add('text-[#da515e]');
             }
+            if (bar) bar.style.width = '0%';
+            ui.showToast(`Firmware upload failed: ${error.message}`, 5000, 'error');
+            const btn = document.getElementById('firmware-upload-btn');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = getTranslation('Upload');
+            }
+        } finally {
+            firmwareUploadInFlight = false;
+            window.removeEventListener('beforeunload', blockUnload);
+            if (wakeLockWasOff) await disableWakeLock().catch(() => {});
         }
     };
 
