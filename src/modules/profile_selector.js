@@ -1,4 +1,4 @@
-import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI } from './profileManager.js';
+import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, getActiveProfileId, translateProfileTitle, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI } from './profileManager.js';
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
@@ -587,6 +587,21 @@ function showProfileContextMenu(key, profileRecord, anchorEl) {
     openContextMenu(anchorEl, items);
 }
 
+// Key of the profile the machine is currently loaded with, so opening the
+// selector lands on it. activeProfileId is only synced when that profile also
+// sits on a favorite button (app.js), so fall back to the title rendered in
+// #profile-name — the router hides #main-page rather than removing it, so the
+// heading is still readable from here.
+function findActiveProfileKey() {
+    const id = getActiveProfileId();
+    if (id) return id;
+    const shownTitle = document.getElementById('profile-name')?.textContent.trim();
+    if (!shownTitle) return null;
+    return Object.keys(availableProfiles).find(
+        key => translateProfileTitle(availableProfiles[key]?.profile?.title ?? '') === shownTitle
+    ) ?? null;
+}
+
 function renderProfiles() {
     console.log('renderProfiles: Starting to render profiles, isShowingHidden =', isShowingHidden);
     logger.info('Profile Editor: Rendering profiles...');
@@ -769,18 +784,27 @@ function renderProfiles() {
 
         console.log('renderProfiles: Total visible profiles:', visibleProfileCount);
         if (visibleProfileCount > 0 && !selectedProfileKey) {
-            // Honor a return-from-editor hint before falling back to first item.
+            // Honor a return-from-editor hint, then the loaded profile, before
+            // falling back to first item.
             const lastEditedKey = sessionStorage.getItem('lastEditedProfileKey');
             let initialItem = null;
             if (lastEditedKey) {
                 initialItem = container.querySelector(`[data-profile-key="${CSS.escape(lastEditedKey)}"]`);
                 sessionStorage.removeItem('lastEditedProfileKey');
             }
+            if (!initialItem) {
+                const activeKey = findActiveProfileKey();
+                if (activeKey) initialItem = container.querySelector(`[data-profile-key="${CSS.escape(activeKey)}"]`);
+            }
             if (!initialItem) initialItem = container.querySelector('[data-profile-key]');
             if (initialItem) {
                 initialItem.classList.add('bg-[#385a92]', 'text-white', 'rounded-[8px]');
                 initialItem.setAttribute('aria-selected', 'true');
                 updateSelectedProfileView(initialItem);
+                // The list is taller than the pane and sorted alphabetically, so the
+                // pre-selected item is usually out of view. 'nearest' leaves an
+                // already-visible item alone instead of yanking the list.
+                initialItem.scrollIntoView({ block: 'nearest' });
             }
         }
 

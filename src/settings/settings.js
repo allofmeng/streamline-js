@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -7,6 +7,7 @@ import { loadPage } from '../modules/router.js'; // Singular and correctly forma
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
+import { summarizeFirmwareCatalog } from '../modules/firmware-progress.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, cupWarmerViewMode, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
 import { clampCalWeight, calActionState, CAL_WEIGHT_DEFAULT_G, CAL_WEIGHT_MIN_G, CAL_WEIGHT_MAX_G } from '../modules/loadcell-cal.js';
@@ -155,6 +156,8 @@ let settingsCache = {
     machineInfo: null,
     machineInfoLoading: false,
     machineInfoError: null,
+    // summarizeFirmwareCatalog output; null = not checked yet this session.
+    firmwareCheck: null,
     skinInfo: null,
     skinInfoLoading: false,
     skinInfoError: null,
@@ -330,6 +333,7 @@ function updateSettingsContentArea(category) {
         }
         if (category === 'firmware' || category === 'firmwareupdate') {
             setTimeout(initAppUpdateSection, 0);
+            setTimeout(initFirmwareCheck, 0);
         }
         if (category === 'quickstart') {
             setTimeout(initQuickstartGuideSettings, 0);
@@ -1214,14 +1218,16 @@ export function renderUsbChargerModeSettings(settings) {
             <div class="flex items-center justify-between gap-[24px] w-full">
                 <div class="flex flex-col gap-[4px]">
                     <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power ${(settings.usb === true || settings.usb === 'enable') ? 'off' : 'on'}</p>
+                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power</p>
                     </div>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                    <!-- Default on: an unset usb value means the machine never had
+                         the setting written, and USB power is on out of the box. -->
                     <input type="checkbox" id="usbChargerModeToggle"
                            class="sr-only peer"
-                           ${(settings.usb === true || settings.usb === 'enable') ? 'checked' : ''}
-                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable'); document.getElementById('usbChargerModeLabel').textContent = 'USB Power ' + (this.checked ? 'off' : 'on')">
+                           ${(settings.usb === false || settings.usb === 'disable') ? '' : 'checked'}
+                           onchange="window.updateDe1Setting('usb', this.checked ? 'enable' : 'disable')">
                     <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                     <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                 </label>
@@ -5212,18 +5218,95 @@ export function renderMachineInformationSettings() {
     `;
 }
 
+// Why a check could not reach a verdict, in the user's terms. Keys are the
+// FirmwareEligibility.reasons enum (rest_v1.yml).
+const FIRMWARE_REASON_TEXT = {
+    machine_not_connected: 'No machine connected',
+    machine_model_unknown: 'Machine model unknown',
+    installed_build_unknown: 'Installed build unknown',
+    model_incompatible: 'Not compatible with this machine',
+    artifact_invalid: 'Bundled firmware failed validation',
+    unreachable: 'Could not reach the firmware service',
+};
+
+// The update-check block under the Firmware Version row. Rendered from the pure
+// summary so the four outcomes stay visually distinct — in particular "could not
+// check" must never look like "up to date".
+function renderFirmwareCheckBlock(summary) {
+    if (!summary) {
+        return `<p class="text-[22px] text-[var(--text-secondary)]">${getTranslation('Check for firmware updates')}…</p>`;
+    }
+
+    const { status, installedBuild, latestBuild, latestLabel, releaseNotes, reason, operationState } = summary;
+    const installed = installedBuild ?? '—';
+
+    if (operationState && operationState !== 'idle') {
+        return `<p class="text-[22px] font-bold text-[#385a92]">${getTranslation('A firmware update is already in progress')} (${escapeHtml(operationState)})</p>`;
+    }
+
+    const pill = (text, cls) =>
+        `<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full ${cls}">${text}</span>`;
+
+    if (status === 'updateAvailable') {
+        return `
+            <div class="flex flex-col gap-[10px]">
+                <div class="flex items-center gap-[14px] flex-wrap">
+                    ${pill(getTranslation('Firmware update available'), 'bg-green-500/15 text-green-600')}
+                    <span class="text-[22px] text-[var(--text-primary)]">${installed} &rarr; ${escapeHtml(String(latestLabel ?? latestBuild ?? '—'))}</span>
+                </div>
+                ${releaseNotes ? `<p class="text-[20px] text-[var(--text-secondary)] leading-[1.4]">${escapeHtml(releaseNotes)}</p>` : ''}
+            </div>`;
+    }
+
+    if (status === 'upToDate') {
+        return `<div class="flex items-center gap-[14px] flex-wrap">
+                    ${pill(getTranslation('Up to date'), 'bg-[#385a92]/15 text-[#385a92]')}
+                    <span class="text-[22px] text-[var(--text-secondary)]">${getTranslation('Build')} ${installed}</span>
+                </div>`;
+    }
+
+    // Installed build is newer than anything bundled — a beta machine, not a
+    // failed check. Saying "up to date" here would be a guess.
+    if (status === 'ahead') {
+        return `<div class="flex items-center gap-[14px] flex-wrap">
+                    ${pill(getTranslation('Newer than bundled'), 'bg-amber-500/15 text-amber-600')}
+                    <span class="text-[22px] text-[var(--text-secondary)]">${getTranslation('Build')} ${installed} &middot; ${getTranslation('bundled')} ${latestBuild ?? '—'}</span>
+                </div>`;
+    }
+
+    const why = FIRMWARE_REASON_TEXT[reason];
+    return `<div class="flex items-center gap-[14px] flex-wrap">
+                ${pill(getTranslation('Could not check'), 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-70')}
+                ${why ? `<span class="text-[22px] text-[var(--text-secondary)]">${getTranslation(why)}</span>` : ''}
+            </div>`;
+}
+
+// Fetch + paint the check. Fired from the firmware page's render hook, not from
+// preloadSettings: no reason to hit the endpoint on every settings open when
+// only this one page shows the result.
+async function initFirmwareCheck() {
+    const paint = () => {
+        const section = document.getElementById('firmware-check-section');
+        if (section) section.innerHTML = renderFirmwareCheckBlock(settingsCache.firmwareCheck);
+    };
+    settingsCache.firmwareCheck = null;
+    paint();
+    settingsCache.firmwareCheck = summarizeFirmwareCatalog(await getFirmwareCatalog());
+    paint();
+}
+
 // Phase -> user-facing line. Shared by the live progress callback and the page
 // re-render, so a rejoined update reads identically to one watched throughout.
 function firmwareProgressLabel(progress) {
     if (!progress) return '';
     const { phase, percent } = progress;
     return {
-        erasing: getTranslation('Erasing...'),
+        erasing: `${getTranslation('Erase')}…`,
         // 100% here is "bytes sent", not "update applied" — only `done` is that.
         uploading: percent >= 100
-            ? getTranslation('Verifying...')
+            ? `${getTranslation('Check')}…`
             : `${getTranslation('Uploading...')} ${percent}%`,
-        done: getTranslation('Firmware update complete'),
+        done: getTranslation('Your DE1 firmware has been upgraded'),
     }[phase] || '';
 }
 
@@ -5235,81 +5318,76 @@ export function renderFirmwareUpdateSettings() {
     // loading, so it can render before the info lands, hence the em dash fallback.
     const de1Version = settingsCache.machineInfo?.version;
     const appInfoDetails = appInfo ? `
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
+                <div class="grid gap-[12px] sm:grid-cols-2">
+                    <div class="rounded-[10px] border border-[#c9c9c9] px-4 py-3 bg-[var(--box-color)]">
                         <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]" data-i18n-key="Version">Version</p>
                         <p class="text-[24px] font-['Inter:Regular',sans-serif]">${appInfo.version} (${appInfo.buildNumber})</p>
-                        <p class="text-[16px] text-[var(--text-secondary)]">Full: ${appInfo.fullVersion}</p>
-                        <p class="text-[16px] text-[var(--text-secondary)]">${formatBuildTimestamp(appInfo.buildTime)}</p>
+                        <p class="text-[16px] text-[var(--text-secondary)]">${appInfo.fullVersion} &middot; ${formatBuildTimestamp(appInfo.buildTime)}</p>
                     </div>
-                    <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
+                    <div class="rounded-[10px] border border-[#c9c9c9] px-4 py-3 bg-[var(--box-color)]">
                         <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]" data-i18n-key="Source">Source</p>
                         <p class="text-[24px] font-['Inter:Regular',sans-serif]">${appInfo.branch}</p>
-                        <p class="text-[16px] text-[var(--text-secondary)]">Commit: ${appInfo.commitShort}</p>
-                        <p class="text-[16px] text-[var(--text-secondary)]">App Store: ${appInfo.appStore ? 'Yes' : 'No'}</p>
+                        <p class="text-[16px] text-[var(--text-secondary)]">${appInfo.commitShort} &middot; App Store: ${appInfo.appStore ? 'Yes' : 'No'}</p>
                     </div>
                 </div>
             ` : `
-                <div class="rounded-[10px] border border-[#c9c9c9] p-4 bg-[var(--box-color)]">
+                <div class="rounded-[10px] border border-[#c9c9c9] px-4 py-3 bg-[var(--box-color)]">
                     <p class="text-[20px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]" data-i18n-key="Update info">Update info</p>
                     <p class="text-[24px] font-['Inter:Regular',sans-serif]" data-i18n-key="Fetching build metadata...">Fetching build metadata...</p>
                 </div>
             `;
 
     return `
-        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+        <div class="content-stretch flex flex-col gap-[22px] items-start relative w-full">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
                 <p class="leading-[1.2]" data-i18n-key="Firmware Update">Firmware Update</p>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
-            <div class="content-stretch flex items-center justify-between relative w-full">
-                <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]"><span data-i18n-key="Firmware">Firmware</span> <span data-i18n-key="Version">Version</span></p>
-                <p id="de1-firmware-version" class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${de1Version || '—'}</p>
+            <div class="content-stretch flex flex-col gap-[10px] relative w-full">
+                <div class="content-stretch flex items-center justify-between relative w-full">
+                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]"><span data-i18n-key="Firmware">Firmware</span> <span data-i18n-key="Version">Version</span></p>
+                    <p id="de1-firmware-version" class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">${de1Version || '—'}</p>
+                </div>
+                <!-- Filled by initFirmwareCheck from GET /machine/firmware. Seeded from
+                     the cache so returning to the page doesn't flash "Checking...". -->
+                <div id="firmware-check-section">${renderFirmwareCheckBlock(settingsCache.firmwareCheck)}</div>
             </div>
 
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="DE1 Firmware File">DE1 Firmware File</p>
-                            <p id="firmware-filename" class="font-['Inter:Regular',sans-serif] font-normal text-[20px] text-[var(--text-secondary)]" data-i18n-key="No file selected">No file selected</p>
-                        </div>
-                        <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold"
+            <!-- Pick and upload share one row: they are two halves of one action, and
+                 splitting them into two sections was most of the page's height. -->
+            <div class="content-stretch flex flex-col gap-[12px] items-start relative w-full">
+                <div class="content-stretch flex items-center justify-between gap-[20px] relative w-full">
+                    <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold not-italic relative text-[#385a92] text-[30px] min-w-0">
+                        <p class="leading-[1.2] whitespace-nowrap" data-i18n-key="DE1 Firmware File">DE1 Firmware File</p>
+                        <p id="firmware-filename" class="font-['Inter:Regular',sans-serif] font-normal text-[20px] text-[var(--text-secondary)] truncate" data-i18n-key="No file selected">No file selected</p>
+                    </div>
+                    <div class="flex items-center gap-[16px] flex-shrink-0">
+                        <button class="bg-[#385a92] h-[64px] px-[36px] rounded-[64px] text-white text-[24px] font-bold"
                                 onclick="document.getElementById('firmware-file-input').click()">
                             ${getTranslation('Select')} ${getTranslation('File')}
                         </button>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="Select a firmware file to upload to the machine. Restart the machine once the update is done.">
-                        Select a firmware file to upload to the machine. Restart the machine once the update is done.
-                    </p>
-                </div>
-            </div>
-
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Upload">Upload</p>
-                        </div>
-                        <button id="firmware-upload-btn" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled onclick="window.uploadFirmware()" data-i18n-key="Upload">
-                            ${firmwareUploadInFlight ? getTranslation('Uploading...') : 'Upload'}
+                        <button id="firmware-upload-btn" class="bg-[#385a92] h-[64px] px-[36px] rounded-[64px] text-white text-[24px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled onclick="window.uploadFirmware()">
+                            ${getTranslation(firmwareUploadInFlight ? 'Uploading...' : 'Upload')}
                         </button>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full pr-[220px]" data-i18n-key="This may take several minutes. Do not power off the machine during the update.">
-                        This may take several minutes. Do not power off the machine during the update.
-                    </p>
-                    <!-- Filled by window.uploadFirmware from the NDJSON progress stream. Hidden
-                         via inline display, not the hidden attribute: the flex utility would override it.
-                         Seeded from lastFirmwareProgress so leaving this page and coming back
-                         mid-update rejoins the bar where it is, not at zero-and-hidden. -->
-                    <div id="firmware-progress" class="w-full flex flex-col gap-2" style="display:${lastFirmwareProgress ? 'flex' : 'none'}">
-                        <p id="firmware-progress-label" class="text-[22px] text-[var(--text-primary)]">${firmwareProgressLabel(lastFirmwareProgress)}</p>
-                        <div class="w-full h-[10px] rounded-full bg-[#c9c9c9] overflow-hidden">
-                            <div id="firmware-progress-bar" class="h-full bg-[#385a92] transition-[width] duration-200" style="width:${lastFirmwareProgress?.phase === 'erasing' ? 0 : (lastFirmwareProgress?.percent ?? 0)}%"></div>
-                        </div>
+                </div>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.35] not-italic relative text-[var(--text-primary)] text-[22px] w-full" data-i18n-key="Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.">
+                    Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.
+                </p>
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.35] not-italic relative text-[var(--text-primary)] text-[22px] w-full" data-i18n-key="This may take several minutes. Do not power off the machine during the update.">
+                    This may take several minutes. Do not power off the machine during the update.
+                </p>
+                <!-- Filled by window.uploadFirmware from the NDJSON progress stream. Hidden
+                     via inline display, not the hidden attribute: the flex utility would override it.
+                     Seeded from lastFirmwareProgress so leaving this page and coming back
+                     mid-update rejoins the bar where it is, not at zero-and-hidden. -->
+                <div id="firmware-progress" class="w-full flex flex-col gap-2" style="display:${lastFirmwareProgress ? 'flex' : 'none'}">
+                    <p id="firmware-progress-label" class="text-[22px] text-[var(--text-primary)]">${firmwareProgressLabel(lastFirmwareProgress)}</p>
+                    <div class="w-full h-[10px] rounded-full bg-[#c9c9c9] overflow-hidden">
+                        <div id="firmware-progress-bar" class="h-full bg-[#385a92] transition-[width] duration-200" style="width:${lastFirmwareProgress?.phase === 'erasing' ? 0 : (lastFirmwareProgress?.percent ?? 0)}%"></div>
                     </div>
                 </div>
             </div>
@@ -5322,12 +5400,10 @@ export function renderFirmwareUpdateSettings() {
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
-            <div class="w-full flex flex-col gap-4">
-                <div class="flex flex-col gap-4">
-                    <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decent.app Information</p>
-                    ${appInfoDetails}
-                    <div id="app-update-section" class="mt-2">${renderAppUpdateBlock(settingsCache.appUpdateState)}</div>
-                </div>
+            <div class="w-full flex flex-col gap-[12px]">
+                <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]">Decent.app <span data-i18n-key="Update info">Update info</span></p>
+                ${appInfoDetails}
+                <div id="app-update-section">${renderAppUpdateBlock(settingsCache.appUpdateState)}</div>
             </div>
         </div>
     `;
@@ -5353,29 +5429,29 @@ function renderAppUpdateBlock(state) {
     const pill = hasUpdate
         ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#da515e]/15 text-[#da515e]" data-i18n-key="Update available">Update available</span>`
         : isLatest
-            ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#0ca581]/15 text-[#0ca581]">Latest</span>`
+            ? `<span class="text-[16px] font-semibold px-[8px] py-[2px] rounded-full bg-[#0ca581]/15 text-[#0ca581]" data-i18n-key="Up to date">Up to date</span>`
             : '';
 
     // Right-hand action depends on phase. Default: Check button.
     let action = `<button onclick="window.checkAppUpdate()" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold" data-i18n-key="Check for Updates">Check for Updates</button>`;
     if (phase === 'checking') {
-        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Checking…</button>`;
+        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${getTranslation('Check')}…</button>`;
     } else if (phase === 'available') {
         action = state?.installable
-            ? `<button onclick="window.installAppUpdate()" class="bg-[#2e7d32] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">Install ${latest ? 'v' + latest : 'Update'}</button>`
+            ? `<button onclick="window.installAppUpdate()" class="bg-[#2e7d32] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${getTranslation('Update App')}${latest ? ' v' + latest : ''}</button>`
             : `<a href="${state?.releaseUrl || '#'}" target="_blank" rel="noopener" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold flex items-center">View Release</a>`;
     } else if (phase === 'downloading' || phase === 'installing') {
-        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${phase === 'downloading' ? 'Downloading…' : 'Installing…'}</button>`;
+        action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${getTranslation('Updating')}…</button>`;
     }
 
     // Status line beneath the header.
     const statusByPhase = {
-        idle:        isLatest ? `Up to date${current ? ` (v${current})` : ''}` : `Check for the latest application version`,
-        checking:    `Checking for updates…`,
-        available:   `Update available${latest ? `: v${latest}` : ''}`,
-        downloading: `Downloading update… ${pct}%`,
-        installing:  `Launching installer…`,
-        error:       state?.error ? `Update failed: ${state.error}` : `Update failed`,
+        idle:        isLatest ? `${getTranslation('Up to date')}${current ? ` (v${current})` : ''}` : getTranslation('Check for application updates'),
+        checking:    `${getTranslation('Check for Updates')}…`,
+        available:   `${getTranslation('Update available')}${latest ? `: v${latest}` : ''}`,
+        downloading: `${getTranslation('Updating')}… ${pct}%`,
+        installing:  `${getTranslation('Updating')}…`,
+        error:       state?.error ? `${getTranslation('Update failed')}: ${state.error}` : getTranslation('Update failed'),
     };
     const status = statusByPhase[phase] || '';
     const statusColor = phase === 'error' ? 'text-[#da515e]'
@@ -5395,7 +5471,7 @@ function renderAppUpdateBlock(state) {
             <div class="flex items-center justify-between gap-4">
                 <div class="flex flex-col gap-1 min-w-0">
                     <div class="flex items-center gap-[10px]">
-                        <p class="text-[24px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]">App Update</p>
+                        <p class="text-[24px] font-['Inter:Bold',sans-serif] font-bold text-[#385a92]" data-i18n-key="Update App">Update App</p>
                         ${pill}
                     </div>
                     <p class="text-[20px] ${statusColor}">${status}</p>
@@ -6748,22 +6824,22 @@ export async function initializeSettings() {
         if (wakeLockWasOff) await enableWakeLock().catch(e => logger.warn('Wake-lock for firmware upload failed:', e));
 
         try {
-            ui.showToast(`${getTranslation('Uploading...')} firmware — this may take several minutes`, 10000, 'info');
+            ui.showToast(getTranslation('Please be patient. It can take several minutes for your DE1 to update.'), 10000, 'info');
             showProgress({ phase: 'erasing', percent: 0 });
             await uploadFirmware(file, showProgress);
             showProgress({ phase: 'done', percent: 100 });
-            ui.showToast('Firmware update done. Restart the machine.', 8000, 'success');
+            ui.showToast(getTranslation('Your DE1 firmware has been upgraded'), 8000, 'success');
         } catch (error) {
             logger.error('Error uploading firmware:', error);
             lastFirmwareProgress = null;
             const label = document.getElementById('firmware-progress-label');
             const bar = document.getElementById('firmware-progress-bar');
             if (label) {
-                label.textContent = `${getTranslation('Firmware update failed')}: ${error.message}`;
+                label.textContent = `${getTranslation('Update failed')}: ${error.message}`;
                 label.classList.add('text-[#da515e]');
             }
             if (bar) bar.style.width = '0%';
-            ui.showToast(`Firmware upload failed: ${error.message}`, 5000, 'error');
+            ui.showToast(`${getTranslation('Update failed')}: ${error.message}`, 5000, 'error');
             const btn = document.getElementById('firmware-upload-btn');
             if (btn) {
                 btn.disabled = false;

@@ -89,3 +89,67 @@ export function advanceFirmwareState(state, event) {
 
 /** Starting state for advanceFirmwareState. */
 export const initialFirmwareState = { phase: null, percent: 0, error: null };
+
+/**
+ * Reduce a GET /machine/firmware catalog to what the update check displays.
+ *
+ * `updateAvailable` is the middleware's own verdict and is authoritative — it is
+ * nullable, and null means "could not decide" (offline, unknown build), which is
+ * NOT the same as "up to date". Those three cases stay distinct all the way to
+ * the UI, because telling someone they are current when nothing was actually
+ * compared is the one wrong answer here.
+ *
+ * The installed build can legitimately be NEWER than anything bundled (a beta
+ * machine): that reads as `notApplicable`/`not_newer` and is reported as `ahead`,
+ * not as an update.
+ *
+ * @param {object|null} catalog parsed FirmwareCatalog, or null if unreachable
+ * @returns {{status: string, installedBuild: number|null, model: string|null,
+ *            latestBuild: number|null, latestLabel: string|null,
+ *            artifactId: string|null, releaseNotes: string|null,
+ *            reason: string|null, operationState: string}}
+ */
+export function summarizeFirmwareCatalog(catalog) {
+    const empty = {
+        status: 'unknown', installedBuild: null, model: null, latestBuild: null,
+        latestLabel: null, artifactId: null, releaseNotes: null,
+        reason: 'unreachable', operationState: 'idle',
+    };
+    if (!catalog || typeof catalog !== 'object') return empty;
+
+    const artifacts = Array.isArray(catalog.artifacts) ? catalog.artifacts : [];
+    const installedBuild = typeof catalog.machine?.build === 'number' ? catalog.machine.build : null;
+
+    // The recommended artifact is the one the middleware would apply. With none
+    // recommended (nothing eligible), fall back to the highest build on offer so
+    // the page can still name what is bundled.
+    const recommended = artifacts.find(a => a && a.id === catalog.recommendedArtifactId);
+    const highest = artifacts.reduce((best, a) => {
+        if (!a || typeof a.build !== 'number') return best;
+        return !best || a.build > best.build ? a : best;
+    }, null);
+    const latest = recommended || highest || null;
+
+    // A `not_newer` verdict means the bundle is behind the machine, not that the
+    // machine is current — worth saying out loud so a beta build isn't mistaken
+    // for a failed check.
+    const reasons = latest?.eligibility?.reasons;
+    const reason = Array.isArray(reasons) && reasons.length ? reasons[0] : null;
+
+    const status = catalog.updateAvailable === true ? 'updateAvailable'
+        : catalog.updateAvailable === false
+            ? (reason === 'not_newer' && installedBuild !== null && latest?.build < installedBuild ? 'ahead' : 'upToDate')
+            : 'unknown';
+
+    return {
+        status,
+        installedBuild,
+        model: catalog.machine?.model ?? null,
+        latestBuild: typeof latest?.build === 'number' ? latest.build : null,
+        latestLabel: latest?.versionLabel ?? null,
+        artifactId: latest?.id ?? null,
+        releaseNotes: latest?.releaseNotes ?? null,
+        reason,
+        operationState: catalog.operation?.state ?? 'idle',
+    };
+}

@@ -1790,6 +1790,21 @@ export async function setWaterLevels(refillLevel) {
     return true;
 }
 
+// Bundled firmware catalog + the middleware's own update verdict. Needs no
+// machine connection: offline, `machine` is null and eligibility is `unknown`,
+// which summarizeFirmwareCatalog keeps distinct from "up to date".
+// Returns null on any failure — the check is informational, never a blocker.
+export async function getFirmwareCatalog() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/machine/firmware`);
+        if (!response.ok) throw new Error(`Failed to get firmware catalog (${response.status})`);
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting firmware catalog:', error);
+        return null;
+    }
+}
+
 // Pushes the raw file and drives onProgress from the NDJSON stream the endpoint
 // answers with (erasing -> uploading* -> done | error). Resolves on `done`,
 // rejects on `error` or a truncated stream — a stream that ends without `done`

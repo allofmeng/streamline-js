@@ -334,6 +334,10 @@ export function getActiveProfileRecord() {
     return availableProfiles[activeProfileId];
 }
 
+export function getActiveProfileId() {
+    return availableProfiles[activeProfileId] ? activeProfileId : null;
+}
+
 // Serialize metadata read-modify-write so concurrent edits and resets can't
 // clobber each other. Without this, two writers read the same base metadata and
 // the last PUT to resolve wins — silently dropping the other's user-entered
