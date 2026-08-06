@@ -400,6 +400,72 @@ function promptPluginUpdate(installed, latest) {
     dlg.showModal();
 }
 
+// ─── Enable-time plugin requirement gate ────────────────────────────────────
+// Toggling DYE2 on in Settings requires the plugin actually installed, loaded,
+// and at least MIN_PLUGIN_VERSION — otherwise the header lights up with no
+// data behind it. Unlike checkPluginVersion (a soft post-enable nag against
+// whatever GitHub's latest tag is), this is a hard gate against a fixed floor.
+const MIN_PLUGIN_VERSION = '0.1.4';
+
+export async function checkDye2PluginRequirement() {
+    const plugins = await getPlugins();
+    if (!plugins) return { ok: false, reason: 'unreachable' };
+    const plugin = plugins.find(p => p?.id === PLUGIN_ID);
+    if (!plugin) return { ok: false, reason: 'missing' };
+    if (!plugin.loaded) return { ok: false, reason: 'not-loaded', installed: plugin.version };
+    if (isOlderVersion(plugin.version, MIN_PLUGIN_VERSION)) return { ok: false, reason: 'outdated', installed: plugin.version };
+    return { ok: true, installed: plugin.version };
+}
+
+function promptPluginRequired(reason, installed) {
+    const dlg = document.createElement('dialog');
+    dlg.id = 'dye2-required-dialog';
+    dlg.style.cssText =
+        'border:0;border-radius:24px;padding:0;background:transparent;color:var(--text-primary);';
+    // No install API exists yet (reaprime's /plugins/install is a 501 stub) — the
+    // only path is manual, so spell out the exact steps from dye2's own README
+    // rather than a vague "go install it".
+    const INSTALL_STEPS =
+        `Download the zip below, then install it through Decaid's Dashboard &rarr; Plugin settings. ` +
+        `Enable it there, then come back and turn DYE2 on again.`;
+    const body = {
+        missing: `The DYE2 plugin isn't installed (need v${MIN_PLUGIN_VERSION}+). ${INSTALL_STEPS}`,
+        'not-loaded': `The DYE2 plugin (v${installed || '?'}) is installed but not loaded. Open Decaid's Plugin settings and enable it, then come back and turn DYE2 on again.`,
+        outdated: `Installed DYE2 plugin is v${installed}, older than the required v${MIN_PLUGIN_VERSION}. ${INSTALL_STEPS}`,
+        unreachable: `Couldn't reach the plugin bridge to verify DYE2 is installed. Check the connection and try again.`,
+    }[reason] || `DYE2 plugin v${MIN_PLUGIN_VERSION}+ is required to enable this. ${INSTALL_STEPS}`;
+    // "not-loaded" has nothing to download — the zip is already on disk, it just
+    // needs enabling in Decaid — so that case gets a plain OK, not a Download link.
+    const hasDownload = reason !== 'not-loaded';
+    dlg.innerHTML = `
+        <div style="background:var(--bgmain-color,#fff);border-radius:24px;padding:36px 40px;max-width:640px;display:flex;flex-direction:column;gap:18px;">
+            <div style="font-size:30px;font-weight:700;color:var(--mimoja-blue);">DYE2 plugin required</div>
+            <div style="font-size:23px;line-height:1.4;">${body}</div>
+            <div style="display:flex;justify-content:flex-end;gap:14px;padding-top:6px;">
+                <button id="dye2-required-cancel" style="padding:10px 26px;border:2px solid var(--mimoja-blue);background:transparent;color:var(--mimoja-blue);border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">${hasDownload ? 'Cancel' : 'OK'}</button>
+                ${hasDownload ? `<button id="dye2-required-open" style="padding:10px 26px;border:0;background:var(--mimoja-blue);color:#fff;border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Download</button>` : ''}
+            </div>
+        </div>`;
+    document.body.appendChild(dlg);
+    const close = () => { dlg.close(); dlg.remove(); };
+    dlg.querySelector('#dye2-required-cancel').addEventListener('click', close);
+    dlg.querySelector('#dye2-required-open')?.addEventListener('click', () => {
+        close();
+        // Same-frame nav, no _blank/window.open: in the tablet webview the host
+        // intercepts the external URL and hands it to the OS browser.
+        window.location.href = PLUGIN_RELEASES_PAGE;
+    });
+    dlg.showModal();
+}
+
+// Called from the Settings toggle before flipping DYE2 on. Prompts and returns
+// false if the plugin isn't ready; the caller should leave the toggle off.
+export async function ensureDye2PluginReady() {
+    const check = await checkDye2PluginRequirement();
+    if (!check.ok) promptPluginRequired(check.reason, check.installed);
+    return check.ok;
+}
+
 export async function checkPluginVersion() {
     try {
         if (sessionStorage.getItem(NAG_KEY)) return;

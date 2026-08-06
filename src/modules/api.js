@@ -1805,24 +1805,11 @@ export async function getFirmwareCatalog() {
     }
 }
 
-// Pushes the raw file and drives onProgress from the NDJSON stream the endpoint
-// answers with (erasing -> uploading* -> done | error). Resolves on `done`,
-// rejects on `error` or a truncated stream — a stream that ends without `done`
-// means CRC verification never confirmed, so it is NOT a success.
-export async function uploadFirmware(firmwareFile, onProgress) {
-    const response = await fetch(`${API_BASE_URL}/machine/firmware`, {
-        method: 'POST',
-        body: firmwareFile,
-    });
-    if (!response.ok) {
-        const byStatus = {
-            400: 'Firmware file is empty',
-            409: 'A firmware update is already in progress',
-            503: 'No machine connected',
-        };
-        throw new Error(byStatus[response.status] || `Failed to upload firmware (${response.status})`);
-    }
-
+// Drives onProgress from the NDJSON stream both firmware endpoints answer with
+// (erasing -> uploading* -> done | error). Resolves on `done`, rejects on
+// `error` or a truncated stream — a stream that ends without `done` means CRC
+// verification never confirmed, so it is NOT a success.
+async function consumeFirmwareStream(response, onProgress) {
     // No streaming body (old middleware, or a proxy that buffered it): the POST
     // still completed, so treat it as a legacy success rather than failing.
     if (!response.body?.getReader) return;
@@ -1848,6 +1835,45 @@ export async function uploadFirmware(firmwareFile, onProgress) {
     }
 
     throw new Error('Firmware stream ended before the update was confirmed');
+}
+
+// Pushes the raw file to the machine (developer/recovery path).
+export async function uploadFirmware(firmwareFile, onProgress) {
+    const response = await fetch(`${API_BASE_URL}/machine/firmware`, {
+        method: 'POST',
+        body: firmwareFile,
+    });
+    if (!response.ok) {
+        const byStatus = {
+            400: 'Firmware file is empty',
+            409: 'A firmware update is already in progress',
+            503: 'No machine connected',
+        };
+        throw new Error(byStatus[response.status] || `Failed to upload firmware (${response.status})`);
+    }
+    return consumeFirmwareStream(response, onProgress);
+}
+
+// Flashes a bundled catalog artifact by ID (the "Update" button path) — the
+// middleware already has the file, so this needs no download step. `force`
+// bypasses only the version-newer policy, never integrity/compatibility checks.
+export async function applyFirmware(artifactId, onProgress, force = false) {
+    const response = await fetch(`${API_BASE_URL}/machine/firmware/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifactId, force }),
+    });
+    if (!response.ok) {
+        const byStatus = {
+            400: 'Missing or malformed artifact ID',
+            404: 'Unknown firmware artifact',
+            409: 'A firmware update is already in progress',
+            422: 'Firmware artifact failed validation',
+            503: 'No machine connected',
+        };
+        throw new Error(byStatus[response.status] || `Failed to apply firmware (${response.status})`);
+    }
+    return consumeFirmwareStream(response, onProgress);
 }
 
 export async function getPlugins() {

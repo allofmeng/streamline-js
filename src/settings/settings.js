@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -15,6 +15,7 @@ import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
+import { ensureDye2PluginReady } from '../modules/dyeStrip.js';
 
 // Config for each numeric input that should get two-click numpad support
 const SETTINGS_NUMPAD_CONFIGS = {
@@ -384,7 +385,7 @@ const settingsTree = {
     'machine': {
         name: 'Machine',
         subcategories: [
-            { id: 'usbchargermode', name: 'USB Charger', settingsCategory: 'usbchargermode' },
+            { id: 'usbchargermode', name: 'USB', settingsCategory: 'usbchargermode' },
             { id: 'cupwarmer', name: 'Cup Warmer', settingsCategory: 'cupwarmer', i18nKey: 'Cup Warmer', bengleOnly: true },
             { id: 'ledstrip', name: 'Lighting', settingsCategory: 'ledstrip', i18nKey: 'Lighting', bengleOnly: true },
             { id: 'machineinfo', name: 'Machine Information', settingsCategory: 'machineinfo', i18nKey: 'Machine Info' }
@@ -1123,7 +1124,7 @@ export function renderUsbChargerModeSettings(settings) {
         return `
             <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
                 <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                    <p class="leading-[1.2]">USB Charger</p>
+                    <p class="leading-[1.2]">USB</p>
                 </div>
                 <div class="text-red-500 p-4 text-[24px]" data-i18n-key="Failed to load settings">Failed to load settings</div>
             </div>
@@ -1198,9 +1199,9 @@ export function renderUsbChargerModeSettings(settings) {
                     <span class="font-semibold" data-i18n-key="Battery">Battery</span>
                     <span>${chargingState.batteryPercent ?? '--'}%${chargingState.isEmergency ? ' (emergency)' : ''}</span>
                     <span class="font-semibold" data-i18n-key="Phase">Phase</span>
-                    <span>${phaseLabels[chargingState.currentPhase] || chargingState.currentPhase || '--'}</span>
-                    <span class="font-semibold">USB Charger</span>
-                    <span>${chargingState.usbChargerOn ? 'On' : 'Off'}</span>
+                    <span>${getTranslation(phaseLabels[chargingState.currentPhase] || chargingState.currentPhase || '--')}</span>
+                    <span class="font-semibold">USB</span>
+                    <span>${getTranslation(chargingState.usbChargerOn ? 'ON' : 'OFF')}</span>
                 </div>
             </div>
         </div>
@@ -1210,7 +1211,7 @@ export function renderUsbChargerModeSettings(settings) {
         <div class="content-stretch flex flex-col gap-[24px] items-start relative w-full">
 
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                <p class="leading-[1.2]">USB Charger</p>
+                <p class="leading-[1.2]">USB</p>
             </div>
 
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
@@ -1218,7 +1219,7 @@ export function renderUsbChargerModeSettings(settings) {
             <div class="flex items-center justify-between gap-[24px] w-full">
                 <div class="flex flex-col gap-[4px]">
                     <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                        <p class="leading-[1.2]" id="usbChargerModeLabel">USB Power</p>
+                        <p class="leading-[1.2]" id="usbChargerModeLabel" data-i18n-key="USB Charger Mode">USB Charger Mode</p>
                     </div>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
@@ -4961,8 +4962,15 @@ function setupDye2SettingsListeners() {
     let enabled = false;
     try { enabled = localStorage.getItem(KEY) === 'true'; } catch (e) { /* private mode */ }
     toggle.checked = enabled;
-    toggle.addEventListener('change', function () {
+    toggle.addEventListener('change', async function () {
         const on = this.checked;
+        // Turning on requires the plugin installed, loaded, and >= its minimum
+        // version — ensureDye2PluginReady prompts with a download link and
+        // returns false if not, in which case we revert the toggle.
+        if (on) {
+            const ready = await ensureDye2PluginReady();
+            if (!ready) { this.checked = false; return; }
+        }
         try { localStorage.setItem(KEY, on ? 'true' : 'false'); } catch (e) { /* private mode */ }
         if (typeof window.applyDye2Enabled === 'function') window.applyDye2Enabled(on);
         try { ui.showToast(`DYE2 ${on ? 'enabled' : 'disabled'}`, 1500, 'success'); } catch (e) { /* ui not ready */ }
@@ -5237,8 +5245,7 @@ function renderFirmwareCheckBlock(summary) {
         return `<p class="text-[22px] text-[var(--text-secondary)]">${getTranslation('Check for firmware updates')}…</p>`;
     }
 
-    const { status, installedBuild, latestBuild, latestLabel, releaseNotes, reason, operationState } = summary;
-    const installed = installedBuild ?? '—';
+    const { status, latestBuild, latestLabel, releaseNotes, reason, operationState } = summary;
 
     if (operationState && operationState !== 'idle') {
         return `<p class="text-[22px] font-bold text-[#385a92]">${getTranslation('A firmware update is already in progress')} (${escapeHtml(operationState)})</p>`;
@@ -5247,31 +5254,32 @@ function renderFirmwareCheckBlock(summary) {
     const pill = (text, cls) =>
         `<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full ${cls}">${text}</span>`;
 
+    // Installed build is already shown next to "Firmware Version" above (the
+    // #de1-firmware-version row) — this block only needs to say what's new.
     if (status === 'updateAvailable') {
+        const artifactId = summary.artifactId;
         return `
             <div class="flex flex-col gap-[10px]">
                 <div class="flex items-center gap-[14px] flex-wrap">
                     ${pill(getTranslation('Firmware update available'), 'bg-green-500/15 text-green-600')}
-                    <span class="text-[22px] text-[var(--text-primary)]">${installed} &rarr; ${escapeHtml(String(latestLabel ?? latestBuild ?? '—'))}</span>
+                    <span class="text-[22px] text-[var(--text-primary)]">${getTranslation('Build')} ${escapeHtml(String(latestLabel ?? latestBuild ?? '—'))}</span>
                 </div>
                 ${releaseNotes ? `<p class="text-[20px] text-[var(--text-secondary)] leading-[1.4]">${escapeHtml(releaseNotes)}</p>` : ''}
+                <button id="firmware-apply-btn" class="self-start bg-[#385a92] h-[56px] px-[28px] rounded-[64px] text-white text-[22px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                        ${artifactId ? `onclick="window.applyFirmwareUpdate('${escapeHtml(artifactId)}')"` : 'disabled'}>
+                    ${getTranslation('Download & Install')}
+                </button>
             </div>`;
     }
 
     if (status === 'upToDate') {
-        return `<div class="flex items-center gap-[14px] flex-wrap">
-                    ${pill(getTranslation('Up to date'), 'bg-[#385a92]/15 text-[#385a92]')}
-                    <span class="text-[22px] text-[var(--text-secondary)]">${getTranslation('Build')} ${installed}</span>
-                </div>`;
+        return pill(getTranslation('Up to date'), 'bg-[#385a92]/15 text-[#385a92]');
     }
 
     // Installed build is newer than anything bundled — a beta machine, not a
     // failed check. Saying "up to date" here would be a guess.
     if (status === 'ahead') {
-        return `<div class="flex items-center gap-[14px] flex-wrap">
-                    ${pill(getTranslation('Newer than bundled'), 'bg-amber-500/15 text-amber-600')}
-                    <span class="text-[22px] text-[var(--text-secondary)]">${getTranslation('Build')} ${installed} &middot; ${getTranslation('bundled')} ${latestBuild ?? '—'}</span>
-                </div>`;
+        return pill(getTranslation('Newer than bundled'), 'bg-amber-500/15 text-amber-600');
     }
 
     const why = FIRMWARE_REASON_TEXT[reason];
@@ -6774,32 +6782,26 @@ export async function initializeSettings() {
         }
     };
 
-    window.uploadFirmware = async function() {
+    // Shared by the manual file-upload button and the catalog "Download &
+    // Install" button — both drive the same NDJSON progress bar and need the
+    // same in-flight guard, wake-lock, and unload-block around the flash.
+    //
+    // Elements are looked up per tick, not cached: the settings router swaps
+    // page HTML while the upload keeps streaming, so a cached node goes stale
+    // (detached) the moment the user leaves and comes back.
+    async function runFirmwareOperation(startOperation, { onBeforeStart, onDone, onError } = {}) {
         // One POST holds the NDJSON stream open for the whole update, so a second
-        // click (e.g. after navigating away and back, which re-renders the button
+        // click (e.g. after navigating away and back, which re-renders a button
         // enabled) would only earn a 409 from the endpoint.
         if (firmwareUploadInFlight) {
             ui.showToast(getTranslation('A firmware update is already in progress'), 4000, 'info');
             return;
         }
-
-        const input = document.getElementById('firmware-file-input');
-        const file = input?.files[0];
-        if (!file) return;
-
-        const uploadBtn = document.getElementById('firmware-upload-btn');
-        if (uploadBtn) {
-            uploadBtn.disabled = true;
-            uploadBtn.textContent = getTranslation('Uploading...');
-        }
+        onBeforeStart?.();
 
         // Erase and CRC verification emit no percentages, so the bar sits still at
         // both ends of the upload; the label names the phase so a stalled-looking
         // bar reads as "Erasing…" / "Verifying…" rather than as a hang.
-        //
-        // Elements are looked up per tick, not cached: the settings router swaps
-        // page HTML while the upload keeps streaming, so a cached node goes stale
-        // (detached) the moment the user leaves and comes back.
         const showProgress = ({ phase, percent }) => {
             lastFirmwareProgress = { phase, percent };
             const panel = document.getElementById('firmware-progress');
@@ -6826,11 +6828,12 @@ export async function initializeSettings() {
         try {
             ui.showToast(getTranslation('Please be patient. It can take several minutes for your DE1 to update.'), 10000, 'info');
             showProgress({ phase: 'erasing', percent: 0 });
-            await uploadFirmware(file, showProgress);
+            await startOperation(showProgress);
             showProgress({ phase: 'done', percent: 100 });
             ui.showToast(getTranslation('Your DE1 firmware has been upgraded'), 8000, 'success');
+            onDone?.();
         } catch (error) {
-            logger.error('Error uploading firmware:', error);
+            logger.error('Error updating firmware:', error);
             lastFirmwareProgress = null;
             const label = document.getElementById('firmware-progress-label');
             const bar = document.getElementById('firmware-progress-bar');
@@ -6840,16 +6843,54 @@ export async function initializeSettings() {
             }
             if (bar) bar.style.width = '0%';
             ui.showToast(`${getTranslation('Update failed')}: ${error.message}`, 5000, 'error');
-            const btn = document.getElementById('firmware-upload-btn');
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = getTranslation('Upload');
-            }
+            onError?.(error);
         } finally {
             firmwareUploadInFlight = false;
             window.removeEventListener('beforeunload', blockUnload);
             if (wakeLockWasOff) await disableWakeLock().catch(() => {});
         }
+    }
+
+    window.uploadFirmware = async function() {
+        const input = document.getElementById('firmware-file-input');
+        const file = input?.files[0];
+        if (!file) return;
+
+        await runFirmwareOperation((showProgress) => uploadFirmware(file, showProgress), {
+            onBeforeStart: () => {
+                const uploadBtn = document.getElementById('firmware-upload-btn');
+                if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.textContent = getTranslation('Uploading...'); }
+            },
+            onError: () => {
+                const btn = document.getElementById('firmware-upload-btn');
+                if (btn) { btn.disabled = false; btn.textContent = getTranslation('Upload'); }
+            },
+        });
+    };
+
+    // Flashes a bundled catalog artifact directly — no file picker, the
+    // middleware already has it. Gated behind confirm() since (unlike the manual
+    // path) picking a button is the whole action, with no file-selection step
+    // to double as a deliberate gate.
+    window.applyFirmwareUpdate = async function(artifactId) {
+        if (!artifactId) return;
+        if (!confirm(getTranslation('Install this firmware update? The machine will restart automatically once the update is complete.'))) return;
+
+        await runFirmwareOperation((showProgress) => applyFirmware(artifactId, showProgress), {
+            onBeforeStart: () => {
+                const btn = document.getElementById('firmware-apply-btn');
+                if (btn) { btn.disabled = true; btn.textContent = getTranslation('Installing...'); }
+            },
+            // The catalog's own verdict is now stale (installed build changed) —
+            // re-check instead of leaving the old "update available" block up.
+            // The machine is mid-restart, so this may briefly read "Could not
+            // check" before it reconnects — that is correct, not a bug.
+            onDone: () => { initFirmwareCheck(); },
+            onError: () => {
+                const btn = document.getElementById('firmware-apply-btn');
+                if (btn) { btn.disabled = false; btn.textContent = getTranslation('Download & Install'); }
+            },
+        });
     };
 
     window.setActiveSkin = async function(skinId) {
