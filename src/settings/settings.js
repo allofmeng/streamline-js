@@ -265,9 +265,9 @@ function renderErrorState(title, message) {
     return `
         <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden" role="alert">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
-                <p class="leading-[1.2]">${title}</p>
+                <p class="leading-[1.2]">${escapeHtml(title)}</p>
             </div>
-            <div class="text-red-500 p-4 text-[24px] text-center w-full">Failed to load settings: ${message}</div>
+            <div class="text-red-500 p-4 text-[24px] text-center w-full">Failed to load settings: ${escapeHtml(message)}</div>
             <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold mx-auto mt-4" onclick="window.retryLoadSettings()" data-i18n-key="Retry">Retry</button>
         </div>
     `;
