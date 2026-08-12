@@ -144,10 +144,32 @@ paths:
       responses:
         "200":
           description: "Device connected successfully"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConnectResult"
         "400":
           description: "Missing deviceId"
         "404":
           description: "Device not found"
+        "409":
+          description: "Connection conflicts with another operation or a stale selection"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConnectResult"
+        "503":
+          description: "Device transport currently unavailable"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConnectResult"
+        "504":
+          description: "Device connection timed out"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConnectResult"
 
   /api/v1/devices/disconnect:
     put:
@@ -2585,6 +2607,43 @@ paths:
                   id:
                     type: string
 
+  /api/v1/plugins/{id}/{endpoint}:
+    get:
+      summary: Call a plugin HTTP endpoint
+      description: >
+        Routes the request to a loaded plugin's declared HTTP endpoint. The
+        runtime applies this contract to every HTTP method. The plugin manifest
+        must declare the api permission; otherwise Decaid rejects the request
+        before dispatch.
+      tags: [Plugins]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Plugin ID
+        - name: endpoint
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Plugin-declared HTTP endpoint ID
+      responses:
+        "403":
+          description: Plugin manifest does not declare the api permission
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    example: "PluginPermissionError: Plugin example.plugin requires manifest permission api"
+        default:
+          description: Plugin-defined status, headers, and body
+
   /api/v1/plugins/install:
     post:
       summary: Install a plugin from URL
@@ -3873,6 +3932,14 @@ paths:
         - steams.json — all steam records
         - beans.json — all beans and batches
         - grinders.json — all grinders
+
+        Exports are streamed section-by-section through a bounded, file-backed
+        ZIP writer and served from a temporary file with a known
+        Content-Length; the full archive is never held in memory. A single
+        export may not exceed 2 GiB of uncompressed section data (400/500
+        error, use selected-section export). The archive is atomic: if any
+        requested section fails, an error is returned and no partial ZIP is
+        exposed.
       tags: [Data Management]
       responses:
         "200":
@@ -3911,6 +3978,28 @@ paths:
         recognized sections failed. Warnings and conflict skips do not cause
         207. Sections are not imported transactionally; a successful section
         is not rolled back when another section fails.
+
+        The request body is streamed into a temporary file; the whole archive
+        is never buffered in memory. Imports are bounded by the following
+        limits (exceeding any of them returns 400 with `Invalid backup
+        archive`):
+
+        - `maxImportRequestBytes` (default 2 GiB): compressed request size.
+        - `maxEntryCount` (default 4096): number of ZIP entries.
+        - `maxEntryUncompressedBytes` (default 1 GiB): per-entry uncompressed
+          size.
+        - `maxTotalUncompressedBytes` (default 2 GiB): sum of uncompressed
+          entry sizes (ZIP-bomb protection).
+        - `maxMetadataBytes` (default 64 KiB): metadata.json size.
+        - `maxRecordBytes` (default 64 MiB): individual JSON record size
+          (e.g. one shot, profile, or KV value).
+        - `maxFilenameBytes` / `maxExtraFieldBytes` / `maxCommentBytes`
+          (256 B / 64 KiB / 64 KiB): ZIP header field caps.
+
+        ZIP64 archives, encrypted entries, unsupported compression methods,
+        duplicate entry names, directory/symlink entries masquerading as
+        recognized files, truncated archives, CRC mismatches, and malformed
+        JSON all fail safely with 400.
       tags: [Data Management]
       parameters:
         - in: query
@@ -3995,6 +4084,24 @@ paths:
         results rather than HTTP 200 alone. Existing direct section maps stay
         under pull and push; phase metadata is additive under phases. Legacy
         remote import result maps are supported.
+
+        Pull responses are streamed to a temporary ZIP before import; push
+        requests stream a locally built temporary ZIP with a known content
+        length. The sync request body is limited to 1 MiB, and target
+        responses to 8 MiB. Transfers apply a connection timeout (10 s,
+        connect establishment only), an idle timeout (30 s between stream
+        events), and one deadline (10 min) per phase covering the network
+        stages (upload/download and response). Timeouts abort the request
+        at the transport level: a timed-out pull is cut off even while the
+        target is still generating its export (before headers) and never
+        starts its import; a timed-out push aborts its upload (and the
+        upload is backpressured, so the file is never read ahead of the
+        network). Local export and the pull-side import run to completion
+        and report their actual results. If the archive was already fully
+        uploaded before the deadline, the remote outcome is unknown and the
+        phase reports reason `timeout_unknown`. A generated archive is also
+        bounded by the 2 GiB import request limit, and per-record limits
+        are measured in UTF-8 bytes.
       tags: [Data Management]
       requestBody:
         required: true
@@ -4676,6 +4783,31 @@ components:
           type: string
           description: Error message (on failure)
 
+    DeviceConnectResult:
+      type: object
+      required: [deviceId, operation, outcome, state, connectionError]
+      properties:
+        deviceId:
+          type: string
+        operation:
+          type: string
+          enum: [connect]
+        outcome:
+          type: string
+          enum: [connected, alreadyConnected, conflict, failed, timedOut]
+        state:
+          type: string
+          enum: [discovered, connecting, connected, disconnecting, disconnected]
+        connectionError:
+          oneOf:
+            - $ref: '#/components/schemas/ConnectionError'
+            - type: object
+              nullable: true
+              enum: [null]
+        error:
+          type: string
+          nullable: true
+
     ConnectionError:
       type: object
       required: [kind, severity, timestamp, message]
@@ -4685,7 +4817,7 @@ components:
           description: >
             Error kind identifier. Skins should look up localized copy
             by this field. Initial set:
-            scaleConnectFailed, machineConnectFailed,
+            scaleConnectFailed, machineConnectFailed, sensorConnectFailed,
             scaleDisconnected, machineDisconnected,
             adapterOff, bluetoothPermissionDenied, scanFailed,
             profileUploadFailed.
@@ -4853,6 +4985,18 @@ components:
           type: integer
         steamTemperature:
           type: number
+        weight:
+          type: number
+          nullable: true
+          description: Bengle integrated-scale net weight in grams; null when unavailable.
+        weightFlow:
+          type: number
+          nullable: true
+          description: Bengle firmware gravimetric flow in g/s; null when unavailable.
+        milkTemperature:
+          type: number
+          nullable: true
+          description: Bengle milk-probe temperature in degrees Celsius; null when unavailable.
     MachineState:
       type: string
       enum:
@@ -5347,6 +5491,9 @@ components:
           type: boolean
           nullable: true
           description: When enabled and battery drops below 30%, screen brightness is capped at 20. Only effective on platforms with battery monitoring. Default value is true.
+        keepAwake:
+          type: boolean
+          description: When enabled, the wake lock stays on while the app is running, preventing the tablet screen from turning off. Default value is true.
         simulatedDevices:
           description: List of simulated device types to enable in scan results
           type: array
@@ -5440,6 +5587,9 @@ components:
         lowBatteryBrightnessLimit:
           type: boolean
           description: When enabled and battery drops below 30%, screen brightness is capped at 20. Only effective on platforms with battery monitoring.
+        keepAwake:
+          type: boolean
+          description: When enabled, the wake lock stays on while the app is running, preventing the tablet screen from turning off. Default value is true.
         simulatedDevices:
           description: List of simulated device types currently enabled in scan results
           type: array
@@ -5850,6 +6000,7 @@ components:
           type: number
         weightFlow:
           type: number
+          description: Device-provided gravimetric flow when available; otherwise Decaid's weight-derived estimate.
         battery:
           type: integer
           nullable: true
@@ -5878,7 +6029,7 @@ components:
           type: array
           items:
             type: string
-            enum: [log, api, emit, pluginStorage, pluginNotify, proxy.decent_api]
+            enum: [log, api, emit, pluginStorage, events.machine, events.shots, proxy.decent_api, proxy.decent_api.write]
         settings:
           description: Plugin settings schema
           type: object
@@ -5892,7 +6043,7 @@ components:
                 type: string
               type:
                 type: string
-                enum: ['websocket']
+                enum: ['websocket', 'http']
               data:
                 type: object
         loaded:
