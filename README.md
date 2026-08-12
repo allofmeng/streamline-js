@@ -1,6 +1,6 @@
 # Streamline.js
 
-A modern web UI skin for the Decent Espresso DE1, built on top of [Streamline-Bridge (reaprime)](https://github.com/tadelv/reaprime). This is a full rewrite of the original TCL-based Streamline skin into a browser-native web application — no framework, no bundler, just HTML/CSS/JS served as static files.
+A modern web UI skin for the Decent Espresso DE1, built on top of [Decaid](https://github.com/decentespresso/decaid). This is a full rewrite of the original TCL-based Streamline skin into a browser-native web application — no framework, no bundler, just HTML/CSS/JS served as static files.
 
 ---
 
@@ -12,7 +12,7 @@ A modern web UI skin for the Decent Espresso DE1, built on top of [Streamline-Br
 | Styling | Tailwind CSS + daisyUI (CDN) |
 | Charting | Plotly.js |
 | Local storage | IndexedDB |
-| Communication | WebSocket + REST (via reaprime) |
+| Communication | WebSocket + REST (via Decaid) |
 | Fonts | Inter, NotoSansMono |
 
 ---
@@ -70,10 +70,10 @@ A modern web UI skin for the Decent Espresso DE1, built on top of [Streamline-Br
 - **Language** — multi-language support via CSV-based i18n; runtime language switching
 - **Extensions** — Decent Visualizer integration (toggle + credentials)
 - **REA Settings** — weight/volume flow multipliers; gateway mode selection
-- **Updates** — Streamline-Bridge app version, build info, machine firmware version and serial; DE1 firmware file upload
+- **Updates** — Decaid app version, build info, machine firmware version and serial; DE1 firmware file upload
 - **User Manual** — links to Decent Espresso support, quickstart, and skin dev docs
 - **Talk to Decent** — in-app email support via Decent's API; conversation history; compose new support messages
-- **Send Feedback** — bug/feature/general category selector; markdown description editor (EasyMDE); optional Decent account sign-in to tag reports; system info attachment toggle; submits as GitHub issue via Rea Prime
+- **Send Feedback** — bug/feature/general category selector; markdown description editor (EasyMDE); optional Decent account sign-in to tag reports; system info attachment toggle; submits as GitHub issue via Decaid
 - **Keyboard Shortcuts** — reference page for available keyboard shortcuts
 
 ### Profile Notes
@@ -113,7 +113,7 @@ A modern web UI skin for the Decent Espresso DE1, built on top of [Streamline-Br
 
 ## Getting Started
 
-**Prerequisites:** [reaprime (Streamline-Bridge)](https://github.com/tadelv/reaprime) must be running and accessible on `localhost:8080`.
+**Prerequisites:** [Decaid](https://github.com/decentespresso/decaid) must be running and accessible on `localhost:8080`.
 
 ```bash
 # Clone the repo
@@ -126,7 +126,7 @@ python3 -m http.server
 
 Open `http://localhost:8000` in your browser.
 
-**Custom hostname:** If reaprime runs on a different host, set it before loading the app:
+**Custom hostname:** If Decaid runs on a different host, set it before loading the app:
 
 ```js
 localStorage.setItem('reaHostname', '192.168.1.x:8080')
@@ -164,7 +164,7 @@ src/
 
 ## Contributing
 
-See `CLAUDE.md` for coding conventions, API reference (`reaprime_api.md`), and the design system (`DESIGN_SYSTEM.md`).
+See `CLAUDE.md` for coding conventions, the local API contracts (`rest_v1.yml` and `websocket_v1.yml`), and the design system (`DESIGN_SYSTEM.md`).
 
 Key rules:
 - Tailwind + daisyUI only — no custom CSS unless unavoidable

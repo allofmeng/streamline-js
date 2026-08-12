@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Modern web app rewrite of the Decent Espresso machine's Streamline skin. Communicates with Rea Prime middleware server to control the espresso machine and display real-time data.
+Modern web app rewrite of the Decent Espresso machine's Streamline skin. Communicates with Decaid to control the espresso machine and display real-time data.
 
 ### Tech Stack
 - **Language:** Vanilla JavaScript (ES6+)
@@ -23,7 +23,7 @@ python -m http.server 8080
 # Or Node.js
 npx serve -p 8080
 ```
-Access: `http://localhost:8080` | Ensure Rea Prime middleware runs on port 8080
+Access: `http://localhost:8080` | Ensure Decaid runs on port 8080
 
 ### Testing
 No test framework configured. To add tests:
@@ -138,7 +138,8 @@ const WS_PATH = 'ws/v1/de1/snapshot';
 - `DESIGN_SYSTEM.md` - UI/UX tokens
 - `GEMINI.md` - Gemini AI instructions
 - `QWEN.md` - Qwen AI instructions  
-- `reaprime_api.md` - API docs
+- `rest_v1.yml` and `websocket_v1.yml` - local API contracts
+- [Decaid API documentation](https://github.com/decentespresso/decaid/blob/main/doc/Api.md) - current backend reference
 - `.github/copilot-instructions.md` - Copilot rules
 - `SKILL.md` - Clean code reviewer skill
 

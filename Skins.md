@@ -3194,7 +3194,7 @@ Once your skin is ready for public use:
 - Streamline-Bridge will auto-download and check for updates
 - Uses HTTP headers for efficient version detection
 
-For questions or issues, open an issue on the [Streamline-Bridge GitHub repository](https://github.com/tadelv/reaprime).
+For questions or issues, open an issue on the [Decaid GitHub repository](https://github.com/decentespresso/decaid).
 
 
 

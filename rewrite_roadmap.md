@@ -24,10 +24,10 @@ The primary challenges are:
 *   We will use **Plotly.js** to render the real-time espresso shot graphs (pressure, flow, temperature).
 
 ### Data Communication (The Critical Part)
-The Tcl script communicates directly with the machine's backend. A web application cannot do this directly. To solve this, we will use **reaprime**, which will act as the communication app between the web app and the Decent Espresso machine. It connects to the machine automatically and serves its data via a WebSocket and a REST API.
+The Tcl script communicates directly with the machine's backend. A web application cannot do this directly. To solve this, we will use **Decaid**, which acts as the communication app between the web app and the Decent Espresso machine. It connects to the machine automatically and serves its data via WebSocket and REST APIs.
 
-*   **reaprime:** This tool acts as a bridge between the espresso machine and our web application. It can be found at `https://github.com/tadelv/reaprime.git`.
-*   **reaprime API:** Our JavaScript code will connect to the WebSocket and REST API server provided by `reaprime`. This will be the primary way to receive real-time data (like temperature, pressure) and send commands (like start/stop) to the machine. The `de1-api.js` module will be responsible for managing this connection. The full API documentation can be found in the `reaprime_api.md` file.
+*   **Decaid:** This tool acts as a bridge between the espresso machine and our web application. It can be found at `https://github.com/decentespresso/decaid.git`.
+*   **Decaid API:** Our JavaScript code will connect to Decaid's WebSocket and REST API server. This will be the primary way to receive real-time data (like temperature and pressure) and send commands (like start and stop) to the machine. The contracts are documented in `rest_v1.yml` and `websocket_v1.yml`.
 
 ## 3. Development Roadmap
 
