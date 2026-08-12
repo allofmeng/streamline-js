@@ -883,7 +883,9 @@ export async function getDye2KvArray(key) {
 //    raw) is rejected; REA represents "stop at weight" via the step's `weight`
 //    field instead, so fold the threshold in and drop the unsupported exit.
 function sanitizeProfileForRea(profileData) {
-    const profile = structuredClone(profileData);
+    // Not structuredClone: unsupported in the tablet's embedded webview (old Chromium).
+    // Profile data is plain JSON, so a stringify/parse round-trip clones it fine.
+    const profile = JSON.parse(JSON.stringify(profileData));
 
     profile.version = profile.version || '2';
     for (const k of ['type', 'legacy_profile_type', 'lang', 'hidden', 'reference_file', 'changes_since_last_espresso']) {
