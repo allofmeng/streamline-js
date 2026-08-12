@@ -67,19 +67,19 @@ let currentShotSettings = {
 };
 
 // Caching for DE1 settings to avoid multiple API calls
-const de1SettingsCache = {
+let de1SettingsCache = {
     data: null,
     timestamp: null,
     TTL: 60000 // 60 seconds TTL
 };
 
 // Caching for DE1 advanced settings to improve performance when navigating to settings page
-const de1AdvancedSettingsCache = {
+let de1AdvancedSettingsCache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
 };
-const reatsettingscache = { 
+let reatsettingscache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -1479,6 +1479,7 @@ export async function setDe1Settings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache = { ...de1SettingsCache, data: null, timestamp: null };
         logger.info('DE1 settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 settings:', error);
@@ -1558,6 +1559,7 @@ export async function setDe1AdvancedSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 advanced settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1AdvancedSettingsCache = { ...de1AdvancedSettingsCache, data: null, timestamp: null };
         logger.info('DE1 advanced settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 advanced settings:', error);
@@ -1595,6 +1597,7 @@ export async function setReaSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set REA settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        reatsettingscache = { ...reatsettingscache, data: null, timestamp: null };
         logger.info('REA settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting REA settings:', error);
