@@ -7714,7 +7714,8 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
 function highlightMatch(text, searchTerm) {
     if (!searchTerm) return text;
 
-    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedTerm})`, 'gi');
     return text.replace(regex, '<mark class="bg-yellow-300 text-black">$1</mark>');
 }
 
