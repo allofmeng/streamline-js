@@ -5539,11 +5539,15 @@ function renderAppUpdateBlock(state) {
 // Connect ws/v1/update and keep #app-update-section in sync with AppUpdateState.
 // Exposes window.checkAppUpdate / window.installAppUpdate for the buttons.
 function initAppUpdateSection() {
-    window.checkAppUpdate = () => {
-        settingsCache.appUpdateChecked = true;
-        sendUpdateCommand({ command: 'check' });
+    const send = (command) => {
+        try {
+            sendUpdateCommand({ command });
+        } catch (error) {
+            ui.showToast(error.message, 5000, 'error');
+        }
     };
-    window.installAppUpdate = () => sendUpdateCommand({ command: 'install' });
+    window.checkAppUpdate = () => send('check');
+    window.installAppUpdate = () => send('install');
 
     connectUpdateWebSocket((data) => {
         // Command-level errors arrive as a direct {error[, url]} reply.
@@ -5551,13 +5555,11 @@ function initAppUpdateSection() {
             ui.showToast(data.url ? `${data.error} — ${data.url}` : data.error, 5000, 'error');
             return;
         }
+        if (data?.phase === 'checking') settingsCache.appUpdateChecked = true;
         settingsCache.appUpdateState = data;
         const section = document.getElementById('app-update-section');
         if (section) section.innerHTML = renderAppUpdateBlock(data);
-    });
-
-    // Auto-check on entering the page so the status pill resolves without a manual click.
-    window.checkAppUpdate();
+    }, window.checkAppUpdate);
 }
 
 // Render updates settings
