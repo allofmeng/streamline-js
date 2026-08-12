@@ -4980,6 +4980,10 @@ function setupDye2SettingsListeners() {
     });
 }
 
+// Whether the visualizer plugin currently has a stored (secure) password.
+// PR #588: secure values are returned as { isSet } state, never plaintext.
+let visualizerPasswordIsSet = false;
+
 // Function to set up event listeners for the Visualizer settings
 function setupVisualizerEventListeners() {
     const saveButton = document.getElementById('save-visualizer-credentials');
@@ -5067,52 +5071,62 @@ function setupVisualizerEventListeners() {
         const username = usernameInput.value.trim();
         const password = passwordInput.value; // Don't trim password as spaces might be valid
 
-        if (!username || !password) {
-            ui.showToast('Please enter both username and password', 1500, 'error');
+        if (!username) {
+            ui.showToast('Please enter your Visualizer username', 1500, 'error');
             return;
         }
 
-        try {
-            // Import verifyVisualizerCredentials from api.js
-            const { verifyVisualizerCredentials } = await import('../modules/api.js');
-
-            const isValid = await verifyVisualizerCredentials(username, password);
-
-            if (!isValid) {
-                ui.showToast('Visualizer log-in failed, check credentials', 900, 'error');
-                return; // Stop here if credentials are bad
-            }
-
-            ui.showToast('Visualizer log-in success', 900, 'success');
-
-            // If credentials are valid, proceed to save to plugin
-            const autoUpload = autoUploadCheckbox.checked;
-            const minDuration = parseInt(minDurationInput.value, 10) || 5;
-
-            // 1. Save UI-only settings to localStorage
-            localStorage.setItem('visualizerAutoUpload', autoUpload.toString());
-
-            // 2. Prepare and save plugin settings - use correct field names expected by visualizer plugin manifest
-            const { setPluginSettings } = await import('../modules/api.js');
-            const pluginId = 'visualizer.reaplugin';
-
-            const settingsPayload = {
-                Username: username,
-                Password: password,
-                AutoUpload: autoUpload,
-                LengthThreshold: minDuration
-            };
-
+        // Settings POST is a patch (decaid #588): a typed password sets the
+        // credential, an empty field preserves the stored one via the isSet
+        // marker, an empty field with nothing stored leaves it unset.
+        let passwordPayload;
+        if (password) {
             try {
-                await setPluginSettings(pluginId, settingsPayload);
-                ui.showToast('Visualizer settings saved successfully', 3000, 'success');
+                // Import verifyVisualizerCredentials from api.js
+                const { verifyVisualizerCredentials } = await import('../modules/api.js');
+
+                const isValid = await verifyVisualizerCredentials(username, password);
+
+                if (!isValid) {
+                    ui.showToast('Visualizer log-in failed, check credentials', 900, 'error');
+                    return; // Stop here if credentials are bad
+                }
+
+                ui.showToast('Visualizer log-in success', 900, 'success');
             } catch (error) {
-                console.error('Failed to save visualizer plugin settings:', error);
-                ui.showToast(`Failed to save to decent.app plugin: ${error.message}`, 3000, 'error');
+                console.error('Error during credential validation:', error);
+                ui.showToast(`Error validating credentials: ${error.message}`, 3000, 'error');
+                return;
             }
+            passwordPayload = password;
+        } else {
+            passwordPayload = { isSet: visualizerPasswordIsSet }; // preserve current state
+        }
+
+        // Proceed to save to plugin
+        const autoUpload = autoUploadCheckbox.checked;
+        const minDuration = parseInt(minDurationInput.value, 10) || 5;
+
+        // 1. Save UI-only settings to localStorage
+        localStorage.setItem('visualizerAutoUpload', autoUpload.toString());
+
+        // 2. Prepare and save plugin settings - use correct field names expected by visualizer plugin manifest
+        const { setPluginSettings } = await import('../modules/api.js');
+        const pluginId = 'visualizer.reaplugin';
+
+        const settingsPayload = {
+            Username: username,
+            Password: passwordPayload,
+            AutoUpload: autoUpload,
+            LengthThreshold: minDuration
+        };
+
+        try {
+            await setPluginSettings(pluginId, settingsPayload);
+            ui.showToast('Visualizer settings saved successfully', 3000, 'success');
         } catch (error) {
-            console.error('Error during credential validation:', error);
-            ui.showToast(`Error validating credentials: ${error.message}`, 3000, 'error');
+            console.error('Failed to save visualizer plugin settings:', error);
+            ui.showToast(`Failed to save to decent.app plugin: ${error.message}`, 3000, 'error');
         }
     });
 }
@@ -5140,6 +5154,14 @@ async function loadVisualizerSettings() {
 
         // Always clear the password field for security
         passwordInput.value = '';
+
+        // Secure values are returned as { isSet } state, never plaintext (decaid #588).
+        const passwordVal = savedSettings?.Password;
+        visualizerPasswordIsSet = passwordVal != null &&
+            (typeof passwordVal === 'object' ? passwordVal.isSet === true : !!passwordVal);
+        passwordInput.placeholder = visualizerPasswordIsSet
+            ? 'Password saved — leave empty to keep'
+            : 'Enter your Visualizer password';
 
         const autoUploadValue = typeof savedSettings.AutoUpload !== 'undefined' ? savedSettings.AutoUpload : true;
         autoUploadCheckbox.checked = !!autoUploadValue;

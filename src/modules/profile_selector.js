@@ -13,7 +13,7 @@ let cachedVisualizerCredentials = null;
 
 /**
  * Check if Visualizer credentials are configured
- * @returns {Promise<{configured: boolean, username: string|null, password: string|null}>}
+ * @returns {Promise<{configured: boolean, username: string|null, passwordSet: boolean}>}
  */
 async function checkVisualizerCredentials() {
     if (cachedVisualizerCredentials) {
@@ -24,19 +24,23 @@ async function checkVisualizerCredentials() {
         const settings = await getPluginSettings('visualizer.reaplugin');
         const enabled = settings?.Enabled !== false; // Default to enabled
         const username = settings?.Username;
+        // Secure settings come back as { isSet } state, never plaintext (decaid #588).
         const password = settings?.Password;
-        
+        const passwordSet = password == null ? false
+            : typeof password === 'object' ? password.isSet === true
+            : !!password; // legacy cleartext from older decaid
+
         cachedVisualizerCredentials = {
-            configured: enabled && !!(username && password),
+            configured: enabled && !!(username && passwordSet),
             enabled: enabled,
             username: username || null,
-            password: password || null
+            passwordSet
         };
         
         return cachedVisualizerCredentials;
     } catch (error) {
         logger.error('Error checking Visualizer credentials:', error);
-        return { configured: false, enabled: true, username: null, password: null };
+        return { configured: false, enabled: true, username: null, passwordSet: false };
     }
 }
 
