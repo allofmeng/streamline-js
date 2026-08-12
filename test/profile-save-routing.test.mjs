@@ -9,6 +9,7 @@
 //      the instant it opened and forked itself on a no-op Save.
 // Run: node test/profile-save-routing.test.mjs
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
 
 const deepCopy = o => JSON.parse(JSON.stringify(o));
 
@@ -126,5 +127,14 @@ const forked = asEdited(legacyDefault);
 forked.steps[0].seconds = 12;
 assert.strictEqual(route(legacyDefault, forked), 'fork-default',
     'editing a default forks it — PUT would be rejected');
+
+const editorSource = readFileSync(new URL('../src/modules/profile_editor.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const overwriteStart = editorSource.indexOf('        } else if (execChanged) {');
+const overwriteEnd = editorSource.indexOf('        } else {', overwriteStart + 1);
+const overwriteBranch = editorSource.slice(overwriteStart, overwriteEnd);
+const uploadIndex = overwriteBranch.indexOf('saved = await uploadProfileWithParent');
+const hideIndex = overwriteBranch.indexOf("await updateProfileVisibility(src.id, 'hidden')");
+assert.ok(uploadIndex >= 0 && hideIndex >= 0 && uploadIndex < hideIndex,
+    'the replacement must exist before the visible predecessor is hidden');
 
 console.log('profile-save-routing: all assertions passed');

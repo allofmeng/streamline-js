@@ -1972,8 +1972,8 @@ async function saveProfile() {
             // hidden, restorable snapshot instead of letting the server drop it on
             // rehash. The new record links back via parentId, so /lineage returns
             // the full history the Revert picker reads.
-            try { await updateProfileVisibility(src.id, 'hidden'); } catch (_) {}
             saved = await uploadProfileWithParent(editorState.profile, src.id);
+            try { await updateProfileVisibility(src.id, 'hidden'); } catch (_) {}
         } else {
             // Presentation-only change (title/author/notes) → same id, PUT in place.
             saved = await updateProfile(src.id, editorState.profile);
