@@ -67,14 +67,14 @@ let currentShotSettings = {
 };
 
 // Caching for DE1 settings to avoid multiple API calls
-const de1SettingsCache = {
+let de1SettingsCache = {
     data: null,
     timestamp: null,
     TTL: 60000 // 60 seconds TTL
 };
 
 // Caching for DE1 advanced settings to improve performance when navigating to settings page
-const de1AdvancedSettingsCache = {
+let de1AdvancedSettingsCache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -1446,8 +1446,7 @@ export async function getDe1Settings() {
         const data = await response.json();
 
         // Update the cache with new data
-        de1SettingsCache.data = data;
-        de1SettingsCache.timestamp = Date.now();
+        de1SettingsCache = { ...de1SettingsCache, data, timestamp: Date.now() };
 
         return data;
     } catch (error) {
@@ -1518,8 +1517,7 @@ export async function getDe1AdvancedSettings() {
         const data = await response.json();
 
         // Update the cache with new data
-        de1AdvancedSettingsCache.data = data;
-        de1AdvancedSettingsCache.timestamp = Date.now();
+        de1AdvancedSettingsCache = { ...de1AdvancedSettingsCache, data, timestamp: Date.now() };
 
         return data;
     } catch (error) {
@@ -1574,6 +1572,8 @@ export async function resetDe1Settings() {
             const errorBody = await response.text();
             throw new Error(`Failed to reset DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache = { ...de1SettingsCache, data: null, timestamp: null };
+        de1AdvancedSettingsCache = { ...de1AdvancedSettingsCache, data: null, timestamp: null };
         logger.info('DE1 settings reset to defaults');
     } catch (error) {
         logger.error('Error resetting DE1 settings:', error);
