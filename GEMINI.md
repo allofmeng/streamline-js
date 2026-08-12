@@ -7,7 +7,7 @@ This document provides guidelines for interacting with the Gemini AI assistant i
 ## 1. Project Overview
 
 *   **Goal:** Rewrite existing streamline skin into modern html , css,Javascript based web app. 
-*   **Core Features:** using reaprime as middle ware to talk to decent espresso machine and control it, and display real time data, and allow for profile creation and management.
+*   **Core Features:** using Decaid as middle ware to talk to decent espresso machine and control it, and display real time data, and allow for profile creation and management.
 *.  **Reference**:** All UI and Design reference can be accessed via figna design file and DESIGN_SYSTEM.MD. 
 ## 2. Tech Stack
 
@@ -46,7 +46,7 @@ Tools:
 ## 5. Coding Reference
 
 Current Working example is at /Users/markc/Documents/streamline_js/de1app/de1plus/skins/Streamline main functionality is written in skin.tcl , if you are not sure how to implement certain feature in Javascript, check aginst the logic in skin.tcl before you implement. 
-You are also required to check reaprime_api.md and rewrite_roadmap.md in your reasoning. These documents serve as guidelines for the project.
+You are also required to check rest_v1.yml, websocket_v1.yml, the [Decaid API documentation](https://github.com/decentespresso/decaid/blob/main/doc/Api.md), and rewrite_roadmap.md in your reasoning. These documents serve as guidelines for the project.
 ## 6. Current Goal
 
 * * bug fixes and code suggestions. 

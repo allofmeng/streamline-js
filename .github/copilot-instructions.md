@@ -1,12 +1,12 @@
 # Copilot Instructions for streamline_project
 
 ## Project Overview
-This is a modern web app rewrite of the Decent Espresso machine's Streamline skin. It communicates with a Rea Prime middleware server to control the espresso machine and display real-time data.
+This is a modern web app rewrite of the Decent Espresso machine's Streamline skin. It communicates with Decaid to control the espresso machine and display real-time data.
 
 ## Architecture
 
 ### Core Components
-- `src/modules/api.js`: WebSocket and REST API communication with Rea Prime server (port 8080)
+- `src/modules/api.js`: WebSocket and REST API communication with Decaid (port 8080)
 - `src/modules/app.js`: Main application logic and state management
 - `src/modules/chart.js`: Real-time data visualization using Plotly
 - `src/modules/history.js`: Shot history management with IndexedDB storage
@@ -71,6 +71,7 @@ This is a modern web app rewrite of the Decent Espresso machine's Streamline ski
 - History updates must be atomic with IndexedDB
 
 ## Reference Files
-- `reaprime_api.md`: Complete API documentation
+- `rest_v1.yml` and `websocket_v1.yml`: Repository-local Decaid API contracts
+- [Decaid API documentation](https://github.com/decentespresso/decaid/blob/main/doc/Api.md): Current backend reference
 - `DESIGN_SYSTEM.md`: UI/UX guidelines
 - `GEMINI.md`: Project goals and requirements
