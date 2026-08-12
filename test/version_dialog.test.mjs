@@ -3,7 +3,7 @@
 import { readFileSync } from 'fs';
 import assert from 'assert';
 
-const src  = readFileSync('src/modules/profile_editor.js', 'utf8');
+const src  = readFileSync('src/modules/profile_editor.js', 'utf8').replace(/\r\n?/g, '\n');
 const i    = src.indexOf('// Version picker. Returns the chosen ProfileRecord');
 const body = src.slice(i, src.indexOf('\n}\n\nasync function openVersionHistory()', i) + 2);
 
