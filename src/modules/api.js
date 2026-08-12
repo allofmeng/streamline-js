@@ -1866,9 +1866,7 @@ export async function getFirmwareCatalog() {
 // `error` or a truncated stream — a stream that ends without `done` means CRC
 // verification never confirmed, so it is NOT a success.
 async function consumeFirmwareStream(response, onProgress) {
-    // No streaming body (old middleware, or a proxy that buffered it): the POST
-    // still completed, so treat it as a legacy success rather than failing.
-    if (!response.body?.getReader) return;
+    if (!response.body?.getReader) throw new Error('Firmware response did not provide a progress stream');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
