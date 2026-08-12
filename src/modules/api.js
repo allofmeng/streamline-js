@@ -41,6 +41,7 @@ let previousMachineState = null;
 let scaleWebSocket = null;
 let displayWebSocket = null;
 let displayWebSocketReady = false;
+let pendingDisplayCommand = null;
 // Latest DisplayState frame from ws/v1/display. Null until the socket delivers
 // its first snapshot.
 let lastDisplayState = null;
@@ -621,6 +622,10 @@ export function connectDisplayWebSocket(onData) {
         if (isWakeLockEnabled()) {
             enableWakeLock().catch((e) => logger.warn('Failed to re-arm wake-lock on connect:', e));
         }
+        if (pendingDisplayCommand) {
+            sendDisplayCommand(pendingDisplayCommand);
+            pendingDisplayCommand = null;
+        }
     };
 
     displayWebSocket.onmessage = (event) => {
@@ -658,26 +663,9 @@ export function connectDisplayWebSocket(onData) {
  * @param {number} [command.brightness] - Brightness value 0-100 (required for setBrightness)
  */
 export function sendDisplayCommand(command) {
-    if (!displayWebSocket) {
-        logger.error('Display WebSocket not initialized. Cannot send command.');
-        return;
-    }
-
-    if (!displayWebSocketReady || displayWebSocket.readyState !== WebSocket.OPEN) {
+    if (!displayWebSocket || !displayWebSocketReady || displayWebSocket.readyState !== WebSocket.OPEN) {
         logger.warn('Display WebSocket not ready. Queuing command:', command);
-        // Retry after a short delay
-        setTimeout(() => {
-            if (displayWebSocketReady && displayWebSocket.readyState === WebSocket.OPEN) {
-                try {
-                    displayWebSocket.send(JSON.stringify(command));
-                    logger.info('Display command sent (after retry):', command);
-                } catch (error) {
-                    logger.error('Error sending display command on retry:', error);
-                }
-            } else {
-                logger.error('Display WebSocket still not ready after retry.');
-            }
-        }, 100);
+        pendingDisplayCommand = command;
         return;
     }
 
