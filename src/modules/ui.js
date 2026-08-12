@@ -1,4 +1,4 @@
-import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, setStopAtTemperature, MachineState, reaHostname, setPluginSettings, getPlugins, getPluginSettings, verifyVisualizerCredentials, persistLastValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
+import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, setStopAtTemperature, MachineState, getPlugins, persistSharedValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { isBengleMachine, isBengleModel } from './machine.js';
@@ -228,7 +228,7 @@ export function updateFlushValue(newValue) {
 
     updateWorkflow(workflowUpdate).then(() => {
         logger.debug('Rinse value updated successfully:', workflowUpdate.rinseData);
-        persistLastValue(FLUSH_DURATION_LAST_VALUE_KEY, workflowUpdate.rinseData.duration);
+        persistSharedValue(FLUSH_DURATION_LAST_VALUE_KEY, workflowUpdate.rinseData.duration);
     }).catch(error => {
         logger.error('Failed to update rinse value:', error);
     });
@@ -1371,7 +1371,6 @@ export function isScreensaverActive() {
 export function initUI(callbacks) {
     initThemeToggle();
     initFullscreenHandler();
-    initSettingsModal();
     initLanguageSwitcher();
     initScaleClick(callbacks.onWeightClick);
     initScreensaver(); // Initialize screensaver functionality
@@ -2783,139 +2782,6 @@ export function initFullscreenHandler() {
         logger.warn('Fullscreen toggle button with id "fullscreen-toggle-btn" not found.');
     }
 }
-
-function initSettingsModal() {
-    const settingsModal = document.getElementById('settings_modal');
-    const settingsBtn = document.getElementById('settings-btn');
-    const saveSettingsBtn = document.getElementById('save-settings-btn');
-    const visualizerUsernameEl = document.getElementById('visualizer-username');
-    const visualizerPasswordEl = document.getElementById('visualizer-password');
-    const visualizerAutoUploadEl = document.getElementById('visualizer-auto-upload');
-    const visualizerStatusEl = document.getElementById('visualizer-status');
-    const reaHostnameInput = document.getElementById('rea-hostname-input');
-    const saveReaHostnameBtn = document.getElementById('save-rea-hostname-btn');
-    const pluginId = 'visualizer.reaplugin';
-
-    // When the modal is opened, load the latest settings
-    if (settingsBtn) {
-        settingsBtn.addEventListener('click', async () => {
-            if (settingsModal) {
-                // 1. Populate hostname
-                if (reaHostnameInput) {
-                    reaHostnameInput.value = reaHostname;
-                }
-
-                // 2. Load and populate plugin settings
-                try {
-                    const savedSettings = await getPluginSettings(pluginId);
-                    if (savedSettings && savedSettings.Username) {
-                        visualizerUsernameEl.value = savedSettings.Username;
-                    } else {
-                        visualizerUsernameEl.value = '';
-                    }
-                    visualizerPasswordEl.value = ''; // Always clear password field
-                    visualizerStatusEl.textContent = ''; // Clear status
-                } catch (error) {
-                    logger.error(`Failed to load settings for ${pluginId}:`, error);
-                    visualizerStatusEl.textContent = 'Could not load plugin settings.';
-                    visualizerStatusEl.className = 'text-red-500';
-                }
-
-                // 3. Load UI-only settings from localStorage
-                const autoUpload = localStorage.getItem('visualizerAutoUpload');
-                if (visualizerAutoUploadEl) {
-                    visualizerAutoUploadEl.checked = autoUpload === 'true';
-                }
-
-                settingsModal.showModal();
-            }
-        });
-    }
-
-    // Handle saving the REA hostname
-    if (saveReaHostnameBtn) {
-        saveReaHostnameBtn.addEventListener('click', () => {
-            if (reaHostnameInput) {
-                const newHostname = reaHostnameInput.value.trim();
-                if (newHostname) {
-                    localStorage.setItem('reaHostname', newHostname);
-                    alert('Hostname saved. The page will now reload.');
-                    location.reload();
-                } else {
-                    localStorage.removeItem('reaHostname');
-                    alert('Hostname cleared. The page will now reload to use the default address.');
-                    location.reload();
-                }
-            }
-        });
-    }
-
-    // Handle saving all other settings
-    if (saveSettingsBtn) {
-        saveSettingsBtn.addEventListener('click', async () => {
-            const username = visualizerUsernameEl.value.trim();
-            const password = visualizerPasswordEl.value; // Don't trim password
-
-            if (!username || !password) {
-                visualizerStatusEl.textContent = 'Username and Password are required.';
-                visualizerStatusEl.className = 'text-red-500';
-                return;
-            }
-
-            visualizerStatusEl.textContent = 'Testing credentials...';
-            visualizerStatusEl.className = 'text-gray-500';
-
-            const isValid = await verifyVisualizerCredentials(username, password);
-
-            if (!isValid) {
-                visualizerStatusEl.textContent = 'Invalid Visualizer credentials.';
-                visualizerStatusEl.className = 'text-red-500';
-                // Clear any previously saved (and now invalid) credentials
-                localStorage.removeItem('visualizerUsername');
-                localStorage.removeItem('visualizerPassword');
-                return; // Stop here if credentials are bad
-            }
-
-            visualizerStatusEl.textContent = 'Visualizer credentials valid.';
-            visualizerStatusEl.className = 'text-green-500';
-
-            // On success, save to localStorage for future auto-login
-            localStorage.setItem('visualizerUsername', username);
-            localStorage.setItem('visualizerPassword', btoa(password)); // Basic obfuscation
-
-            // If credentials are valid, proceed to save to plugin
-            const autoUpload = visualizerAutoUploadEl.checked;
-
-            // 1. Save UI-only settings to localStorage
-            localStorage.setItem('visualizerAutoUpload', autoUpload);
-
-            // 2. Prepare and save plugin settings
-            const settingsPayload = {
-                Username: username,
-                Password: password, // Send the actual password to the plugin
-                AutoUpload: autoUpload,
-                LengthThreshold: parseInt(document.getElementById('visualizer-min-duration').value, 10) || 5,
-            };
-
-            try {
-                await setPluginSettings(pluginId, settingsPayload);
-                visualizerStatusEl.textContent = 'Credentials saved successfully!';
-                visualizerStatusEl.className = 'text-green-500';
-
-                // Hide status after a few seconds
-                setTimeout(() => {
-                    visualizerStatusEl.textContent = '';
-                }, 3000);
-
-            } catch (error) {
-                logger.error('Failed to save visualizer plugin settings:', error);
-                visualizerStatusEl.textContent = `Failed to save to REA plugin: ${error.message}.`;
-                visualizerStatusEl.className = 'text-red-500';
-            }
-        });
-    }
-}
-
 
 // Single shared timer: without cancelling the previous one, a short toast's hide
 // timer fires while a later, longer toast is on screen and cuts it off early --

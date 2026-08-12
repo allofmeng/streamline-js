@@ -535,6 +535,33 @@ export function sendDeviceCommand(command) {
     }
 }
 
+/**
+ * Waits for the DeviceConnectResult that reaprime sends over the devices
+ * WebSocket after a 'connect' command (reaprime #591). The channel is a
+ * broadcast with no request id, so the result is matched by deviceId +
+ * operation. Resolves null if nothing matches within timeoutMs (WS drop) --
+ * a real server-side timeout still arrives as its own outcome: 'timedOut'.
+ */
+export function awaitDeviceConnectResult(deviceId, timeoutMs = 20000) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            deviceDataListeners.delete(listener);
+            clearTimeout(timer);
+            resolve(result);
+        };
+        const listener = (data) => {
+            if (data?.operation === 'connect' && data?.deviceId === deviceId) {
+                finish(data);
+            }
+        };
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        connectDeviceWebSocket(listener, null, null, null);
+    });
+}
+
 export function getDeviceWebSocket() {
     return deviceWebSocket;
 }
@@ -1129,6 +1156,10 @@ export const HOT_WATER_VOLUME_LAST_VALUE_KEY = 'last-hot-water-volume';
 export const HOT_WATER_TEMP_LAST_VALUE_KEY = 'last-hot-water-temp';
 export const BRIGHTNESS_LAST_VALUE_KEY = 'last-brightness';
 
+// Same namespace profileManager.js uses for favorites — keeps all
+// per-installation (not per-device) settings in one KV bucket.
+const SETTINGS_NAMESPACE = 'streamline-app';
+
 export async function persistLastValue(key, value) {
     try {
         await openDB();
@@ -1138,37 +1169,58 @@ export async function persistLastValue(key, value) {
     }
 }
 
+// Like persistLastValue, but also pushes to Rea's KV store so the value is
+// shared across every device instead of staying stuck on whichever one set
+// it. IndexedDB stays as a local fallback for when the store is unreachable.
+export async function persistSharedValue(key, value) {
+    persistLastValue(key, value);
+    try {
+        await setValueInStore(SETTINGS_NAMESPACE, key, value);
+    } catch (e) {
+        logger.warn(`Failed to persist ${key} to KV store:`, e);
+    }
+}
+
 // Boot-time resync for a main-page control. A plain GET tells us what Rea's
 // workflow record says, not whether the DE1 itself is still holding that
 // value (BLE reconnect / Rea restart can leave it stale). Re-pushing on
 // every boot unconditionally works but is wasteful and, if `fetchedValue`
 // were ever the stale one, would clobber a legitimate reading. Comparing
-// against our own last-written value avoids both: push only when they
-// actually disagree.
+// against the KV store's record of what the user last set avoids both: push
+// only when they actually disagree. The KV store (not per-device IndexedDB)
+// is the source of truth here so a phone and a tablet agree on the target;
+// IndexedDB is only consulted if the store can't be reached.
 export async function resyncIfDrifted(key, fetchedValue, pushFn) {
     if (fetchedValue == null) return;
+    let remembered = null;
     try {
-        await openDB();
-        const remembered = await getSetting(key);
-        if (remembered != null && remembered !== fetchedValue) {
-            await pushFn(remembered);
-        }
+        remembered = await getValueFromStore(SETTINGS_NAMESPACE, key);
     } catch (e) {
-        logger.warn(`resyncIfDrifted failed for ${key}:`, e);
+        logger.warn(`resyncIfDrifted: KV lookup failed for ${key}, falling back to local cache:`, e);
+        try {
+            await openDB();
+            remembered = await getSetting(key);
+        } catch (e2) {
+            logger.warn(`resyncIfDrifted failed for ${key}:`, e2);
+            return;
+        }
+    }
+    if (remembered != null && remembered !== fetchedValue) {
+        await pushFn(remembered);
     }
 }
 
 export async function setTargetHotWaterVolume(volume) {
     const value = parseFloat(volume);
     const result = await updateWorkflow({ hotWaterData: { volume: value } });
-    persistLastValue(HOT_WATER_VOLUME_LAST_VALUE_KEY, value);
+    persistSharedValue(HOT_WATER_VOLUME_LAST_VALUE_KEY, value);
     return result;
 }
 
 export async function setTargetHotWaterTemp(temp) {
     const value = parseFloat(temp);
     const result = await updateWorkflow({ hotWaterData: { targetTemperature: value } });
-    persistLastValue(HOT_WATER_TEMP_LAST_VALUE_KEY, value);
+    persistSharedValue(HOT_WATER_TEMP_LAST_VALUE_KEY, value);
     return result;
 }
 
@@ -1191,14 +1243,14 @@ export async function setTargetSteamTemp(temp) {
 export async function setTargetSteamDuration(duration) {
     const value = parseFloat(duration);
     const result = await updateWorkflow({ steamSettings: { duration: value } });
-    persistLastValue(STEAM_DURATION_LAST_VALUE_KEY, value);
+    persistSharedValue(STEAM_DURATION_LAST_VALUE_KEY, value);
     return result;
 }
 
 export async function setTargetSteamFlow(flow) {
     const value = parseFloat(flow);
     const result = await updateWorkflow({ steamSettings: { flow: value } });
-    persistLastValue(STEAM_FLOW_LAST_VALUE_KEY, value);
+    persistSharedValue(STEAM_FLOW_LAST_VALUE_KEY, value);
     return result;
 }
 
@@ -1874,6 +1926,16 @@ export async function applyFirmware(artifactId, onProgress, force = false) {
         throw new Error(byStatus[response.status] || `Failed to apply firmware (${response.status})`);
     }
     return consumeFirmwareStream(response, onProgress);
+}
+
+// Cancels an in-progress update; idempotent, safe to call with nothing
+// running. The 202 body reports the operation's state at that instant (often
+// still 'cancelling') -- the firmware stream's own 'error' event is what
+// actually resolves the in-flight uploadFirmware/applyFirmware promise.
+export async function cancelFirmwareUpdate() {
+    const response = await fetch(`${API_BASE_URL}/machine/firmware`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(`Failed to cancel firmware update (${response.status})`);
+    return response.json();
 }
 
 export async function getPlugins() {

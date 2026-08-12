@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -136,6 +136,9 @@ let screensaverImagesCache = [];
 // instead of pretending nothing is happening. See window.uploadFirmware.
 let firmwareUploadInFlight = false;
 let lastFirmwareProgress = null;
+// Set on window.cancelFirmwareUpdate, read once the stream's 'error' event
+// lands, so that expected termination reads as "cancelled" not "failed".
+let firmwareCancelRequested = false;
 
 // Enhanced cache for settings data with loading states
 let settingsCache = {
@@ -5397,6 +5400,15 @@ export function renderFirmwareUpdateSettings() {
                     <div class="w-full h-[10px] rounded-full bg-[#c9c9c9] overflow-hidden">
                         <div id="firmware-progress-bar" class="h-full bg-[#385a92] transition-[width] duration-200" style="width:${lastFirmwareProgress?.phase === 'erasing' ? 0 : (lastFirmwareProgress?.percent ?? 0)}%"></div>
                     </div>
+                    <!-- Visibility toggled imperatively by runFirmwareOperation, not re-render:
+                         it must appear the instant an update starts and disappear once the
+                         stream settles, same as the panel it lives in. -->
+                    <button id="firmware-cancel-btn" type="button"
+                            class="self-start h-[48px] px-[28px] rounded-[64px] border-2 border-[var(--border-color)] text-[var(--text-primary)] text-[20px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                            style="display:${firmwareUploadInFlight ? 'inline-flex' : 'none'}"
+                            onclick="window.cancelFirmwareUpdate()">
+                        ${getTranslation('Cancel')}
+                    </button>
                 </div>
             </div>
 
@@ -6813,6 +6825,9 @@ export async function initializeSettings() {
         };
 
         firmwareUploadInFlight = true;
+        firmwareCancelRequested = false;
+        const cancelBtn = document.getElementById('firmware-cancel-btn');
+        if (cancelBtn) { cancelBtn.style.display = 'inline-flex'; cancelBtn.disabled = false; cancelBtn.textContent = getTranslation('Cancel'); }
         // A reload or a nav away aborts the POST mid-flash, which bricks nothing
         // but leaves the machine on a half-written image until it is redone. The
         // browser shows its own generic confirm here; the string is for the hosts
@@ -6837,19 +6852,45 @@ export async function initializeSettings() {
             lastFirmwareProgress = null;
             const label = document.getElementById('firmware-progress-label');
             const bar = document.getElementById('firmware-progress-bar');
+            // A cancel resolves through this same stream-error path (the DELETE
+            // just requests it; the NDJSON stream's 'error' event is what
+            // actually ends the in-flight promise) -- read as "cancelled", not "failed".
+            const cancelled = firmwareCancelRequested;
             if (label) {
-                label.textContent = `${getTranslation('Update failed')}: ${error.message}`;
+                label.textContent = cancelled ? getTranslation('Update cancelled') : `${getTranslation('Update failed')}: ${error.message}`;
                 label.classList.add('text-[#da515e]');
             }
             if (bar) bar.style.width = '0%';
-            ui.showToast(`${getTranslation('Update failed')}: ${error.message}`, 5000, 'error');
+            ui.showToast(
+                cancelled ? getTranslation('Firmware update cancelled') : `${getTranslation('Update failed')}: ${error.message}`,
+                5000, cancelled ? 'info' : 'error'
+            );
             onError?.(error);
         } finally {
             firmwareUploadInFlight = false;
+            firmwareCancelRequested = false;
             window.removeEventListener('beforeunload', blockUnload);
             if (wakeLockWasOff) await disableWakeLock().catch(() => {});
+            const cancelBtnEl = document.getElementById('firmware-cancel-btn');
+            if (cancelBtnEl) cancelBtnEl.style.display = 'none';
         }
     }
+
+    // Requests cancellation of whichever operation runFirmwareOperation has in
+    // flight (upload or catalog apply — the endpoint is the same for both).
+    // Idempotent server-side; a stray click after the update already finished
+    // is a harmless no-op.
+    window.cancelFirmwareUpdate = async function() {
+        const btn = document.getElementById('firmware-cancel-btn');
+        if (btn) { btn.disabled = true; btn.textContent = getTranslation('Cancelling...'); }
+        firmwareCancelRequested = true;
+        try {
+            await cancelFirmwareUpdate();
+        } catch (error) {
+            logger.error('Failed to cancel firmware update:', error);
+            ui.showToast(`${getTranslation('Failed to cancel')}: ${error.message}`, 4000, 'error');
+        }
+    };
 
     window.uploadFirmware = async function() {
         const input = document.getElementById('firmware-file-input');
@@ -8375,7 +8416,29 @@ window.handleDeviceConnection = async function(deviceId, action) {
     if (action === 'connect') {
         try {
             sendDeviceCommand({ command: 'connect', deviceId });
-            ui.showToast(`${getTranslation('Connected')} to device ${deviceId}`, 3000, 'success');
+            // reaprime #591: connect no longer just completes -- it reports a
+            // DeviceConnectResult with a real outcome, so wait for it instead
+            // of assuming the command succeeded.
+            const result = await awaitDeviceConnectResult(deviceId);
+            if (!result) {
+                ui.showToast(`${getTranslation('No response from device')} ${deviceId}`, 5000, 'error');
+                return;
+            }
+            switch (result.outcome) {
+                case 'connected':
+                case 'alreadyConnected':
+                    ui.showToast(`${getTranslation('Connected')} to device ${deviceId}`, 3000, 'success');
+                    break;
+                case 'conflict':
+                    ui.showToast(getTranslation('Already connecting -- try again in a moment'), 4000, 'info');
+                    break;
+                case 'timedOut':
+                    ui.showToast(`${getTranslation('Connection timed out')}: ${deviceId}`, 5000, 'error');
+                    break;
+                default:
+                    ui.showToast(`${getTranslation('Failed to connect')}: ${result.error || result.connectionError?.message || deviceId}`, 5000, 'error');
+                    break;
+            }
             // Device list will update automatically via WebSocket onData callback
         } catch (error) {
             console.error('Error connecting to device:', error);

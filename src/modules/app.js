@@ -318,10 +318,15 @@ const machineLink = createMachineLinkWatcher({
 });
 
 function handleDeviceWsData(data) {
-    const next = !!data?.scanning;
-    if (next !== isScaleScanning) {
-        isScaleScanning = next;
-        renderScaleDisconnectedText();
+    // reaprime #591 also broadcasts a DeviceConnectResult (deviceId/operation/
+    // outcome/state) on this same channel after a connect command; it carries
+    // no 'scanning' key, so don't let its absence read as "scanning stopped".
+    if (data && 'scanning' in data) {
+        const next = !!data.scanning;
+        if (next !== isScaleScanning) {
+            isScaleScanning = next;
+            renderScaleDisconnectedText();
+        }
     }
     // Edge-triggered, NOT id-diffed: the USB device id is byte-identical across a
     // power-cycle (it comes from the SAMD21 factory unique id), so watching for an
