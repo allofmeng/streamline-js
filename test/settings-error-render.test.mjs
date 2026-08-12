@@ -17,13 +17,13 @@ function loadRenderer() {
     `)();
 }
 
-test('settings errors render backend and translation values as text', () => {
+test('settings error values render literally', () => {
     const render = loadRenderer();
-    const title = '<svg onload=alert(1)>';
-    const message = '<img src=x onerror=alert(1)>';
+    const title = 'Profile <draft>';
+    const message = 'DE1 returned <offline>';
     const html = render(title, message);
 
-    assert.doesNotMatch(html, /<(?:img|svg)/i);
-    assert.match(html, /&lt;svg onload=alert\(1\)&gt;/);
-    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.doesNotMatch(html, /<(?:draft|offline)>/i);
+    assert.match(html, /Profile &lt;draft&gt;/);
+    assert.match(html, /DE1 returned &lt;offline&gt;/);
 });
