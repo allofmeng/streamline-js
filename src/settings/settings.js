@@ -5946,6 +5946,13 @@ function getCategoryTitle(category) {
     }
 }
 
+function handleSettingsLanguageChange() {
+    translatePage();
+    if (activeSettingsCategory) {
+        updateSettingsContentArea(activeSettingsCategory);
+    }
+}
+
 // Initialize the settings page
 export async function initializeSettings() {
     resetPendingChanges();
@@ -6089,12 +6096,7 @@ export async function initializeSettings() {
     setLanguage(getCurrentLanguage());
 
     // Re-translate settings content whenever language changes
-    document.addEventListener('streamline:languagechange', () => {
-        translatePage();
-        if (activeSettingsCategory) {
-            updateSettingsContentArea(activeSettingsCategory);
-        }
-    });
+    document.addEventListener('streamline:languagechange', handleSettingsLanguageChange);
 
     // Expose update functions to global scope for inline event handlers
     window.updateReaSetting = updateReaSetting;
@@ -7756,38 +7758,40 @@ export function initDeviceWebSocket() {
     logger.info('Device WebSocket initialized');
 }
 
+function handleDisplayState(data) {
+    logger.debug('Display state received:', data);
+    displayStateCache = data; // REA truth for render-time reads
+
+    // Update brightness slider + number entry if they exist
+    if (data.brightness !== undefined) {
+        const brightnessSlider = document.getElementById('brightness-slider');
+        const brightnessNumber = document.getElementById('brightness-number');
+        if (brightnessSlider) {
+            brightnessSlider.value = data.brightness;
+            // Moving the thumb without repainting the fill is what leaves the
+            // bar behind when REA pushes a level we did not set locally.
+            syncBrightnessSliderFill(brightnessSlider, data.brightness);
+        }
+        if (brightnessNumber) brightnessNumber.value = data.brightness;
+    }
+
+    // Update wake-lock toggle if it exists. wakeLockOverride (not
+    // wakeLockEnabled) is REA's record of whether THIS APP asked for the
+    // lock -- wakeLockEnabled is just whether a lock is held right now,
+    // which can read false for reasons unrelated to our request and was
+    // fighting the user's own toggle taps.
+    const wakeLockToggle = document.getElementById('wake-lock-toggle');
+    if (wakeLockToggle && data.wakeLockOverride !== undefined) {
+        wakeLockToggle.checked = data.wakeLockOverride;
+        localStorage.setItem('wakeLockEnabled', data.wakeLockOverride.toString());
+    }
+}
+
 /**
  * Initialize display WebSocket connection
  */
 export function initDisplayWebSocket() {
-    connectDisplayWebSocket((data) => {
-        logger.debug('Display state received:', data);
-        displayStateCache = data; // REA truth for render-time reads
-
-        // Update brightness slider + number entry if they exist
-        if (data.brightness !== undefined) {
-            const brightnessSlider = document.getElementById('brightness-slider');
-            const brightnessNumber = document.getElementById('brightness-number');
-            if (brightnessSlider) {
-                brightnessSlider.value = data.brightness;
-                // Moving the thumb without repainting the fill is what leaves the
-                // bar behind when REA pushes a level we did not set locally.
-                syncBrightnessSliderFill(brightnessSlider, data.brightness);
-            }
-            if (brightnessNumber) brightnessNumber.value = data.brightness;
-        }
-
-        // Update wake-lock toggle if it exists. wakeLockOverride (not
-        // wakeLockEnabled) is REA's record of whether THIS APP asked for the
-        // lock -- wakeLockEnabled is just whether a lock is held right now,
-        // which can read false for reasons unrelated to our request and was
-        // fighting the user's own toggle taps.
-        const wakeLockToggle = document.getElementById('wake-lock-toggle');
-        if (wakeLockToggle && data.wakeLockOverride !== undefined) {
-            wakeLockToggle.checked = data.wakeLockOverride;
-            localStorage.setItem('wakeLockEnabled', data.wakeLockOverride.toString());
-        }
-    });
+    connectDisplayWebSocket(handleDisplayState);
 
     logger.info('Display WebSocket initialized');
 }
