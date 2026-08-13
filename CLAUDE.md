@@ -40,10 +40,10 @@ Vanilla JS/HTML/CSS SPA — no framework, no JS bundler. ES modules via native b
 Decaid :8080
   ├── REST  ──────────────────► api.js → app.js (loadInitialData) → ui.js / profileManager.js
   └── WebSocket
-        ws/v1/de1/snapshot ──► handleData() → chart.updateChart() + ui.*
+        ws/v1/machine/snapshot ──► handleData() → chart.updateChart() + ui.*
         ws/v1/scale/snapshot ► handleScaleData()
-        ws/v1/de1/waterLevels ► waterTank.js
-        ws/v1/de1/shotSettings ► updateShotSettingsCache()
+        ws/v1/machine/waterLevels ► waterTank.js
+        ws/v1/machine/shotSettings ► updateShotSettingsCache()
 ```
 
 Single global `appState` object as source of truth. No reactive framework — UI functions are called manually after state changes.

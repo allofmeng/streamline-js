@@ -18,12 +18,12 @@ Modern web app rewrite of the Decent Espresso machine's Streamline skin. Communi
 ### Running the Application
 ```bash
 # Python 3
-python -m http.server 8080
+python -m http.server 8000
 
 # Or Node.js
-npx serve -p 8080
+npx serve -p 8000
 ```
-Access: `http://localhost:8080` | Ensure Decaid runs on port 8080
+Access: `http://localhost:8000` | Ensure Decaid runs on port 8080
 
 ### Testing
 No test framework configured. To add tests:
@@ -110,7 +110,7 @@ document.getElementById('shot-list').addEventListener('click', (e) => {
 ### API Communication
 ```javascript
 const REA_BASE_URL = `http://${hostname}:8080/api/v1`;
-const WS_PATH = 'ws/v1/de1/snapshot';
+const WS_PATH = 'ws/v1/machine/snapshot';
 // Use reconnecting-websocket.js for reliability
 ```
 

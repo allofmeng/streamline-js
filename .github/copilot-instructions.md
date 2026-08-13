@@ -15,7 +15,7 @@ This is a modern web app rewrite of the Decent Espresso machine's Streamline ski
 ### Key Data Flows
 1. Real-time machine data:
    ```js
-   WebSocket(ws/v1/de1/snapshot) -> handleData() -> updateChart() & UI updates
+   WebSocket(ws/v1/machine/snapshot) -> handleData() -> updateChart() & UI updates
    ```
 2. Profile/workflow management:
    ```js
@@ -32,7 +32,7 @@ This is a modern web app rewrite of the Decent Espresso machine's Streamline ski
 
 ### API Integration
 - Base URL: `http://${hostname}:8080/api/v1`
-- WebSocket path: `ws/v1/de1/snapshot`
+- WebSocket path: `ws/v1/machine/snapshot`
 - Keep `REA_PORT` constant in sync with middleware
 - Always use reconnecting WebSocket for reliability
 
