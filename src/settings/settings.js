@@ -8,6 +8,7 @@ import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
 import { summarizeFirmwareCatalog } from '../modules/firmware-progress.js';
+import { setScreensaverSuppressed, isMachineAsleep } from '../modules/screensaver-policy.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, cupWarmerViewMode, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
 import { clampCalWeight, calActionState, CAL_WEIGHT_DEFAULT_G, CAL_WEIGHT_MIN_G, CAL_WEIGHT_MAX_G } from '../modules/loadcell-cal.js';
@@ -5348,7 +5349,7 @@ function firmwareProgressLabel(progress) {
         uploading: percent >= 100
             ? `${getTranslation('Check')}…`
             : `${getTranslation('Uploading...')} ${percent}%`,
-        done: getTranslation('Your DE1 firmware has been upgraded'),
+        done: getTranslation('Your DE1 firmware has been upgraded. Restart the machine to apply it.'),
     }[phase] || '';
 }
 
@@ -6870,6 +6871,11 @@ export async function initializeSettings() {
         // Only touched when it was off, and put back the way it was found.
         const wakeLockWasOff = !isWakeLockEnabled();
         if (wakeLockWasOff) await enableWakeLock().catch(e => logger.warn('Wake-lock for firmware upload failed:', e));
+        // The flash sleeps the DE1 for the whole update, so the snapshot reports
+        // 'sleeping' and the screensaver + panel dim would bury the progress bar.
+        // Cleared in the finally, so the overlay is a pure function of machine
+        // state again the moment the update ends (fails and cancels included).
+        setScreensaverSuppressed(true);
 
         try {
             ui.showToast(getTranslation('Please be patient. It can take several minutes for your DE1 to update.'), 10000, 'info');
@@ -6900,6 +6906,12 @@ export async function initializeSettings() {
         } finally {
             firmwareUploadInFlight = false;
             firmwareCancelRequested = false;
+            setScreensaverSuppressed(false);
+            // The dim we suppressed was the idle->sleeping TRANSITION, and the
+            // machine is normally still asleep here — no second transition is
+            // coming, so nothing would ever re-dim. Catch up by hand. (The
+            // overlay needs no such nudge: it is re-derived every snapshot.)
+            if (isMachineAsleep(currentMachineState)) dimDisplay();
             window.removeEventListener('beforeunload', blockUnload);
             if (wakeLockWasOff) await disableWakeLock().catch(() => {});
             const cancelBtnEl = document.getElementById('firmware-cancel-btn');
@@ -6946,7 +6958,7 @@ export async function initializeSettings() {
     // to double as a deliberate gate.
     window.applyFirmwareUpdate = async function(artifactId) {
         if (!artifactId) return;
-        if (!confirm(getTranslation('Install this firmware update? The machine will restart automatically once the update is complete.'))) return;
+        if (!confirm(getTranslation('Install this firmware update? Restart the machine once the update is done.'))) return;
 
         await runFirmwareOperation((showProgress) => applyFirmware(artifactId, showProgress), {
             onBeforeStart: () => {

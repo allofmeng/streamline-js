@@ -11,7 +11,7 @@ import * as api from './api.js';
 import { loadPage, initRouter, isSubPage } from './router.js';
 import { initWaterTankSocket, isTankBelowRefillLevel } from './waterTank.js';
 import { logger, setDebug } from './logger.js';
-import { deriveScreensaverAction, isMachineAsleep } from './screensaver-policy.js';
+import { deriveScreensaverAction, isMachineAsleep, isScreensaverSuppressed } from './screensaver-policy.js';
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { setMachineModel, isBengleMachine } from './machine.js';
 import { resolveMilkProbePresence } from './steam-mode.js';
@@ -499,6 +499,12 @@ function handleTimeToReadyData(data) {
 // lands expires and the overlay returns: we decline to repaint a state we have
 // asked the machine to leave, we never paint one it never reported.
 function applyScreensaverAction(state) {
+    // A firmware flash sleeps the machine for minutes; the overlay would cover the
+    // progress bar the user is watching. Take it down if it is up, and stay down.
+    if (isScreensaverSuppressed()) {
+        if (ui.isScreensaverActive()) ui.hideScreensaver(); // PURE UI -- never a machine command
+        return;
+    }
     const action = deriveScreensaverAction({
         machineState: state,
         screensaverActive: ui.isScreensaverActive(),

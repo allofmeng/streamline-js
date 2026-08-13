@@ -3,7 +3,7 @@ import { logger ,setDebug} from './logger.js';
 import { createSocketSlot } from './socket-slot.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { buildCalibrateBody, calResponseHasBody } from './loadcell-cal.js';
-import { deriveDisplayAction } from './screensaver-policy.js';
+import { deriveDisplayAction, isScreensaverSuppressed } from './screensaver-policy.js';
 import { splitNdjson, advanceFirmwareState, initialFirmwareState } from './firmware-progress.js';
 
 export let reaHostname = localStorage.getItem('reaHostname') || window.location.hostname;
@@ -238,7 +238,9 @@ export function connectWebSocket(onData, onReconnect) {
             // Brightness follows the machine's confirmed state. See
             // deriveDisplayAction() for why 'error' has to release the dim.
             const displayAction = deriveDisplayAction(previousMachineState, currentMachineState);
-            if (displayAction === 'dim') {
+            // Suppressed = a foreground op (firmware flash) is the reason the
+            // machine slept. Skip the dim; the 'restore' side still runs.
+            if (displayAction === 'dim' && !isScreensaverSuppressed()) {
                 logger.info(`Machine state changed to ${currentMachineState}. Dimming display.`);
                 dimDisplay();
             } else if (displayAction === 'restore') {
