@@ -4,6 +4,7 @@ import { openDB, getAllShots, getLatestCachedShot, addShot, addShots, deleteShot
 import { API_BASE_URL } from './api.js';
 import { renderPastShot, clearShotData } from './shotData.js';
 import { getTranslation } from './i18n.js';
+import { translateProfileTitle } from './profileManager.js';
 import { generateShotSummary } from './shotSummary.js';
 import { openContextMenu } from './context-menu.js';
 import { showToast, setupPressAndHold } from './ui.js';
@@ -138,7 +139,7 @@ async function displayShot(index) {
         dateEl.textContent = `${year}/${month}/${day} ${hours}:${minutes}`;
     }
     if (profileNameEl && shot.workflow && shot.workflow.profile) {
-        profileNameEl.textContent = shot.workflow.profile.title;
+        profileNameEl.textContent = translateProfileTitle(shot.workflow.profile.title);
     }
     if (historyLabelEl) {
         if (index === 0) {
