@@ -136,5 +136,23 @@ const uploadIndex = overwriteBranch.indexOf('saved = await uploadProfileWithPare
 const hideIndex = overwriteBranch.indexOf("await updateProfileVisibility(src.id, 'hidden')");
 assert.ok(uploadIndex >= 0 && hideIndex >= 0 && uploadIndex < hideIndex,
     'the replacement must exist before the visible predecessor is hidden');
+const reactivateIndex = overwriteBranch.indexOf("saved = await updateProfileVisibility(saved.id, 'visible')");
+assert.ok(reactivateIndex >= 0 && uploadIndex < reactivateIndex && reactivateIndex < hideIndex,
+    'a deduplicated hidden replacement must be reactivated before the predecessor is hidden');
+
+const reactivateBlock = overwriteBranch.match(/            if \(saved\.visibility !== 'visible'\) \{[\s\S]*?            \}/)?.[0];
+assert.ok(reactivateBlock, 'the save path must handle a deduplicated hidden replacement');
+const runReactivation = new Function('saved', 'updateProfileVisibility',
+    `return (async () => { ${reactivateBlock} return saved; })();`);
+const calls = [];
+const deduplicated = { id: 'profile:a', visibility: 'hidden' };
+const visibleReplacement = await runReactivation(deduplicated, async (id, visibility) => {
+    calls.push([id, visibility]);
+    return { ...deduplicated, visibility };
+});
+assert.strictEqual(visibleReplacement.visibility, 'visible',
+    'a deduplicated hidden profile must be reactivated');
+assert.deepStrictEqual(calls, [['profile:a', 'visible']],
+    'reactivation must target the deduplicated replacement id');
 
 console.log('profile-save-routing: all assertions passed');
