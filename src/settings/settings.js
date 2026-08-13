@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -140,6 +140,14 @@ let lastFirmwareProgress = null;
 // Set on window.cancelFirmwareUpdate, read once the stream's 'error' event
 // lands, so that expected termination reads as "cancelled" not "failed".
 let firmwareCancelRequested = false;
+// When the current operation started, and the 1 Hz repaint that shows it.
+// The stream is silent for the whole erase, and then again for the first ~1% of
+// the upload (the handler emits one event per percent, and a percent is ~290
+// BLE round-trips) -- in a real log the label sat on "Erase…" for minutes while
+// the machine was in fact uploading. A running clock is what separates "silent
+// because it is working" from "silent because it is dead".
+let firmwareStartedAt = 0;
+let firmwareElapsedTimer = null;
 
 // Enhanced cache for settings data with loading states
 let settingsCache = {
@@ -5343,7 +5351,7 @@ async function initFirmwareCheck() {
 function firmwareProgressLabel(progress) {
     if (!progress) return '';
     const { phase, percent } = progress;
-    return {
+    const text = {
         erasing: `${getTranslation('Erase')}…`,
         // 100% here is "bytes sent", not "update applied" — only `done` is that.
         uploading: percent >= 100
@@ -5351,6 +5359,16 @@ function firmwareProgressLabel(progress) {
             : `${getTranslation('Uploading...')} ${percent}%`,
         done: getTranslation('Your DE1 firmware has been upgraded. Restart the machine to apply it.'),
     }[phase] || '';
+    // Only while something is actually running: a finished or failed update
+    // must not keep a clock next to it.
+    return text && phase !== 'done' ? `${text}${firmwareElapsed()}` : text;
+}
+
+// " — m:ss" since the operation started, or '' when nothing is running.
+function firmwareElapsed(now = Date.now()) {
+    if (!firmwareStartedAt) return '';
+    const seconds = Math.max(0, Math.round((now - firmwareStartedAt) / 1000));
+    return ` — ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 export function renderFirmwareUpdateSettings() {
@@ -6858,6 +6876,15 @@ export async function initializeSettings() {
 
         firmwareUploadInFlight = true;
         firmwareCancelRequested = false;
+        firmwareStartedAt = Date.now();
+        // Label only — the bar is the stream's to move. Element looked up per
+        // tick for the same reason showProgress does it: the router swaps the
+        // page HTML out from under a running update.
+        clearInterval(firmwareElapsedTimer);
+        firmwareElapsedTimer = setInterval(() => {
+            const label = document.getElementById('firmware-progress-label');
+            if (label && lastFirmwareProgress) label.textContent = firmwareProgressLabel(lastFirmwareProgress);
+        }, 1000);
         const cancelBtn = document.getElementById('firmware-cancel-btn');
         if (cancelBtn) { cancelBtn.style.display = 'inline-flex'; cancelBtn.disabled = false; cancelBtn.textContent = getTranslation('Cancel'); }
         // A reload or a nav away aborts the POST mid-flash, which bricks nothing
@@ -6876,6 +6903,8 @@ export async function initializeSettings() {
         // Cleared in the finally, so the overlay is a pure function of machine
         // state again the moment the update ends (fails and cancels included).
         setScreensaverSuppressed(true);
+        // And keep our MMR-backed settings reads off the BLE radio the flash owns.
+        setFirmwareFlashInFlight(true);
 
         try {
             ui.showToast(getTranslation('Please be patient. It can take several minutes for your DE1 to update.'), 10000, 'info');
@@ -6906,7 +6935,14 @@ export async function initializeSettings() {
         } finally {
             firmwareUploadInFlight = false;
             firmwareCancelRequested = false;
+            // Stop the clock. The terminal lines ("upgraded", "cancelled",
+            // "failed") are painted in the try/catch above and must not end up
+            // with a counter still ticking beside them.
+            clearInterval(firmwareElapsedTimer);
+            firmwareElapsedTimer = null;
+            firmwareStartedAt = 0;
             setScreensaverSuppressed(false);
+            setFirmwareFlashInFlight(false);
             // The dim we suppressed was the idle->sleeping TRANSITION, and the
             // machine is normally still asleep here — no second transition is
             // coming, so nothing would ever re-dim. Catch up by hand. (The
@@ -8268,63 +8304,6 @@ export function renderBluetoothScaleSettings(settings) {
     `;
 }
 
-// Function to render all available devices with individual connection controls
-async function renderAllDevices() {
-    try {
-     
-
-        // Get all available devices
-        // const devices = await getDevices();
-            const devices = await scanForDevices();
-        // Separate devices into machines and scales
-        const machines = devices.filter(device => 
-            device.name && (device.name.toLowerCase().includes('decent') || 
-                           device.name.toLowerCase().includes('espresso') || 
-                           device.type === 'espresso')
-        );
-        
-        const scales = devices.filter(device => 
-            device.name && (device.name.toLowerCase().includes('scale') || 
-                           device.name.toLowerCase().includes('weight') || 
-                           device.type === 'scale')
-        );
-
-        // Render devices in their respective containers
-        renderDeviceList('bluetooth-machine-devices-container', machines, 'Machine');
-        renderDeviceList('bluetooth-scale-devices-container', scales, 'Scale');
-        
-        // Also render to the general container if we're on the main bluetooth page
-        const generalContainer = document.getElementById('bluetooth-devices-container');
-        if (generalContainer) {
-            if (machines.length > 0 || scales.length > 0) {
-                let allDevicesHTML = '';
-                if (machines.length > 0) {
-                    allDevicesHTML += '<div class="mb-8">';
-                    allDevicesHTML += '<h3 class="text-[30px] text-[var(--text-primary)] mb-4" data-i18n-key="Espresso Machines">Espresso Machines</h3>';
-                    allDevicesHTML += renderSingleDeviceList(machines);
-                    allDevicesHTML += '</div>';
-                }
-                
-                if (scales.length > 0) {
-                    allDevicesHTML += '<div class="mb-8">';
-                    allDevicesHTML += '<h3 class="text-[30px] text-[var(--text-primary)] mb-4" data-i18n-key="Weighing Scales">Weighing Scales</h3>';
-                    allDevicesHTML += renderSingleDeviceList(scales);
-                    allDevicesHTML += '</div>';
-                }
-                
-                generalContainer.innerHTML = allDevicesHTML;
-            } else {
-                generalContainer.innerHTML = '<p class="text-[24px] text-[var(--text-primary)]" data-i18n-key="No Bluetooth devices found. Make sure your devices are powered on and in pairing mode.">No Bluetooth devices found. Make sure your devices are powered on and in pairing mode.</p>';
-            }
-        }
-
-        // statusDiv.innerHTML = `<p>Found ${devices.length} device(s). ${machines.length} machine(s), ${scales.length} scale(s).</p>`;
-    } catch (error) {
-        console.error('Error scanning for devices:', error);
-  
-    }
-}
-
 // Helper function to render a list of devices of a specific type
 function renderDeviceList(containerId, devices, type, preferredId = '', settingKey = '') {
     const container = document.getElementById(containerId);
@@ -8709,17 +8688,10 @@ window.handleNightModeTimeChange = async function(type, timeStr) {
     }
 };
 
-// Initialize Bluetooth settings when the page loads
-document.addEventListener('DOMContentLoaded', function() {
-    // Set up a global function to refresh the device list
-    window.refreshBluetoothDevices = renderAllDevices;
-});
-
-// Call the render function when the module functions are accessed
-setTimeout(() => {
-    if (document.getElementById('bluetooth-devices-container') ||
-        document.getElementById('bluetooth-machine-devices-container') ||
-        document.getElementById('bluetooth-scale-devices-container')) {
-        renderAllDevices();
-    }
-}, 100);
+// The Bluetooth pages paint from the devices-socket cache — renderDeviceListFromCache(),
+// called by both page renderers and on every socket update. A second painter used to
+// live here (renderAllDevices + a 100 ms bootstrap + window.refreshBluetoothDevices),
+// driven by a blocking scan; it referenced a scanForDevices that was never imported
+// into this module, so every call threw into its own catch and it painted nothing,
+// ever. Deleted rather than repaired: it would have repainted the same containers
+// without the preferred-device selection the cache painter passes in.
