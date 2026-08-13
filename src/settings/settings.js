@@ -1741,7 +1741,7 @@ export function renderFeedbackSettings() {
             <div class="flex items-center justify-between w-full">
                 <div class="flex flex-col gap-[4px]">
                     <p class="font-bold text-[#385a92] text-[22px]">Attach Diagnostics</p>
-                    <p class="text-[var(--text-primary)] text-[19px]">Includes application logs (private Gist), Decaid app version, platform, and OS version</p>
+                    <p class="text-[var(--text-primary)] text-[19px]">Includes application logs in a secret (unlisted) Gist. The Gist URL is added to the public GitHub issue, so anyone who can view the issue can access the logs. Also includes Decaid app version, platform, and OS version</p>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="feedback-attach-sysinfo" checked class="sr-only peer">

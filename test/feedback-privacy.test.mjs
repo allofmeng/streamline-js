@@ -12,7 +12,9 @@ test('feedback discloses public submission and sends no contact identifiers', ()
     const html = render();
 
     assert.match(html, /public GitHub issue/);
-    assert.match(html, /application logs \(private Gist\)/);
+    assert.match(html, /secret \(unlisted\) Gist/);
+    assert.match(html, /Gist URL is added to the public GitHub issue/);
+    assert.match(html, /anyone who can view the issue can access the logs/);
     assert.doesNotMatch(html, /feedback-email|Contact Email|Decent Account/);
 
     const submitStart = source.indexOf('window.submitFeedback = async function');
