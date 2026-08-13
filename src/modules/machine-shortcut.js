@@ -6,6 +6,7 @@ export function shouldHandleMachineShortcut(event, onMainPage, dialogOpen) {
         !dialogOpen &&
         !event.defaultPrevented &&
         !event.repeat &&
+        !event.shiftKey &&
         !event.ctrlKey &&
         !event.altKey &&
         !event.metaKey &&

@@ -6,6 +6,7 @@ import { shouldHandleMachineShortcut } from '../src/modules/machine-shortcut.js'
 const keyboardEvent = (overrides = {}) => ({
     defaultPrevented: false,
     repeat: false,
+    shiftKey: false,
     ctrlKey: false,
     altKey: false,
     metaKey: false,
@@ -18,7 +19,7 @@ test('machine shortcuts only handle unmodified main-page keystrokes away from co
     assert.equal(shouldHandleMachineShortcut(keyboardEvent(), false, false), false);
     assert.equal(shouldHandleMachineShortcut(keyboardEvent(), true, true), false);
 
-    for (const property of ['defaultPrevented', 'repeat', 'ctrlKey', 'altKey', 'metaKey']) {
+    for (const property of ['defaultPrevented', 'repeat', 'shiftKey', 'ctrlKey', 'altKey', 'metaKey']) {
         assert.equal(
             shouldHandleMachineShortcut(keyboardEvent({ [property]: true }), true, false),
             false,
