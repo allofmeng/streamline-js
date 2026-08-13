@@ -431,7 +431,7 @@ async function handleConfirm() {
                 // Show a success message — but not when the assign was rejected or
                 // was a no-op, or this lands on top of the error toast a second later.
                 if (assignResult === 'assigned') {
-                    setTimeout(() => showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', parsedIndex + 1)}: ${profile.title}`, 3000, 'success'), 1000  );
+                    setTimeout(() => showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', parsedIndex + 1)}: ${translateProfileTitle(profile.title)}`, 3000, 'success'), 1000  );
                 }
             }
         }
@@ -501,7 +501,7 @@ function updateSelectedProfileView(profileItem) {
     console.log('updateSelectedProfileView: Profile item found:', profileItem.textContent);
     // Update title — prefer explicit data attr so badge/decoration text doesn't leak in
     const profileTitle = profileItem.dataset.profileTitle
-        || availableProfiles[profileItem.dataset.profileKey]?.profile?.title
+        || translateProfileTitle(availableProfiles[profileItem.dataset.profileKey]?.profile?.title)
         || profileItem.textContent;
     const titleElement = document.getElementById('selected_profile_name');
     if (titleElement) {
@@ -565,7 +565,7 @@ function showProfileContextMenu(key, profileRecord, anchorEl) {
                     updateProfileName(pr.profile.title);
                 } catch (_) {}
                 if (assignResult === 'assigned') {
-                    showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', slotIndex + 1)}: ${pr.profile.title}`, 3000, 'success');
+                    showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', slotIndex + 1)}: ${translateProfileTitle(pr.profile.title)}`, 3000, 'success');
                 }
             }
         } catch (e) { logger.warn('assignProfile error:', e.message); }
@@ -624,7 +624,7 @@ function renderProfiles() {
 
         const sortedProfiles = profileEntries.sort(([, a], [, b]) => {
             if (a.profile && a.profile.title && b.profile && b.profile.title) {
-                return a.profile.title.localeCompare(b.profile.title);
+                return translateProfileTitle(a.profile.title).localeCompare(translateProfileTitle(b.profile.title));
             }
             return 0;
         });
@@ -659,18 +659,20 @@ function renderProfiles() {
             visibleProfileCount++;
             console.log('renderProfiles: Adding profile to list', profile.title);
 
+            const displayTitle = translateProfileTitle(profile.title) || 'Untitled Profile';
+
             const div = document.createElement('div');
             div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center no-select';
             div.dataset.profileKey = key;
-            div.dataset.profileTitle = profile.title || 'Untitled Profile';
+            div.dataset.profileTitle = displayTitle;
             div.setAttribute('role', 'option');
             div.setAttribute('aria-selected', (key === selectedProfileKey) ? 'true' : 'false');
-            div.setAttribute('aria-label', profile.title || 'Untitled Profile');
+            div.setAttribute('aria-label', displayTitle);
 
             const leftSide = document.createElement('div');
             leftSide.className = 'flex items-baseline gap-2 min-w-0';
             const titleSpan = document.createElement('span');
-            titleSpan.textContent = profile.title || 'Untitled Profile';
+            titleSpan.textContent = displayTitle;
             leftSide.appendChild(titleSpan);
 
             // Lineage badge — "from <parent>" when this is a user-edited clone of a default
@@ -679,7 +681,7 @@ function renderProfiles() {
             if (parentTitle) {
                 const badge = document.createElement('span');
                 badge.className = 'text-[16px] px-2 py-0.5 rounded-full bg-white/15 whitespace-nowrap';
-                badge.textContent = `from ${parentTitle}`;
+                badge.textContent = `from ${translateProfileTitle(parentTitle)}`;
                 leftSide.appendChild(badge);
             }
             div.appendChild(leftSide);
@@ -689,7 +691,7 @@ function renderProfiles() {
                 const unhideButton = document.createElement('button');
                 unhideButton.className = 'p-1 hover:bg-gray-200 rounded-full';
                 unhideButton.title = 'Show this profile';
-                unhideButton.setAttribute('aria-label', `Show profile ${profile.title}`);
+                unhideButton.setAttribute('aria-label', `Show profile ${displayTitle}`);
                 unhideButton.innerHTML = `<svg class="w-6 h-6" aria-hidden="true" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 33C5.5 33 13.75 13.75 33 13.75C52.25 13.75 60.5 33 60.5 33C60.5 33 52.25 52.25 33 52.25C13.75 52.25 5.5 33 5.5 33Z" stroke="#385A92" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M33 41.25C37.5563 41.25 41.25 37.5563 41.25 33C41.25 28.4437 37.5563 24.75 33 24.75C28.4437 24.75 24.75 28.4437 24.75 33C24.75 37.5563 28.4437 41.25 33 41.25Z" stroke="#385A92" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
                 unhideButton.addEventListener('click', async (e) => {
@@ -880,7 +882,7 @@ async function initFavoriteButtons() {
                         // Only on a genuinely new assignment — a rejected assign has
                         // already shown its own error toast.
                         if (assignResult === 'assigned') {
-                            showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', index + 1)}: ${profile.title}`, 3000, 'success');
+                            showToast(`${getTranslation('Assign to favourite {n}').replace('{n}', index + 1)}: ${translateProfileTitle(profile.title)}`, 3000, 'success');
                         }
                     }
                 } else {
@@ -935,9 +937,10 @@ function initDeleteButton() {
         }
         const profile = profileRecord.profile;
         const isDefault = profileRecord.isDefault;
+        const displayTitle = translateProfileTitle(profile.title);
         const confirmationText = isDefault
-            ? `Are you sure you want to hide '${profile.title}'?`
-            : `Are you sure you want to permanently delete '${profile.title}'?`;
+            ? `Are you sure you want to hide '${displayTitle}'?`
+            : `Are you sure you want to permanently delete '${displayTitle}'?`;
 
         console.log('initDeleteButton: Showing confirmation dialog');
         if (!confirm(confirmationText)) {
@@ -1222,7 +1225,7 @@ function filterProfiles(searchTerm) {
     // Sort the filtered profiles
     const sortedProfiles = filteredProfiles.sort(([, a], [, b]) => {
         if (a.profile && a.profile.title && b.profile && b.profile.title) {
-            return a.profile.title.localeCompare(b.profile.title);
+            return translateProfileTitle(a.profile.title).localeCompare(translateProfileTitle(b.profile.title));
         }
         return 0;
     });
@@ -1242,18 +1245,20 @@ function filterProfiles(searchTerm) {
         const isHidden = profileRecord.visibility === 'hidden';
         console.log('filterProfiles: Adding profile to filtered list', profile.title, 'isHidden:', isHidden);
 
+        const displayTitle = translateProfileTitle(profile.title) || 'Untitled Profile';
+
         const div = document.createElement('div');
         div.className = 'p-3 text-[30px] cursor-pointer flex justify-between items-center no-select';
         div.dataset.profileKey = key;
-        div.dataset.profileTitle = profile.title || 'Untitled Profile';
+        div.dataset.profileTitle = displayTitle;
         div.setAttribute('role', 'option');
         div.setAttribute('aria-selected', 'false');
-        div.setAttribute('aria-label', profile.title || 'Untitled Profile');
+        div.setAttribute('aria-label', displayTitle);
 
         const leftSide = document.createElement('div');
         leftSide.className = 'flex items-baseline gap-2 min-w-0';
         const titleSpan = document.createElement('span');
-        titleSpan.innerHTML = highlightTitle(profile.title || 'Untitled Profile', searchTerm);
+        titleSpan.innerHTML = highlightTitle(displayTitle, searchTerm);
         leftSide.appendChild(titleSpan);
 
         const parentRecord = profileRecord.parentId ? availableProfiles[profileRecord.parentId] : null;
@@ -1261,7 +1266,7 @@ function filterProfiles(searchTerm) {
         if (parentTitle) {
             const badge = document.createElement('span');
             badge.className = 'text-[16px] px-2 py-0.5 rounded-full bg-white/15 whitespace-nowrap';
-            badge.textContent = `from ${parentTitle}`;
+            badge.textContent = `from ${translateProfileTitle(parentTitle)}`;
             leftSide.appendChild(badge);
         }
         div.appendChild(leftSide);
@@ -1271,7 +1276,7 @@ function filterProfiles(searchTerm) {
             const unhideButton = document.createElement('button');
             unhideButton.className = 'p-1 hover:bg-gray-200 rounded-full';
             unhideButton.title = 'Show this profile';
-            unhideButton.setAttribute('aria-label', `Show profile ${profile.title}`);
+            unhideButton.setAttribute('aria-label', `Show profile ${displayTitle}`);
             unhideButton.innerHTML = `<svg class="w-6 h-6" aria-hidden="true" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5.5 33C5.5 33 13.75 13.75 33 13.75C52.25 13.75 60.5 33 60.5 33C60.5 33 52.25 52.25 33 52.25C13.75 52.25 5.5 33 5.5 33Z" stroke="#385A92" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M33 41.25C37.5563 41.25 41.25 37.5563 41.25 33C41.25 28.4437 37.5563 24.75 33 24.75C28.4437 24.75 24.75 28.4437 24.75 33C24.75 37.5563 28.4437 41.25 33 41.25Z" stroke="#385A92" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
             unhideButton.addEventListener('click', async (e) => {
@@ -1556,7 +1561,7 @@ export async function initializeProfileSelector() {
                 return;
             }
 
-            const title = profileRecord.profile?.title || 'this profile';
+            const title = translateProfileTitle(profileRecord.profile?.title) || 'this profile';
             const msgEl = document.getElementById('reset-profile-msg');
             if (msgEl) msgEl.textContent = `"${title}" is a saved copy. Resetting will delete it and restore the original. This cannot be undone.`;
 

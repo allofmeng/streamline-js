@@ -344,6 +344,7 @@ function clamp(value, min, max) {
 }
 
 function roundTo(value, step) {
+    value = typeof value === 'number' ? value : parseFloat(value) || 0;
     const decimals = step < 1 ? String(step).split('.')[1].length : 0;
     return parseFloat(value.toFixed(decimals));
 }

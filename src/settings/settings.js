@@ -457,7 +457,7 @@ function areSettingsLoaded() {
            settingsCache.de1Advanced !== null;
 }
 
-// Update decent.app settings
+// Update settings
 export function updateReaSetting(key, value, rerender = true) {
     if (!settingsCache.rea) settingsCache.rea = {};
     settingsCache.rea[key] = value;
@@ -827,7 +827,7 @@ export function renderReaSettingsForm(settings) {
                 <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
                     <p class="leading-[1.2]" data-i18n-key="Application Settings">Application Settings</p>
                 </div>
-                <div class="text-red-500 p-4 text-[24px]">Failed to load decent.app settings</div>
+                <div class="text-red-500 p-4 text-[24px]">Failed to load settings</div>
             </div>
         `;
     }
@@ -835,7 +835,7 @@ export function renderReaSettingsForm(settings) {
     return `
         <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
-                <p class="leading-[1.2]">decent.app Application Settings</p>
+                <p class="leading-[1.2]">Decaid Application Settings</p>
             </div>
 
             <!-- Divider -->
@@ -5126,7 +5126,7 @@ function setupVisualizerEventListeners() {
             ui.showToast('Visualizer settings saved successfully', 3000, 'success');
         } catch (error) {
             console.error('Failed to save visualizer plugin settings:', error);
-            ui.showToast(`Failed to save to decent.app plugin: ${error.message}`, 3000, 'error');
+            ui.showToast(`Failed to save plugin settings: ${error.message}`, 3000, 'error');
         }
     });
 }
@@ -5324,7 +5324,16 @@ async function initFirmwareCheck() {
     };
     settingsCache.firmwareCheck = null;
     paint();
-    settingsCache.firmwareCheck = summarizeFirmwareCatalog(await getFirmwareCatalog());
+    // The endpoint itself would report this as reason: 'machine_model_unknown'
+    // (it doesn't require a connection — see rest_v1.yml), which is technically
+    // true but reads as a broken check rather than "plug your machine in". We
+    // already know the answer from preloadSettings, so skip the round trip and
+    // give the clearer, already-translated reason instead.
+    settingsCache.firmwareCheck = settingsCache.machineInfo
+        ? summarizeFirmwareCatalog(await getFirmwareCatalog())
+        : { status: 'unknown', installedBuild: null, model: null, latestBuild: null,
+            latestLabel: null, artifactId: null, releaseNotes: null,
+            reason: 'machine_not_connected', operationState: 'idle' };
     paint();
 }
 
@@ -5407,8 +5416,8 @@ export function renderFirmwareUpdateSettings() {
                         </button>
                     </div>
                 </div>
-                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.35] not-italic relative text-[var(--text-primary)] text-[22px] w-full" data-i18n-key="Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.">
-                    Select a firmware file to upload to the machine. The machine will restart automatically once the update is complete.
+                <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.35] not-italic relative text-[var(--text-primary)] text-[22px] w-full" data-i18n-key="Select a firmware file… Restart the machine once the update is done.">
+                    Select a firmware file… Restart the machine once the update is done.
                 </p>
                 <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.35] not-italic relative text-[var(--text-primary)] text-[22px] w-full" data-i18n-key="This may take several minutes. Do not power off the machine during the update.">
                     This may take several minutes. Do not power off the machine during the update.
@@ -5786,7 +5795,7 @@ async function _preloadSettingsInternal() {
             reaSettings = reaSettingsResult.value;
             try { await setSetting('settings-rea', reaSettings); } catch(e) { /* non-fatal */ }
         } else {
-            console.error('Error loading decent.app settings:', reaSettingsResult.reason);
+            console.error('Error loading Decaid settings:', reaSettingsResult.reason);
             settingsCache.reaError = reaSettingsResult.reason?.message;
             try { reaSettings = await getSetting('settings-rea'); } catch(e) { /* non-fatal */ }
             if (reaSettings) usedCache = true;
@@ -5918,7 +5927,7 @@ async function _preloadSettingsInternal() {
 // Helper function to get title for a category
 function getCategoryTitle(category) {
     switch(category) {
-        case 'rea': return 'decent.app Application Settings';
+        case 'rea': return 'Decaid Application Settings';
         case 'quickadjustments': return 'Quick Adjustments';
         case 'flowmultiplier': return 'Flow Multiplier Settings';
         case 'steam': return 'Steam Settings';
@@ -5984,7 +5993,7 @@ export async function initializeSettings() {
                 ui.showToast(`Failed to save settings: ${error.message}`, 5000, 'error');
                 return;
             }
-            ui.showToast('decent.app settings updated', 3000, 'success');
+            ui.showToast('Settings updated', 3000, 'success');
             // Exiting settings straight from the Lighting page must not leave a
             // preview colour latched on the strip — and a deferred cross-state
             // palette PUT flushes first (flush → clear, one transition).

@@ -642,7 +642,7 @@ export async function assignProfile(buttonIndex, profileKey) {
         for (let i = 0; i < FAV_COUNT; i++) {
             if (favoriteAssignments[i] === profileKey) {
                 logger.info(`Rejecting assign: profile '${profileKey}' already on button ${i}.`);
-                const title = availableProfiles[profileKey]?.profile?.title;
+                const title = translateProfileTitle(availableProfiles[profileKey]?.profile?.title);
                 showToast(`${title ? `'${title}'` : 'Profile'} already assigned to favorite ${i + 1}`, 3000, 'error');
                 document.getElementById('profile_modal')?.close();
                 return 'rejected';
@@ -741,7 +741,7 @@ export async function handleProfileUpload(event) {
         await setSetting(PROFILES_CACHE_KEY, availableProfiles);
 
         logger.info(`Profile '${newProfileRecord.profile.title}' uploaded successfully with ID ${newProfileRecord.id}.`);
-        showToast(`Profile '${newProfileRecord.profile.title}' uploaded.`, 3000, 'success');
+        showToast(`Profile '${translateProfileTitle(newProfileRecord.profile.title)}' uploaded.`, 3000, 'success');
 
         // Dispatch a custom event to notify the UI that the profile list has been updated.
         // The page-specific JS (e.g., profile_selector.js) should listen for this.
