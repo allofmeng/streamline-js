@@ -28,9 +28,9 @@ test('resetting machine settings invalidates both read caches', async () => {
         return { ok: true, json: async () => ({ value: reset ? 'default' : advanced ? 'advanced-old' : 'old' }) };
     };
     const { getDe1Settings, getDe1AdvancedSettings, resetDe1Settings } = new Function(
-        'fetch', 'logger', 'API_BASE_URL',
+        'fetch', 'logger', 'API_BASE_URL', 'firmwareFlashInFlight',
         `${cacheSource}\n${functionSource}\nreturn { getDe1Settings, getDe1AdvancedSettings, resetDe1Settings };`,
-    )(fetch, { info() {}, error() {} }, 'http://decaid/api/v1');
+    )(fetch, { info() {}, error() {} }, 'http://decaid/api/v1', false);
 
     assert.equal((await getDe1Settings()).value, 'old');
     assert.equal((await getDe1AdvancedSettings()).value, 'advanced-old');

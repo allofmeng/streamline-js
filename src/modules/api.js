@@ -85,14 +85,14 @@ export function setFirmwareFlashInFlight(value) {
 }
 
 // Caching for DE1 settings to avoid multiple API calls
-let de1SettingsCache = {
+const de1SettingsCache = {
     data: null,
     timestamp: null,
     TTL: 60000 // 60 seconds TTL
 };
 
 // Caching for DE1 advanced settings to improve performance when navigating to settings page
-let de1AdvancedSettingsCache = {
+const de1AdvancedSettingsCache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -1495,7 +1495,8 @@ export async function getDe1Settings() {
         const data = await response.json();
 
         // Update the cache with new data
-        de1SettingsCache = { ...de1SettingsCache, data, timestamp: Date.now() };
+        de1SettingsCache.data = data;
+        de1SettingsCache.timestamp = Date.now();
 
         return data;
     } catch (error) {
@@ -1570,7 +1571,8 @@ export async function getDe1AdvancedSettings() {
         const data = await response.json();
 
         // Update the cache with new data
-        de1AdvancedSettingsCache = { ...de1AdvancedSettingsCache, data, timestamp: Date.now() };
+        de1AdvancedSettingsCache.data = data;
+        de1AdvancedSettingsCache.timestamp = Date.now();
 
         return data;
     } catch (error) {
@@ -1626,8 +1628,8 @@ export async function resetDe1Settings() {
             const errorBody = await response.text();
             throw new Error(`Failed to reset DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
-        de1SettingsCache = { ...de1SettingsCache, data: null, timestamp: null };
-        de1AdvancedSettingsCache = { ...de1AdvancedSettingsCache, data: null, timestamp: null };
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings reset to defaults');
     } catch (error) {
         logger.error('Error resetting DE1 settings:', error);
