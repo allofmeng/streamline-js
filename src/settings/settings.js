@@ -7,7 +7,7 @@ import { loadPage } from '../modules/router.js'; // Singular and correctly forma
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
-import { summarizeFirmwareCatalog } from '../modules/firmware-progress.js';
+import { summarizeFirmwareCatalog, isFirmwareCancellationError } from '../modules/firmware-progress.js';
 import { setScreensaverSuppressed, isMachineAsleep } from '../modules/screensaver-policy.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, cupWarmerViewMode, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
@@ -6837,7 +6837,7 @@ export async function initializeSettings() {
             // A cancel resolves through this same stream-error path (the DELETE
             // just requests it; the NDJSON stream's 'error' event is what
             // actually ends the in-flight promise) -- read as "cancelled", not "failed".
-            const cancelled = firmwareCancelRequested;
+            const cancelled = firmwareCancelRequested || isFirmwareCancellationError(error);
             if (label) {
                 label.textContent = cancelled ? getTranslation('Update cancelled') : `${getTranslation('Update failed')}: ${error.message}`;
                 label.classList.add('text-[#da515e]');
@@ -6882,6 +6882,8 @@ export async function initializeSettings() {
         try {
             await cancelFirmwareUpdate();
         } catch (error) {
+            firmwareCancelRequested = false;
+            if (btn) { btn.disabled = false; btn.textContent = getTranslation('Cancel'); }
             logger.error('Failed to cancel firmware update:', error);
             ui.showToast(`${getTranslation('Failed to cancel')}: ${error.message}`, 4000, 'error');
         }
