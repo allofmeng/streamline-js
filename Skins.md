@@ -18,7 +18,7 @@ A **skin** is a web application that communicates with the Streamline-Bridge gat
 ### Example Skin
 
 The **Streamline Project** is a reference implementation:
-- Repository: https://github.com/allofmeng/streamline_project
+- Repository: https://github.com/allofmeng/streamline-js
 - Demonstrates all core API interactions
 - Shows best practices for WebSocket handling
 - Provides real-time shot visualization
