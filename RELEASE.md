@@ -10,7 +10,7 @@ branch. This is the bleeding-edge dev channel. Downstream tools that want to
 follow main without waiting for a release can point at:
 
 ```
-github_branch: <owner>/streamline_project@dist
+github_branch: <owner>/streamline-js@dist
 ```
 
 The `dist` branch is orphan and force-pushed on every main update, so it
@@ -38,7 +38,7 @@ The action:
 Downstream tools consume the release via:
 
 ```
-github_release: <owner>/streamline_project
+github_release: <owner>/streamline-js
 ```
 
 Note: the committed `skin-manifest.json` version is only rewritten inside
