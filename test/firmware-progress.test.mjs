@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
     splitNdjson,
     normalizeFirmwareEvent,
@@ -7,6 +8,15 @@ import {
     initialFirmwareState,
     summarizeFirmwareCatalog,
 } from '../src/modules/firmware-progress.js';
+
+function loadConsumeFirmwareStream() {
+    const source = readFileSync(new URL('../src/modules/api.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const start = source.indexOf('async function consumeFirmwareStream');
+    const end = source.indexOf('export async function uploadFirmware', start);
+    assert.notEqual(start, -1);
+    assert.notEqual(end, -1);
+    return new Function('splitNdjson', 'advanceFirmwareState', 'initialFirmwareState', `${source.slice(start, end)}; return consumeFirmwareStream;`)(splitNdjson, advanceFirmwareState, initialFirmwareState);
+}
 
 /** Feed a stream of decoded chunks through framing + folding, as api.js does. */
 function runStream(chunks) {
@@ -38,6 +48,10 @@ test('lines split across chunk boundaries are reassembled', () => {
 test('a final line without a trailing newline is still parsed', () => {
     const { state } = runStream(['{"event":"erasing"}\n{"event":"done"}']);
     assert.equal(state.phase, 'done');
+});
+
+test('a response without a readable progress stream is not success', async () => {
+    await assert.rejects(loadConsumeFirmwareStream()({ body: null }), /did not provide a progress stream/);
 });
 
 test('blank and malformed lines are skipped, not thrown', () => {

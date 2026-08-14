@@ -384,16 +384,21 @@ function getEyeIconSVG(strokeColor) {
 //     }
 // }
 
+let isConfirmingProfile = false;
+
 async function handleConfirm() {
+    if (isConfirmingProfile) return;
+
     let sentworkflow = {};
-    if (!selectedProfileKey) {
+    const profileKey = selectedProfileKey;
+    if (!profileKey) {
         alert('Please select a profile first.');
         return;
     }
 
-    const profileRecord = availableProfiles[selectedProfileKey];
+    const profileRecord = availableProfiles[profileKey];
     if (!profileRecord || !profileRecord.profile) {
-        logger.error(`Selected profile with key ${selectedProfileKey} not found!`);
+        logger.error(`Selected profile with key ${profileKey} not found!`);
         alert('An error occurred: selected profile not found.');
         showToast(`An error occurred: selected profile not found.`, 3000, 'alert');
         return;
@@ -410,6 +415,7 @@ async function handleConfirm() {
     // the 'Profile Set' toast below would overwrite it a few hundred ms later,
     // so the user never gets to read why the assignment did not happen.
     let assignWasRejected = false;
+    isConfirmingProfile = true;
     try {
         // Check if there's a pending assignment from a long press on the main page
         const pendingAssignmentIndex = sessionStorage.getItem('pendingAssignmentIndex');
@@ -422,7 +428,7 @@ async function handleConfirm() {
                 showToast('Invalid favorite button. Please try again.', 3000, 'error');
             } else {
                 // Assign the profile to the specific favorite button
-                const assignResult = await assignProfile(parsedIndex, selectedProfileKey);
+                const assignResult = await assignProfile(parsedIndex, profileKey);
                 assignWasRejected = assignResult === 'rejected';
 
                 // Clear the pending assignment
@@ -457,7 +463,7 @@ async function handleConfirm() {
         const verified = sentworkflow.profile.title === profile.title;
         if (verified) {
             logger.info('Profile sent and verified. Navigating to main page.');
-            setActiveProfile(selectedProfileKey);
+            setActiveProfile(profileKey);
             // Push the freshly-sent workflow to the main-page left column + title
             // so the user lands on a page that already reflects what's on Rea
             // instead of waiting for the next WS snapshot to repaint.
@@ -472,6 +478,8 @@ async function handleConfirm() {
     } catch (error) {
         logger.error('Failed to send profile:', error);
         alert('An error occurred while sending the profile.');
+    } finally {
+        isConfirmingProfile = false;
     }
 }
 
