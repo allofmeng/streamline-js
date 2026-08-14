@@ -41,6 +41,7 @@ let previousMachineState = null;
 let scaleWebSocket = null;
 let displayWebSocket = null;
 let displayWebSocketReady = false;
+let pendingDisplayCommand = null;
 // Latest DisplayState frame from ws/v1/display. Null until the socket delivers
 // its first snapshot.
 let lastDisplayState = null;
@@ -66,6 +67,24 @@ let currentShotSettings = {
     groupTemp: 0.0, // number (float/double)
 };
 
+// A firmware flash owns the DE1's BLE radio for 10+ minutes: ~29,000 16-byte
+// writeWithResponse round-trips, unpaced. GET /machine/settings is nine MMR
+// reads, and MMR is gated behind the firmware (firmware_mmr_gate.dart), so each
+// one sits in the BLE queue until the flash ends — in reaprime's log the whole
+// batch was released at once at the moment the queue faulted and the upload
+// died. Whether they caused that fault or merely rode along with it, a settings
+// refresh nobody asked for is not worth putting in that queue.
+//
+// Serving the cache is enough because a flash cannot change these values, and
+// only a REFRESH is skipped: with no cache at all the fetch still runs, so a
+// first read is never broken by this.
+let firmwareFlashInFlight = false;
+
+/** Hold MMR-backed reads while the DE1 is being flashed. */
+export function setFirmwareFlashInFlight(value) {
+    firmwareFlashInFlight = !!value;
+}
+
 // Caching for DE1 settings to avoid multiple API calls
 const de1SettingsCache = {
     data: null,
@@ -79,7 +98,7 @@ const de1AdvancedSettingsCache = {
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
 };
-const reatsettingscache = { 
+const reatsettingscache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -101,12 +120,40 @@ export async function getDevices() {
     return response.json();
 }
 
-export async function scanForDevices() {
-    const response = await fetch(`${API_BASE_URL}/devices/scan`);
-    if (!response.ok) {
-        throw new Error('Failed to scan for devices');
+// How long we are willing to hold a caller on a scan before answering from the
+// device list instead. A scan window is ~15 s (reaprime's own scan reports),
+// and the connect attempt that follows is what stretched one call to 41.6 s in
+// the field. 20 s clears a normal scan, so the usual path still returns the
+// real post-scan list; only the pathological one gets cut short.
+const SCAN_RESPONSE_BUDGET_MS = 20000;
+
+/**
+ * Ask REA to scan (and connect). Bounded: the endpoint takes its slow branch for
+ * us — `quick` defaults false and `connect` defaults TRUE (devices_handler.dart:217),
+ * so it holds the response open for the whole scan AND the connect that follows.
+ * One such call blocked 41.6 s in reaprime's log while our reconnect path sat on it.
+ *
+ * Aborting only drops OUR read: the handler awaits a plain future, so the scan and
+ * connect carry on server-side and land on the devices socket either way. What we
+ * give up by timing out is the freshness of the returned list, so fall back to the
+ * device list as it stands — which the scan has been updating all along.
+ */
+export async function scanForDevices({ timeoutMs = SCAN_RESPONSE_BUDGET_MS } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(`${API_BASE_URL}/devices/scan`, { signal: controller.signal });
+        if (!response.ok) {
+            throw new Error('Failed to scan for devices');
+        }
+        return await response.json();
+    } catch (error) {
+        if (error.name !== 'AbortError') throw error;
+        logger.warn(`Device scan still open after ${timeoutMs} ms — answering from the device list; the scan continues in REA.`);
+        return getDevices();
+    } finally {
+        clearTimeout(timer);
     }
-    return response.json();
 }
 
 export async function reconnectDevice(deviceId) {
@@ -525,7 +572,7 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
 export function sendDeviceCommand(command) {
     if (!deviceWebSocket || deviceWebSocket.readyState !== WebSocket.OPEN) {
         logger.error('Device WebSocket is not connected. Cannot send command.');
-        return;
+        throw new Error('Device WebSocket is not connected. Cannot send command.');
     }
 
     try {
@@ -621,6 +668,10 @@ export function connectDisplayWebSocket(onData) {
         if (isWakeLockEnabled()) {
             enableWakeLock().catch((e) => logger.warn('Failed to re-arm wake-lock on connect:', e));
         }
+        if (pendingDisplayCommand) {
+            sendDisplayCommand(pendingDisplayCommand);
+            pendingDisplayCommand = null;
+        }
     };
 
     displayWebSocket.onmessage = (event) => {
@@ -658,26 +709,9 @@ export function connectDisplayWebSocket(onData) {
  * @param {number} [command.brightness] - Brightness value 0-100 (required for setBrightness)
  */
 export function sendDisplayCommand(command) {
-    if (!displayWebSocket) {
-        logger.error('Display WebSocket not initialized. Cannot send command.');
-        return;
-    }
-
-    if (!displayWebSocketReady || displayWebSocket.readyState !== WebSocket.OPEN) {
+    if (!displayWebSocket || !displayWebSocketReady || displayWebSocket.readyState !== WebSocket.OPEN) {
         logger.warn('Display WebSocket not ready. Queuing command:', command);
-        // Retry after a short delay
-        setTimeout(() => {
-            if (displayWebSocketReady && displayWebSocket.readyState === WebSocket.OPEN) {
-                try {
-                    displayWebSocket.send(JSON.stringify(command));
-                    logger.info('Display command sent (after retry):', command);
-                } catch (error) {
-                    logger.error('Error sending display command on retry:', error);
-                }
-            } else {
-                logger.error('Display WebSocket still not ready after retry.');
-            }
-        }, 100);
+        pendingDisplayCommand = command;
         return;
     }
 
@@ -700,9 +734,13 @@ export function getDisplayWebSocket() {
  * plus direct {error} replies for bad commands. Both are passed to onData.
  * @param {Function} onData - Callback for update-state / error messages
  */
-export function connectUpdateWebSocket(onData) {
+export function connectUpdateWebSocket(onData, onOpen) {
     if (updateWebSocket && updateWebSocket.readyState < WebSocket.CLOSING) {
         logger.info('Update WebSocket already active');
+        // Only when the socket is genuinely ready. onOpen sends a command immediately,
+        // and this branch now also covers CONNECTING sockets, which would throw and
+        // toast on entry to the settings page.
+        if (onOpen && updateWebSocketReady) onOpen();
         return;
     }
 
@@ -713,6 +751,7 @@ export function connectUpdateWebSocket(onData) {
     updateWebSocket.onopen = () => {
         logger.info('Update WebSocket connected');
         updateWebSocketReady = true;
+        if (onOpen) onOpen();
     };
 
     updateWebSocket.onmessage = (event) => {
@@ -739,25 +778,10 @@ export function connectUpdateWebSocket(onData) {
  * @param {Object} command - { command: 'check' | 'install' }
  */
 export function sendUpdateCommand(command) {
-    if (!updateWebSocket) {
-        logger.error('Update WebSocket not initialized. Cannot send command.');
-        return;
-    }
-
-    if (!updateWebSocketReady || updateWebSocket.readyState !== WebSocket.OPEN) {
-        logger.warn('Update WebSocket not ready. Retrying command:', command);
-        setTimeout(() => {
-            if (updateWebSocketReady && updateWebSocket.readyState === WebSocket.OPEN) {
-                try {
-                    updateWebSocket.send(JSON.stringify(command));
-                } catch (error) {
-                    logger.error('Error sending update command on retry:', error);
-                }
-            } else {
-                logger.error('Update WebSocket still not ready after retry.');
-            }
-        }, 100);
-        return;
+    if (!updateWebSocket || !updateWebSocketReady || updateWebSocket.readyState !== WebSocket.OPEN) {
+        const error = new Error('Update WebSocket is not connected');
+        logger.error(error.message);
+        throw error;
     }
 
     try {
@@ -765,6 +789,7 @@ export function sendUpdateCommand(command) {
         logger.info('Update command sent:', command);
     } catch (error) {
         logger.error('Error sending update command:', error);
+        throw error;
     }
 }
 
@@ -1423,6 +1448,9 @@ export async function getAppInfo() {
 
 
 export async function getDe1Settings() {
+    // Mid-flash: nine MMR reads down a radio the firmware owns. Serve what we have.
+    if (firmwareFlashInFlight && de1SettingsCache.data) return de1SettingsCache.data;
+
     // Check if we have cached data that is still fresh
     if (de1SettingsCache.data && de1SettingsCache.timestamp) {
         const now = Date.now();
@@ -1479,6 +1507,7 @@ export async function setDe1Settings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 settings:', error);
@@ -1487,6 +1516,9 @@ export async function setDe1Settings(settings) {
 }
 
 export async function getDe1AdvancedSettings() {
+    // Same reasoning as getDe1Settings: no MMR traffic while the flash runs.
+    if (firmwareFlashInFlight && de1AdvancedSettingsCache.data) return de1AdvancedSettingsCache.data;
+
     // Check if we have cached data that is still fresh
     if (de1AdvancedSettingsCache.data && de1AdvancedSettingsCache.timestamp) {
         const now = Date.now();
@@ -1558,6 +1590,7 @@ export async function setDe1AdvancedSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 advanced settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 advanced settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 advanced settings:', error);
@@ -1574,6 +1607,8 @@ export async function resetDe1Settings() {
             const errorBody = await response.text();
             throw new Error(`Failed to reset DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings reset to defaults');
     } catch (error) {
         logger.error('Error resetting DE1 settings:', error);
@@ -1595,6 +1630,7 @@ export async function setReaSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set REA settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        reatsettingscache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('REA settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting REA settings:', error);
@@ -1866,9 +1902,7 @@ export async function getFirmwareCatalog() {
 // `error` or a truncated stream — a stream that ends without `done` means CRC
 // verification never confirmed, so it is NOT a success.
 async function consumeFirmwareStream(response, onProgress) {
-    // No streaming body (old middleware, or a proxy that buffered it): the POST
-    // still completed, so treat it as a legacy success rather than failing.
-    if (!response.body?.getReader) return;
+    if (!response.body?.getReader) throw new Error('Firmware response did not provide a progress stream');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
