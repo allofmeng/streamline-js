@@ -571,7 +571,7 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
 export function sendDeviceCommand(command) {
     if (!deviceWebSocket || deviceWebSocket.readyState !== WebSocket.OPEN) {
         logger.error('Device WebSocket is not connected. Cannot send command.');
-        return;
+        throw new Error('Device WebSocket is not connected. Cannot send command.');
     }
 
     try {

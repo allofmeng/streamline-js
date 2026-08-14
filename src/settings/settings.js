@@ -8420,9 +8420,6 @@ window.handleForgetDevice = async function(deviceId, name) {
 // Rescan to reconnect an unavailable (remembered-absent) device — it reconnects
 // when it reappears in discovery. A direct connect would fail (no transport).
 window.handleDeviceRescan = function() {
-    // sendDeviceCommand returns silently (doesn't throw) when the device socket
-    // is closed — exactly the state we're often in when reconnecting. Guard so
-    // we don't show a "scanning" toast for a command that never went out.
     const ws = getDeviceWebSocket?.();
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         ui.showToast("Not connected — can't rescan right now", 5000, 'error');
