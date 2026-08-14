@@ -150,15 +150,40 @@ one page.
 
 ### Top bar
 
+**The top bar has two different forms, depending on whether the DYE2 plugin is switched on.** DYE2
+is **off by default**, so unless you have turned it on you are looking at the first form below.
+
+#### Always present
+
 | Element | What it does |
 |---|---|
-| **P / F / R** tabs | Switch the favourites strip between **P**rofile favourites, **F** auto‑favourites, and **R**ecipes |
 | Favourite slots | Five quick‑access profile buttons. Tap to load that profile immediately |
 | **Warmer** | Toggles the cup warmer (only shown if your machine reports the capability) |
-| **DYE** | Opens *Describe Your Espresso* — bean/grinder/notes entry for the shot (only shown when enabled) |
 | **Settings** | Opens the settings pages (§8) |
 | **Sleep** | Puts the DE1 to sleep |
 | Fullscreen | Toggles browser fullscreen. Hidden in the in‑app web view, where the host owns the screen |
+
+With DYE2 off, that is the whole top bar: profile favourites and nothing else. There is no P/F/R
+toggle, no DYE button and no auto‑favourite strip.
+
+#### Only when DYE2 is switched on
+
+| Element | What it does |
+|---|---|
+| **P / F / R** tabs | Switch the favourites strip between **P**rofile favourites (the default), **F** DYE2 auto‑favourites, and **R** DYE2 recipes |
+| Auto‑fav / recipe strip | In **F** and **R** modes, replaces the profile favourites with DYE2's bean‑and‑recipe snapshots. Ends with a **VIEW ALL** cell that opens the DYE2 page |
+| **DYE** | Opens the DYE2 dashboard — bean, grinder and notes for the shot |
+
+Turning DYE2 on also shifts the favourite slots right to make room for the P/F/R toggle, so the top
+bar visibly rearranges when you flip the switch.
+
+**Turning it on:** Settings → **8. Extensions** → **Describe Your Espresso**, then the **DYE2**
+toggle. The DYE2 plugin (`dye2.reaplugin`) must be installed in Decaid and at or above its minimum
+version — if it isn't, the toggle refuses to stay on and offers you a download link. Streamline.js
+also checks for newer DYE2 releases and prompts you once per app run.
+
+Streamline.js only *reads* DYE2's favourites and recipes; DYE2 itself owns that data. A recipe with
+"Show on Streamline Dashboard" switched off in DYE2 will not appear in the strip.
 
 In the in‑app web view there is also a floating **Exit to Decent dashboard** button. Drag it to
 reposition it; long‑press it to hide it.
@@ -364,8 +389,13 @@ Runtime language switching. Translations are CSV‑backed; changing language doe
 reload.
 
 ### 8. Extensions
-**Decent Visualizer** integration — toggle it on and enter your Visualizer credentials to have shots
-uploaded automatically.
+**Decent Visualizer** — toggle it on and enter your Visualizer credentials to have shots uploaded
+automatically.
+
+**Describe Your Espresso (DYE2)** — its own sub‑page with the DYE2 master switch. **Default OFF.**
+Switching it on adds the P/F/R toggle, the auto‑favourite/recipe strip and the DYE button to the
+dashboard header (§3); switching it off returns the header to profile favourites only. Requires the
+`dye2.reaplugin` plugin installed in Decaid — the toggle will not stay on without it.
 
 ### 9. Miscellaneous
 - **Display size (zoom)** — scales the whole UI. Persisted locally. Useful on very high or very low
@@ -620,8 +650,8 @@ new ones. That is how Streamline.js keeps IndexedDB in step without refetching e
 | `/api/v1/bean-batches/{id}` | One batch |
 | `/api/v1/grinders`, `/api/v1/grinders/{id}` | Grinder records |
 
-These back the DYE (*Describe Your Espresso*) screen — attaching a bean batch and grinder setting to
-a shot so history is searchable later.
+These back the DYE2 (*Describe Your Espresso*) screen — attaching a bean batch and grinder setting
+to a shot so history is searchable later.
 
 ---
 
@@ -744,7 +774,7 @@ Shot history lives in IndexedDB, not `localStorage`.
 | **GHC** | Group Head Controller — the physical control ring on the machine |
 | **Decaid** | The middleware — <https://github.com/decentespresso/decaid>. Formerly Streamline‑Bridge, formerly Rea Prime (repo `reaprime`) |
 | **Skin** | A web UI served by the middleware; Streamline.js is one |
-| **DYE** | *Describe Your Espresso* — bean/grinder/notes attached to a shot |
+| **DYE2** | *Describe Your Espresso 2* — a separate Decaid plugin (`dye2.reaplugin`) for bean/grinder/notes, auto‑favourites and recipes. Off by default in Streamline.js |
 | **Workflow** | A profile plus its shot settings, bean and grinder as one unit |
 | **Content‑addressed** | Identified by a hash of the content, not by name |
 | **Snapshot** | One frame of live machine data on the WebSocket feed |
