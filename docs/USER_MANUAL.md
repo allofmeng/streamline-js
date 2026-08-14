@@ -60,6 +60,9 @@ Streamline.js is the front end; Decaid is the engine.
 Consequence worth remembering: **if the app looks dead, the middleware is usually the thing that is
 down** — not the browser and not the machine.
 
+Streamline.js is designed to be used inside the Decent app's web view on the tablet; running it in
+an ordinary browser is fully supported but secondary. See §2 for what differs between the two.
+
 ---
 
 ## 2. Requirements and first run
@@ -69,15 +72,43 @@ down** — not the browser and not the machine.
 | Item | Requirement |
 |---|---|
 | Middleware | [Decaid](https://github.com/decentespresso/decaid) running and reachable on port `8080` |
-| Browser | Any modern browser; Chrome/Chromium recommended on tablets |
+| Host | The Decent app's in‑app web view (primary). A desktop or tablet browser also works |
 | Orientation | Landscape. Portrait devices get a "please rotate" prompt |
 | Machine | Decent DE1 (GHC and non‑GHC both supported) |
 | Scale | Optional but recommended (Decent Scale, Acaia, Felicita, and others Decaid supports) |
 
-### Running it
+### Where Streamline.js runs
 
-Streamline.js is normally served by Decaid itself (see §18), so on a tablet you just open Decaid's
-address in a browser and you are done.
+**The in‑app web view is the primary way to use Streamline.js.** On the tablet, Decaid hosts the
+skin and the Decent app displays it in an embedded web view. That is the intended, supported,
+day‑to‑day setup — it is what the app is tuned for, and it is where the machine actually lives.
+
+**A normal browser is the secondary way.** Streamline.js is a static web app, so any modern browser
+can load it — useful for development, for checking on the machine from a laptop or phone, and for
+testing. Everything works, but treat it as the second path, not the reference one.
+
+Every feature is built to work in both. Where the two differ, the manual says so.
+
+#### What changes between the two
+
+| | In‑app web view (primary) | Browser (secondary) |
+|---|---|---|
+| Fullscreen | The host OS owns the screen; the fullscreen button is hidden | Fullscreen button available, with a prompt on mobile |
+| External links | The host cancels the in‑page load and opens the link in the OS browser | Opens normally |
+| Exiting | An **Exit to Decent dashboard** button returns you to the host app | Not applicable |
+| Chromium version | Older embedded Chromium — avoid relying on very new browser APIs | Whatever the browser ships |
+
+Streamline.js detects the web view automatically (via the host's `window.__DECENT_HOST__` flag and
+the user‑agent) and adapts — you do not configure this.
+
+> **Note for developers:** because the web view is the primary target, it is the one to test
+> against. Links must be plain same‑frame navigations — `target="_blank"` and `window.open()` do
+> not work there.
+
+### Running it in a browser
+
+Streamline.js is served by Decaid itself (see §18), so on any machine on the network you can open
+Decaid's address in a browser and get the same UI.
 
 To serve it yourself for development, from the repository root:
 
@@ -127,7 +158,10 @@ one page.
 | **DYE** | Opens *Describe Your Espresso* — bean/grinder/notes entry for the shot (only shown when enabled) |
 | **Settings** | Opens the settings pages (§8) |
 | **Sleep** | Puts the DE1 to sleep |
-| Fullscreen | Toggles browser fullscreen |
+| Fullscreen | Toggles browser fullscreen. Hidden in the in‑app web view, where the host owns the screen |
+
+In the in‑app web view there is also a floating **Exit to Decent dashboard** button. Drag it to
+reposition it; long‑press it to hide it.
 
 ### Left column — shot settings
 
