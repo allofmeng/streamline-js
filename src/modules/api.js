@@ -734,9 +734,13 @@ export function getDisplayWebSocket() {
  * plus direct {error} replies for bad commands. Both are passed to onData.
  * @param {Function} onData - Callback for update-state / error messages
  */
-export function connectUpdateWebSocket(onData) {
+export function connectUpdateWebSocket(onData, onOpen) {
     if (updateWebSocket && updateWebSocket.readyState === WebSocket.OPEN) {
         logger.info('Update WebSocket already connected');
+        // Only when the socket is genuinely ready. onOpen sends a command immediately,
+        // and a still-CONNECTING socket short-circuiting to here would make that throw
+        // and toast on entry to the settings page.
+        if (onOpen && updateWebSocketReady) onOpen();
         return;
     }
 
@@ -747,6 +751,7 @@ export function connectUpdateWebSocket(onData) {
     updateWebSocket.onopen = () => {
         logger.info('Update WebSocket connected');
         updateWebSocketReady = true;
+        if (onOpen) onOpen();
     };
 
     updateWebSocket.onmessage = (event) => {
@@ -773,25 +778,10 @@ export function connectUpdateWebSocket(onData) {
  * @param {Object} command - { command: 'check' | 'install' }
  */
 export function sendUpdateCommand(command) {
-    if (!updateWebSocket) {
-        logger.error('Update WebSocket not initialized. Cannot send command.');
-        return;
-    }
-
-    if (!updateWebSocketReady || updateWebSocket.readyState !== WebSocket.OPEN) {
-        logger.warn('Update WebSocket not ready. Retrying command:', command);
-        setTimeout(() => {
-            if (updateWebSocketReady && updateWebSocket.readyState === WebSocket.OPEN) {
-                try {
-                    updateWebSocket.send(JSON.stringify(command));
-                } catch (error) {
-                    logger.error('Error sending update command on retry:', error);
-                }
-            } else {
-                logger.error('Update WebSocket still not ready after retry.');
-            }
-        }, 100);
-        return;
+    if (!updateWebSocket || !updateWebSocketReady || updateWebSocket.readyState !== WebSocket.OPEN) {
+        const error = new Error('Update WebSocket is not connected');
+        logger.error(error.message);
+        throw error;
     }
 
     try {
@@ -799,6 +789,7 @@ export function sendUpdateCommand(command) {
         logger.info('Update command sent:', command);
     } catch (error) {
         logger.error('Error sending update command:', error);
+        throw error;
     }
 }
 
