@@ -19,6 +19,11 @@
 /** Recognised stream phases, in the order they occur. */
 export const FIRMWARE_PHASES = ['erasing', 'uploading', 'done', 'error'];
 
+export function isFirmwareCancellationError(error) {
+    const message = typeof error === 'string' ? error : error?.message;
+    return typeof message === 'string' && message.includes('FirmwareUpdateCancelledException');
+}
+
 /**
  * Frame one decoded chunk into whole JSON lines.
  * @param {string} buffer leftover from the previous call ('' to start)

@@ -98,9 +98,9 @@ export function setSetting(key, value) {
         if (!db) return reject('DB not open');
         const transaction = db.transaction([SETTINGS_STORE_NAME], 'readwrite');
         const store = transaction.objectStore(SETTINGS_STORE_NAME);
-        const request = store.put({ id: key, value: value });
-        request.onsuccess = () => resolve();
-        request.onerror = (event) => {
+        store.put({ id: key, value: value });
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = (event) => {
             logger.error(`Error setting key "${key}" in IndexedDB:`, event.target.error);
             reject(`Error setting key "${key}"`);
         };
@@ -131,14 +131,14 @@ export function addShot(shot) {
         }
         const transaction = db.transaction([SHOTS_STORE_NAME], 'readwrite');
         const store = transaction.objectStore(SHOTS_STORE_NAME);
-        const request = store.put(shot);
+        store.put(shot);
 
-        request.onsuccess = () => {
+        transaction.oncomplete = () => {
             logger.info('Shot added to IndexedDB');
             resolve();
         };
 
-        request.onerror = (event) => {
+        transaction.onabort = (event) => {
             logger.error('Error adding shot to IndexedDB:', event.target.error);
             reject('Error adding shot.');
         };
@@ -274,14 +274,14 @@ export function deleteShot(id) {
         }
         const transaction = db.transaction([SHOTS_STORE_NAME], 'readwrite');
         const store = transaction.objectStore(SHOTS_STORE_NAME);
-        const request = store.delete(id);
+        store.delete(id);
 
-        request.onsuccess = () => {
+        transaction.oncomplete = () => {
             logger.info('Shot deleted from IndexedDB');
             resolve();
         };
 
-        request.onerror = (event) => {
+        transaction.onabort = (event) => {
             logger.error('Error deleting shot from IndexedDB:', event.target.error);
             reject('Error deleting shot.');
         };
@@ -295,14 +295,14 @@ export function clearShots() {
         }
         const transaction = db.transaction([SHOTS_STORE_NAME], 'readwrite');
         const store = transaction.objectStore(SHOTS_STORE_NAME);
-        const request = store.clear();
+        store.clear();
 
-        request.onsuccess = () => {
+        transaction.oncomplete = () => {
             logger.info('Shot history cleared from IndexedDB');
             resolve();
         };
 
-        request.onerror = (event) => {
+        transaction.onabort = (event) => {
             logger.error('Error clearing shot history from IndexedDB:', event.target.error);
             reject('Error clearing shot history.');
         };

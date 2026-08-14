@@ -21,6 +21,7 @@ import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } fr
 import { initTimePicker } from './time-picker-modal.js';
 import { openDB, setSetting } from './idb.js';
 import { openContextMenu } from './context-menu.js';
+import { shouldHandleMachineShortcut } from './machine-shortcut.js';
 
 window.app = { api, ui, chart };
 
@@ -1463,7 +1464,6 @@ document.addEventListener('click', async (e) => {
 
 export function initGhcButtonHandlers() {} // no-op — delegation handles it
 
-// Keyboard shortcuts — only fire when DE1 connected and no input/textarea focused
 const DEFAULT_KEY_BINDINGS = {
     'w': MachineState.HOT_WATER,
     'f': MachineState.FLUSH,
@@ -1490,8 +1490,8 @@ function getKeyboardStateMap() {
 
 document.addEventListener('keydown', async (e) => {
     if (!isDe1Connected || !isNonGhcMachine) return;
-    const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const onMainPage = !isSubPage() && document.getElementById('main-page')?.style.display === '';
+    if (!shouldHandleMachineShortcut(e, onMainPage, !!document.querySelector('dialog[open]'))) return;
     const state = getKeyboardStateMap()[e.key];
     if (!state) return;
     e.preventDefault();

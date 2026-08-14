@@ -63,7 +63,7 @@ assert.notEqual(settingsStart, -1);
 assert.notEqual(settingsEnd, -1);
 const initSource = settingsSource.slice(settingsStart, settingsEnd);
 
-test('update status changes only after Decaid acknowledges the check', () => {
+test('update status flips when the check command goes out, not on a frame Decaid may skip', () => {
     const settingsCache = { appUpdateChecked: false, appUpdateState: null };
     const commands = [];
     const toasts = [];
@@ -99,15 +99,23 @@ test('update status changes only after Decaid acknowledges the check', () => {
 
     onOpen();
     assert.deepEqual(commands, [{ command: 'check' }]);
-    assert.equal(settingsCache.appUpdateChecked, false);
-
-    onData({ phase: 'idle' });
-    assert.equal(settingsCache.appUpdateChecked, false);
-
-    onData({ phase: 'checking' });
     assert.equal(settingsCache.appUpdateChecked, true);
 
+    // 'checking' is transient and a fast check can skip it entirely, going straight to a
+    // terminal phase. The flag must already be set by then or the "Up to date" pill,
+    // which is gated on it, would never render.
+    onData({ phase: 'available' });
+    assert.equal(settingsCache.appUpdateChecked, true);
+    assert.deepEqual(settingsCache.appUpdateState, { phase: 'available' });
+
+    // A send that never left must not claim a check happened.
+    settingsCache.appUpdateChecked = false;
     failSend = true;
+    window.checkAppUpdate();
+    assert.equal(settingsCache.appUpdateChecked, false);
+    toasts.length = 0;
+
+
     window.installAppUpdate();
     assert.deepEqual(toasts, [['Update WebSocket is not connected', 5000, 'error']]);
 });
