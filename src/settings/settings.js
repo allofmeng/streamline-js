@@ -430,7 +430,7 @@ const settingsTree = {
     'miscellaneous': {
         name: 'Miscellaneous',
         subcategories: [
-            { id: 'reasettings', name: 'Decent.app Settings', settingsCategory: 'rea' },
+            { id: 'reasettings', name: 'Decaid Settings', settingsCategory: 'rea' },
             { id: 'brightness', name: 'Brightness', settingsCategory: 'brightness' },
             { id: 'wakelock', name: 'Wake Lock', settingsCategory: 'wakelock' },
             { id: 'presence', name: 'Presence Detection', settingsCategory: 'presence' },
@@ -1570,12 +1570,12 @@ export function renderUserManualSettings() {
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]">Start writing your own skin.</p>
                         </div>
-                        <a href="https://github.com/decentespresso/decaid/blob/main/doc/Skins.md#skinsmd" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                        <a href="https://github.com/decentespresso/Decaid/blob/main/doc/Skins.md#skinsmd" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
                             View
                         </a>
                     </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Learn how to use Decent.app to create custom skins and more.">
-                        Learn how to use Decent.app to create custom skins and more.
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Learn how to use Decaid to create custom skins and more.">
+                        Learn how to use Decaid to create custom skins and more.
                     </p>
                 </div>
             </div>
@@ -5060,7 +5060,7 @@ function setupVisualizerEventListeners() {
             return;
         }
 
-        // Settings POST is a patch (decaid #588): a typed password sets the
+        // Settings POST is a patch (Decaid #588): a typed password sets the
         // credential, an empty field preserves the stored one via the isSet
         // marker, an empty field with nothing stored leaves it unset.
         let passwordPayload;
@@ -5139,7 +5139,7 @@ async function loadVisualizerSettings() {
         // Always clear the password field for security
         passwordInput.value = '';
 
-        // Secure values are returned as { isSet } state, never plaintext (decaid #588).
+        // Secure values are returned as { isSet } state, never plaintext (Decaid #588).
         const passwordVal = savedSettings?.Password;
         visualizerPasswordIsSet = passwordVal != null &&
             (typeof passwordVal === 'object' ? passwordVal.isSet === true : !!passwordVal);
@@ -5446,7 +5446,7 @@ export function renderFirmwareUpdateSettings() {
             <div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>
 
             <div class="w-full flex flex-col gap-[12px]">
-                <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]">Decent.app <span data-i18n-key="Update info">Update info</span></p>
+                <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px] leading-[1.2]">Decaid <span data-i18n-key="Update info">Update info</span></p>
                 ${appInfoDetails}
                 <div id="app-update-section">${renderAppUpdateBlock(settingsCache.appUpdateState)}</div>
             </div>
@@ -5487,6 +5487,12 @@ function renderAppUpdateBlock(state) {
             : `<a href="${state?.releaseUrl || '#'}" class="bg-[#385a92] h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold flex items-center">View Release</a>`;
     } else if (phase === 'downloading' || phase === 'installing') {
         action = `<button disabled class="bg-[#385a92] opacity-50 h-[60px] px-[40px] rounded-[60px] text-white text-[22px] font-bold">${getTranslation('Updating')}…</button>`;
+    } else if (isLatest) {
+        // A check already ran — connectUpdateWebSocket fires one on open — and it came
+        // back clean, so the button would only re-answer a question already answered.
+        // The "Up to date" pill is the whole result. Errors keep their Check button:
+        // there, retrying is the point.
+        action = '';
     }
 
     // Status line beneath the header.
@@ -5611,7 +5617,7 @@ export function renderUpdatesSettings() {
 
                 <div class="w-full flex flex-col gap-4">
                     <div class="flex flex-col gap-4">
-                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decent.app Information</p>
+                        <p class="font-['Inter:Bold',sans-serif] font-bold text-[#385a92] text-[30px]">Decaid Information</p>
                         ${appInfoDetails}
                     </div>
                 </div>

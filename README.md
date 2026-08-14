@@ -588,7 +588,7 @@ toggle, the auto-favourite/recipe strip and the DYE button to the header (§7). 
 `dye2.reaplugin` installed in Decaid.
 
 ### 9. Miscellaneous
-A group of sub-pages: **Decent.app Settings**, **Brightness**, **Wake Lock**, **Presence
+A group of sub-pages: **Decaid Settings**, **Brightness**, **Wake Lock**, **Presence
 Detection**, **Display Size**, **Temperature**, **Screen Saver** and **Keyboard Shortcuts**.
 
 **Display size (zoom)** is persisted locally — useful on unusual tablet resolutions. **Temperature**
@@ -612,8 +612,28 @@ machine is **confirmed asleep**, and tapping it wakes the machine.
 > again 46 ms later because hiding the overlay also sent a wake command.
 
 ### 10. Updates
-Decaid's app version and build info; machine firmware version and serial; and **DE1 firmware
-upload**. The firmware/app "check for update" buttons are not yet wired.
+This page handles two separate updates: the machine's **DE1 firmware**, and **Decaid** itself.
+
+**DE1 firmware**
+
+- **Installed version** — the build now on the machine, shown at the top.
+- **Automatic check** — opening the page checks for a newer build. There is no button to press.
+- **Check result** — one of four states: *Firmware update available*, *Up to date*, *Newer than
+  bundled* (a beta machine), or *Could not check* with the reason.
+- **Download & Install** — appears only under *Firmware update available*, alongside the build
+  number and release notes.
+- **Manual upload** — pick a firmware file yourself, then press **Upload**. A progress bar and a
+  **Cancel** button appear while it runs.
+
+**Decaid**
+
+- **Version and source** — version, build number, build time, branch, and commit.
+- **Check for Updates** — also runs on its own when you open the page. The button is hidden once
+  Decaid reports **Up to date**. It comes back if a check fails, so you can retry.
+- **Update App** — replaces the check button when a new version is available. Builds that cannot
+  update in place show a **View Release** link instead.
+
+The machine serial number is on the **Machine Info** page (§4), not here.
 
 > **Firmware uploads are not reversible from the UI.** Do not power off the machine or the tablet
 > while one is in progress.
