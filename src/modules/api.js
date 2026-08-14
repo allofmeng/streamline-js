@@ -66,6 +66,24 @@ let currentShotSettings = {
     groupTemp: 0.0, // number (float/double)
 };
 
+// A firmware flash owns the DE1's BLE radio for 10+ minutes: ~29,000 16-byte
+// writeWithResponse round-trips, unpaced. GET /machine/settings is nine MMR
+// reads, and MMR is gated behind the firmware (firmware_mmr_gate.dart), so each
+// one sits in the BLE queue until the flash ends — in reaprime's log the whole
+// batch was released at once at the moment the queue faulted and the upload
+// died. Whether they caused that fault or merely rode along with it, a settings
+// refresh nobody asked for is not worth putting in that queue.
+//
+// Serving the cache is enough because a flash cannot change these values, and
+// only a REFRESH is skipped: with no cache at all the fetch still runs, so a
+// first read is never broken by this.
+let firmwareFlashInFlight = false;
+
+/** Hold MMR-backed reads while the DE1 is being flashed. */
+export function setFirmwareFlashInFlight(value) {
+    firmwareFlashInFlight = !!value;
+}
+
 // Caching for DE1 settings to avoid multiple API calls
 let de1SettingsCache = {
     data: null,
@@ -79,7 +97,7 @@ let de1AdvancedSettingsCache = {
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
 };
-const reatsettingscache = { 
+const reatsettingscache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -101,12 +119,40 @@ export async function getDevices() {
     return response.json();
 }
 
-export async function scanForDevices() {
-    const response = await fetch(`${API_BASE_URL}/devices/scan`);
-    if (!response.ok) {
-        throw new Error('Failed to scan for devices');
+// How long we are willing to hold a caller on a scan before answering from the
+// device list instead. A scan window is ~15 s (reaprime's own scan reports),
+// and the connect attempt that follows is what stretched one call to 41.6 s in
+// the field. 20 s clears a normal scan, so the usual path still returns the
+// real post-scan list; only the pathological one gets cut short.
+const SCAN_RESPONSE_BUDGET_MS = 20000;
+
+/**
+ * Ask REA to scan (and connect). Bounded: the endpoint takes its slow branch for
+ * us — `quick` defaults false and `connect` defaults TRUE (devices_handler.dart:217),
+ * so it holds the response open for the whole scan AND the connect that follows.
+ * One such call blocked 41.6 s in reaprime's log while our reconnect path sat on it.
+ *
+ * Aborting only drops OUR read: the handler awaits a plain future, so the scan and
+ * connect carry on server-side and land on the devices socket either way. What we
+ * give up by timing out is the freshness of the returned list, so fall back to the
+ * device list as it stands — which the scan has been updating all along.
+ */
+export async function scanForDevices({ timeoutMs = SCAN_RESPONSE_BUDGET_MS } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(`${API_BASE_URL}/devices/scan`, { signal: controller.signal });
+        if (!response.ok) {
+            throw new Error('Failed to scan for devices');
+        }
+        return await response.json();
+    } catch (error) {
+        if (error.name !== 'AbortError') throw error;
+        logger.warn(`Device scan still open after ${timeoutMs} ms — answering from the device list; the scan continues in REA.`);
+        return getDevices();
+    } finally {
+        clearTimeout(timer);
     }
-    return response.json();
 }
 
 export async function reconnectDevice(deviceId) {
@@ -1423,6 +1469,9 @@ export async function getAppInfo() {
 
 
 export async function getDe1Settings() {
+    // Mid-flash: nine MMR reads down a radio the firmware owns. Serve what we have.
+    if (firmwareFlashInFlight && de1SettingsCache.data) return de1SettingsCache.data;
+
     // Check if we have cached data that is still fresh
     if (de1SettingsCache.data && de1SettingsCache.timestamp) {
         const now = Date.now();
@@ -1478,6 +1527,7 @@ export async function setDe1Settings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 settings:', error);
@@ -1486,6 +1536,9 @@ export async function setDe1Settings(settings) {
 }
 
 export async function getDe1AdvancedSettings() {
+    // Same reasoning as getDe1Settings: no MMR traffic while the flash runs.
+    if (firmwareFlashInFlight && de1AdvancedSettingsCache.data) return de1AdvancedSettingsCache.data;
+
     // Check if we have cached data that is still fresh
     if (de1AdvancedSettingsCache.data && de1AdvancedSettingsCache.timestamp) {
         const now = Date.now();
@@ -1556,6 +1609,7 @@ export async function setDe1AdvancedSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 advanced settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 advanced settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 advanced settings:', error);
@@ -1595,6 +1649,7 @@ export async function setReaSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set REA settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        reatsettingscache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('REA settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting REA settings:', error);
@@ -1866,9 +1921,7 @@ export async function getFirmwareCatalog() {
 // `error` or a truncated stream — a stream that ends without `done` means CRC
 // verification never confirmed, so it is NOT a success.
 async function consumeFirmwareStream(response, onProgress) {
-    // No streaming body (old middleware, or a proxy that buffered it): the POST
-    // still completed, so treat it as a legacy success rather than failing.
-    if (!response.body?.getReader) return;
+    if (!response.body?.getReader) throw new Error('Firmware response did not provide a progress stream');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
