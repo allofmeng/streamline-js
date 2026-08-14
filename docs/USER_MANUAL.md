@@ -2,12 +2,6 @@
 
 **Applies to:** Decaid (the app formerly called decent.app) and the Streamline.js skin, v0.1.95
 
-> English manual built from Mark Chau's Chinese guide *decent.app 使用說明*, expanded and checked
-> against the Decaid and Streamline.js source.
->
-> Screenshots are the app's own help overlays — tap the **?** button on any screen to see them live.
-> Sections marked 🎬 have a walkthrough video; links are added as the clips are published.
-
 ---
 
 ## Table of Contents
