@@ -49,8 +49,8 @@
 ## 1. What Decaid is
 
 Decaid is a ground-up rewrite of the software that drives your Decent Espresso machine. It replaces
-the old `de1app`, and it was rebuilt with two goals: make the software easier to develop, and run on
-as many platforms as possible.
+the old `de1app`. The rewrite had two goals: make the software easier to develop, and run it on as
+many platforms as possible.
 
 Decaid does not draw the coffee screen itself. It is the **bridge** between your machine and
 whichever user interface — "skin" — you choose:
@@ -59,9 +59,10 @@ whichever user interface — "skin" — you choose:
    DE1  ──►  tablet  ──►  Decaid  ──►  skin  ──►  your espresso
 ```
 
-Decaid owns the hard parts: the Bluetooth or USB connection to the machine, the scale, profile
-storage, shot logging, and the API that skins are built on. The skin owns what you look at and
-touch. This manual covers Decaid in Part I and the **Streamline.js** skin in Part II.
+Decaid owns the hard parts. It handles the Bluetooth or USB connection, the scale, profile storage,
+shot logging, and the API that skins build on. The skin owns what you look at and touch.
+
+This manual covers Decaid in Part I and the **Streamline.js** skin in Part II.
 
 ### Supported platforms
 
@@ -82,17 +83,17 @@ Decaid connects over Bluetooth or USB, and supports the Bengle as well as the DE
 | Android, macOS, Windows, Linux | <https://github.com/decentespresso/decaid/releases> |
 | iOS / iPadOS | <https://testflight.apple.com/join/R7YNeA67> |
 
-> **iOS users:** Decaid is still in testing on iOS, so it is distributed through TestFlight. Install
-> Apple's own **TestFlight** app from the App Store first, then open the link above to install
-> Decaid through it.
+> **iOS users:** Decaid is still in testing on iOS, so Apple's TestFlight distributes it. Install
+> the **TestFlight** app from the App Store first. Then open the link above to install Decaid
+> through it.
 
 > **A note on the name.** Decaid has been renamed several times: **REA** ("Reasonable Espresso App")
 > → **ReaPrime** → **Streamline Bridge** → **Decent.app** → **Decaid** in 2026, ten years after the
 > first commit to the original `de1app` repository. The name commemorates that decade while
 > describing what the app does: it **aids** you in making *decent* espresso.
 >
-> Only the display name changed. Internal identifiers were deliberately left alone so existing
-> integrations keep working, which is why the old names still show up in the plumbing:
+> Only the display name changed. Decent deliberately left the internal identifiers alone, so
+> existing integrations keep working. The old names still show up in the plumbing:
 >
 > | Identifier | Value |
 > |---|---|
@@ -108,20 +109,26 @@ Decaid connects over Bluetooth or USB, and supports the Bengle as well as the DE
 
 ## 2. Installing Decaid and importing your de1app data
 
-Install Decaid from the download links above — the releases page on Android, macOS, Windows and
-Linux, or TestFlight on iOS and iPadOS.
+Install Decaid from the download links above. Use the releases page on Android, macOS, Windows and
+Linux. Use TestFlight on iOS and iPadOS.
 
 The first time you run it on a tablet that already has `de1app`, Decaid offers to **import your
-existing data**. Accept it — this is the easiest way to carry over what you already have. Decaid
-reads `de1app`'s own files, including `settings.tdb` and the DYE plugin's `grinders.tdb`, and brings
-across your settings, profiles, shot history, beans and grinders.
+existing data**. Accept it. This is the easiest way to carry over what you already have.
+
+Decaid reads `de1app`'s own files, including `settings.tdb` and the DYE plugin's `grinders.tdb`. It
+brings across your settings, profiles, shot history, beans and grinders.
 
 > 🎬 **Video — Importing your de1app data.** The first-run import, start to finish.
 >
 > 🎬 **Video — Importing from inside the skin.** The same data brought in from the skin side.
 
-First-run setup walks through a short sequence: welcome, permissions, an Android warning where
-relevant, the data import, scanning for your machine, sign-in, and initialisation.
+First-run setup walks through a short sequence:
+
+- **Welcome** and **permissions**
+- **Android warning**, where relevant
+- **Data import** from `de1app`
+- **Scan** for your machine
+- **Sign-in** and **initialisation**
 
 > If you skip the import at first run, you can still import later from Decaid's data management
 > settings.
@@ -130,34 +137,38 @@ relevant, the data import, scanning for your machine, sign-in, and initialisatio
 
 ## 3. Connecting your DE1 and scale
 
-On first use Decaid asks **which DE1 to connect to**. Machines in range are listed; choose yours and
-connect. Decaid remembers it and auto-connects on later starts.
+On first use Decaid asks **which DE1 to connect to**. It lists the machines in range. Choose yours
+and connect.
+
+Decaid remembers your machine and auto-connects on later starts.
 
 > 🎬 **Video — Connecting your machine.** Scanning for a DE1 and pairing it.
 
-Scales are handled the same way. Connect yours once and enable auto-connect so it comes back on its
-own. See §5 for what the scale does when the machine goes to sleep.
+Scales work the same way. Connect yours once, then enable auto-connect so it returns on its own.
+
+See §13 for what the scale does when the machine sleeps.
 
 ---
 
 ## 4. Choosing a skin
 
-A skin is the interface you actually touch. Decaid can install and serve several, and two are
-officially supported:
+A skin is the interface you actually touch. Decaid can install and serve several. Two are officially
+supported:
 
 | Skin | Notes |
 |---|---|
 | **Streamline** | Documented in Part II of this manual |
 | **Insight** | The other officially supported skin |
 
-Decaid's skin registry also carries community skins — Passione, OverDose, Beanie, NSX and
-WorkFlow — which install the same way but are not documented here.
+Decaid's skin registry also carries community skins: Passione, OverDose, Beanie, NSX and WorkFlow.
+They install the same way. This manual does not cover them.
 
 > 🎬 **Video — Switching skins.** Finding the skin list, installing one, and making it the default.
 
-**To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen,**
-or use your device's back gesture. This is worth knowing before you open a skin for the first time,
-because a skin fills the whole screen.
+**To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen.**
+Your device's back gesture works too.
+
+Learn this before you open a skin. A skin fills the whole screen, with no visible way out.
 
 ### Viewing a skin in a browser
 
@@ -169,8 +180,9 @@ http://localhost:3000
 
 From another device on the same network, use the tablet's address — `http://<tablet-ip>:3000`.
 
-**The in-app web view is the primary way to use a skin**; a browser is the secondary way, handy for
-checking on the machine from a laptop or phone, and for development. Everything works in both.
+**The in-app web view is the primary way to use a skin.** A browser is the secondary way. It is
+handy for checking the machine from a laptop or phone, and for development. Everything works in
+both.
 
 | | In-app web view (primary) | Browser (secondary) |
 |---|---|---|
@@ -226,15 +238,21 @@ hold. A few examples:
 | The shot history panel | *Discuss with Derek* · *Copy Shot Summary* (§11) |
 | The **?** button | Hide the button |
 
-Values with **−** and **+** work as you would expect: tap to step once, press and hold to repeat
-quickly, or **tap the number itself to type an exact value**. The numpad also lists values you used
-on previous shots, so you can jump back to a known-good dose or temperature.
+Values with **−** and **+** work as you would expect:
+
+- **Tap** to step once
+- **Press and hold** to repeat quickly
+- **Tap the number itself** to type an exact value
+
+The numpad also lists values from previous shots. Jump back to a known-good dose or temperature in
+one tap.
 
 ### The built-in help
 
-You do not have to remember any of this. **Tap the ? button in the bottom-right corner** and the
-screen labels itself — every control gets a caption explaining what tap and long-press do. Tap
-anywhere to dismiss it.
+You do not have to remember any of this. **Tap the ? button in the bottom-right corner.** The screen
+labels itself, captioning what tap and long-press do on every control.
+
+Tap anywhere to dismiss it.
 
 The help overlay exists on the main screen, the profile selector, the profile editor and the
 settings screen. The screenshots throughout this manual are those overlays, so you can read them
@@ -284,9 +302,10 @@ DYE button, no auto-favourite strip.
 Turning DYE2 on shifts the favourite slots right to make room, so the bar visibly rearranges.
 
 **Turning it on:** Settings → **Extensions** → **Describe Your Espresso** → the **DYE2** toggle. The
-`dye2.reaplugin` plugin must be installed in Decaid and at or above its minimum version; if it
-isn't, the toggle refuses to stay on and offers a download link. Streamline.js only *reads* DYE2's
-data — a recipe hidden in DYE2 will not appear here.
+`dye2.reaplugin` plugin must be installed in Decaid, at or above its minimum version. Without it,
+the toggle refuses to stay on and offers a download link.
+
+Streamline.js only *reads* DYE2's data. A recipe hidden in DYE2 will not appear here.
 
 In the in-app web view there is also a floating **Exit to Decent dashboard** button. Drag it to
 move it; long-press to hide it.
@@ -303,9 +322,10 @@ move it; long-press to hide it.
 | **Flush** | Duration or flow |
 | **Hot Water** | `Temp \| Vol` |
 
-Under most rows sits a strip of **presets** — the four temperatures under Brew, the times under
-Steam and Flush, the volumes under Hot Water. Tap one to apply it; long-press to edit it, overwrite
-it with the current value, or reset it.
+Under most rows sits a strip of **presets**. Brew has four temperatures, Steam and Flush have times,
+Hot Water has volumes.
+
+Tap a preset to apply it. Long-press to edit it, overwrite it with the current value, or reset it.
 
 Steam, Flush and Hot Water have a **mode switch** under the label — the small `Time | Flow` and
 `Temp | Vol` control. Tap it to change which quantity you are editing. If a number looks wrong,
@@ -325,9 +345,16 @@ Tap the expand icon for full screen; the back arrow returns you.
 
 ### Right column — machine buttons (non-GHC machines)
 
-If your DE1 has no Group Head Controller, a column of large buttons appears: **Coffee · Water ·
-Steam · Flush · Stop**. While the machine is busy the action buttons dim and **Stop** turns red. On
-GHC machines this column is hidden — you use the physical controller.
+If your DE1 has no Group Head Controller, a column of large buttons appears:
+
+- **Coffee** — start espresso
+- **Water** — dispense hot water
+- **Steam** — start steam
+- **Flush** — flush the group
+- **Stop** — stop whatever is running
+
+While the machine is busy, the action buttons dim and **Stop** turns red. GHC machines hide this
+column. You use the physical controller instead.
 
 ---
 
@@ -370,8 +397,8 @@ it.
 
 ### The profile library
 
-Open the profile selector from the header. The list of every profile Decaid knows about runs down
-the left; tapping one previews its graph and notes on the right.
+Open the profile selector from the header. Every profile Decaid knows about runs down the left.
+Tap one to preview its graph and notes on the right.
 
 ![The profile selector with the help overlay showing](media/profile-selector-help.jpg)
 
@@ -436,9 +463,11 @@ Across the top:
 profile.** Saving without renaming overwrites the profile you opened. So if you want to keep both,
 rename first, then save.
 
-Behind the scenes your edited copy goes into Decaid's key–value store under the `streamline`
-namespace, and those copies are merged into the list every time you open the selector. Built-in
-profiles are never modified. **RESET** in the selector removes your copy and restores the original.
+Your edited copy goes into Decaid's key–value store, under the `streamline` namespace. The selector
+merges those copies into the list each time you open it.
+
+Built-in profiles never change. **RESET** in the selector removes your copy and restores the
+original.
 
 ### Profile notes
 
@@ -470,13 +499,13 @@ Derek is not limited to shots you paste in — you can ask it general DE1 and eq
 
 ## 12. Shot history
 
-Every shot is stored locally in the browser's IndexedDB *and* in Decaid.
+Streamline.js stores every shot twice: locally in the browser's IndexedDB, and in Decaid.
 
-- The **←** / **→** arrows below the chart step through past shots.
-- Selecting a past shot replays its full curve on the main chart, to compare against what you just
-  pulled.
-- Each shot carries its metrics: pre-infusion, extraction and total summaries.
-- History is paginated — it loads more as you go back.
+- **Step back** with the **←** / **→** arrows below the chart
+- **Replay any shot** — selecting one redraws its full curve on the main chart, to compare against
+  what you just pulled
+- **Read the metrics** — each shot carries pre-infusion, extraction and total summaries
+- **Keep scrolling** — history is paginated and loads more as you go back
 - **Long-press the history panel** for Derek and copy options (§11).
 
 ---
@@ -485,9 +514,10 @@ Every shot is stored locally in the browser's IndexedDB *and* in Decaid.
 
 Reached from the **Settings** button. Eleven sections; numbering matches the on-screen menu.
 
-Settings has a **search box** — type a keyword to find any setting without knowing which category it
-lives in. The category list runs down the left, its sub-pages appear alongside, and the divider
-between the panels can be dragged to resize them. **SAVE** and **CANCEL** sit at the top right.
+Settings has a **search box**. Type a keyword to find any setting without knowing its category.
+
+The category list runs down the left, with its sub-pages alongside. Drag the divider between the
+panels to resize them. **SAVE** and **CANCEL** sit at the top right.
 
 ![The settings screen with the help overlay showing](media/settings-help.jpg)
 
@@ -505,8 +535,8 @@ The two flow multipliers are worth understanding if your shots stop slightly ear
 ### 2. Connection
 Two sub-pages, **Machine** and **Scale**. This is the section to visit when devices stop responding.
 
-Each known device is listed with its ID, a **Preferred** toggle, its availability, and **Reconnect**
-and **Forget** buttons. Scales can also be added by hand with **Add WiFi scale manually**.
+Each known device shows its ID, a **Preferred** toggle, its availability, and **Reconnect** and
+**Forget** buttons. To add a scale by hand, use **Add WiFi scale manually**.
 
 ![Scale settings, showing scale power mode and scale required](media/scale-power-mode.jpg)
 
@@ -565,8 +595,8 @@ status.
 
 #### Screen Saver
 
-The screen saver belongs to the skin, not to Decaid — it is configured here, and it only appears
-while the machine is **confirmed asleep**. Tapping it wakes the machine.
+The screen saver belongs to the skin, not to Decaid. Configure it here. It appears only while the
+machine is **confirmed asleep**, and tapping it wakes the machine.
 
 | Control | Notes |
 |---|---|
@@ -589,10 +619,12 @@ upload**. The firmware/app "check for update" buttons are not yet wired.
 ### 11. User Manual
 Links to Decent Espresso support, the quickstart, and the skin developer docs.
 
-Also available, depending on build: **Talk to Decent** (read and reply to support conversations
-in-app), **Send Feedback** (bug/feature/general report with a Markdown description, optional Decent
-account sign-in and system info, submitted as a GitHub issue), and a **Keyboard Shortcuts**
-reference.
+Three more pages appear depending on the build:
+
+- **Talk to Decent** — read and reply to support conversations without leaving the app
+- **Send Feedback** — file a bug, feature request or general report. Write it in Markdown, sign in
+  with your Decent account to tag it, and attach system info. It arrives as a GitHub issue
+- **Keyboard Shortcuts** — the reference list in §24
 
 ---
 
@@ -621,13 +653,13 @@ reference.
 [Decaid](https://github.com/decentespresso/decaid) is a local server that owns everything
 Streamline.js cannot do from a browser:
 
-- Bluetooth LE connections to the DE1 and to scales
-- Machine state, settings and firmware
-- Profile storage, import/export and lineage
-- Shot and steam logging, bean and grinder records
-- A generic key–value store for skins to persist their own data
-- A plugin system
-- Hosting the web UI skins themselves
+- **Bluetooth LE connections** to the DE1 and to scales
+- **Machine state**, settings and firmware
+- **Profile storage**, import/export and lineage
+- **Shot and steam logging**, plus bean and grinder records
+- **A key–value store**, so skins can persist their own data
+- **A plugin system**
+- **Skin hosting** — it serves the web UI itself
 
 Anything a skin can do, you can do — Streamline.js is an ordinary API client with no privileged
 access. Platforms and installation are covered in §1.
@@ -659,10 +691,10 @@ It exposes two API interfaces, both on port `8080`:
 - **REST** — `http://<host>:8080/api/v1/...` (OpenAPI spec: `rest_v1.yml`)
 - **WebSocket** — `ws://<host>:8080/ws/v1/...` (AsyncAPI spec: `websocket_v1.yml`)
 
-Rule of thumb: **REST for commands and configuration, WebSocket for anything that changes many times
-a second.**
+Rule of thumb: **REST for commands and configuration. WebSocket for anything that changes many
+times a second.**
 
-All examples below use `localhost`; substitute the tablet's IP when calling from another machine.
+All examples below use `localhost`. Substitute the tablet's IP when calling from another machine.
 
 ---
 
@@ -782,9 +814,9 @@ ws.onmessage = (e) => {
 **Two practical notes:**
 
 1. **Reconnect.** These sockets drop — tablets sleep, Wi‑Fi hiccups. Streamline.js wraps every socket
-   in a reconnecting wrapper with exponential backoff. Do the same. And remember that a reconnect
-   resets your view of connection status, so re‑query state after reconnecting rather than trusting
-   your last cached value.
+   in a reconnecting wrapper with exponential backoff. Do the same. Remember that a reconnect resets
+   your view of connection status. Re-query state after reconnecting rather than trusting your last
+   cached value.
 2. **`shotState` and `snapshot` share a timebase.** Their timestamps line up, so you can correlate a
    phase transition with the exact pressure/flow sample that triggered it.
 
@@ -813,13 +845,14 @@ ws.onmessage = (e) => {
 
 ### The workflow API
 
-`/api/v1/workflow` is the wrapper endpoint that ties a profile together with its shot settings, bean
-and grinder as a single unit.
+`/api/v1/workflow` is the wrapper endpoint. It ties a profile to its shot settings, bean and grinder
+as a single unit.
 
 **Use the workflow API to change the active profile — not `POST /api/v1/machine/profile` directly.**
-Setting the machine profile on its own bypasses the bookkeeping the middleware does around it, and
-the shot that follows will be logged with stale or missing associations. Streamline.js routes all
-profile changes through the workflow wrapper for exactly this reason.
+Setting the machine profile on its own skips Decaid's bookkeeping. The shot that follows gets logged
+with stale or missing associations.
+
+Streamline.js routes all profile changes through the workflow wrapper for exactly this reason.
 
 ---
 
@@ -847,8 +880,8 @@ new ones. That is how Streamline.js keeps IndexedDB in step without refetching e
 | `/api/v1/bean-batches/{id}` | One batch |
 | `/api/v1/grinders`, `/api/v1/grinders/{id}` | Grinder records |
 
-These back the DYE2 (*Describe Your Espresso*) screen — attaching a bean batch and grinder setting
-to a shot so history is searchable later.
+These back the DYE2 (*Describe Your Espresso*) screen. Attaching a bean batch and grinder setting to
+a shot makes your history searchable later.
 
 ---
 
@@ -906,8 +939,8 @@ it.
 ## 23. Skins and the web UI server
 
 The middleware hosts the web UI itself, which is how a tablet gets Streamline.js without any separate
-web server. **The skin is served on port `3000`** — `http://localhost:3000`, or
-`http://<tablet-ip>:3000` from another device — while the REST and WebSocket APIs stay on `8080`.
+web server. **Decaid serves the skin on port `3000`** — `http://localhost:3000`, or
+`http://<tablet-ip>:3000` from another device. The REST and WebSocket APIs stay on `8080`.
 
 The `/webui/server/*` endpoints below control that port‑3000 server.
 
@@ -935,8 +968,8 @@ A skin is identified by its `skin-manifest.json`:
 }
 ```
 
-Installing a new version from a GitHub release and then setting it as default is the normal upgrade
-path — this is what Settings → Skin drives.
+The normal upgrade path has two steps. Install a new version from a GitHub release, then set it as
+default. This is what Settings → Skin drives.
 
 ---
 
