@@ -26,7 +26,7 @@ export async function renameProfile(profileId, newTitle) {
         profileData.profile.title = newTitle;
         
         // Save to API
-        await updateProfile(profileId, profileData);
+        await updateProfile(profileId, profileData.profile);
         
         // Update local cache
         if (availableProfiles[profileId]) {

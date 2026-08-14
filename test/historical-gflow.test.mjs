@@ -99,7 +99,7 @@ test('resolver: instances are independent (one per plotted record)', () => {
 // ── Real recorded data: the repo's 2025-09 fixture is a legacy record ────────
 
 test('fixture: pre-GFlow shot record falls back to the scale chain', async () => {
-    const url = new URL('../shots/2025-09-12T16:04:38.049213.json', import.meta.url);
+    const url = new URL('../shots/2025-09-12T16-04-38.049213.json', import.meta.url);
     const shot = JSON.parse(await readFile(url, 'utf8'));
     // No machine frame carries weightFlow → scale-sourced fallback
     assert.equal(hasMachineGFlow(shot.measurements), false);
