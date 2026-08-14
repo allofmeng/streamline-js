@@ -3,8 +3,10 @@
 **Applies to:** Decaid (the app formerly called decent.app) and the Streamline.js skin, v0.1.95
 
 > English manual built from Mark Chau's Chinese guide *decent.app 使用說明*, expanded and checked
-> against the Decaid and Streamline.js source. Screenshots are the app's own help overlays — tap the
-> **?** button on any screen to see them live.
+> against the Decaid and Streamline.js source.
+>
+> Screenshots are the app's own help overlays — tap the **?** button on any screen to see them live.
+> Sections marked 🎬 have a walkthrough video; links are added as the clips are published.
 
 ---
 
@@ -114,9 +116,9 @@ existing data**. Accept it — this is the easiest way to carry over what you al
 reads `de1app`'s own files, including `settings.tdb` and the DYE plugin's `grinders.tdb`, and brings
 across your settings, profiles, shot history, beans and grinders.
 
-🎬 **[Importing your de1app data](media/import-from-de1app.mp4)** — the first-run import, start to finish.
-
-🎬 **[Importing from inside the skin](media/import-in-skin.mp4)** — the same data brought in from the skin side.
+> 🎬 **Video — Importing your de1app data.** The first-run import, start to finish.
+>
+> 🎬 **Video — Importing from inside the skin.** The same data brought in from the skin side.
 
 First-run setup walks through a short sequence: welcome, permissions, an Android warning where
 relevant, the data import, scanning for your machine, sign-in, and initialisation.
@@ -131,7 +133,7 @@ relevant, the data import, scanning for your machine, sign-in, and initialisatio
 On first use Decaid asks **which DE1 to connect to**. Machines in range are listed; choose yours and
 connect. Decaid remembers it and auto-connects on later starts.
 
-🎬 **[Connecting your machine](media/connecting-the-machine.mov)** — scanning for a DE1 and pairing it.
+> 🎬 **Video — Connecting your machine.** Scanning for a DE1 and pairing it.
 
 Scales are handled the same way. Connect yours once and enable auto-connect so it comes back on its
 own. See §5 for what the scale does when the machine goes to sleep.
@@ -151,7 +153,7 @@ officially supported:
 Decaid's skin registry also carries community skins — Passione, OverDose, Beanie, NSX and
 WorkFlow — which install the same way but are not documented here.
 
-🎬 **[Switching skins](media/switching-skins.mov)** — finding the skin list, installing one, and making it the default.
+> 🎬 **Video — Switching skins.** Finding the skin list, installing one, and making it the default.
 
 **To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen,**
 or use your device's back gesture. This is worth knowing before you open a skin for the first time,
@@ -457,7 +459,7 @@ Derek answers questions about your DE1 and your equipment, and can look at a spe
 
 The same menu offers **Copy Shot Summary** if you only want the text.
 
-🎬 **[Asking Derek about a shot](media/derek.mov)** — copying a shot summary and asking a question.
+> 🎬 **Video — Asking Derek about a shot.** Copying a shot summary and asking a question.
 
 Derek is not limited to shots you paste in — you can ask it general DE1 and equipment questions too.
 
