@@ -8,7 +8,7 @@ No JS build step. Serve `index.html` from any static file server:
 ```
 python3 -m http.server
 ```
-Requires Rea Prime middleware running on `localhost:8080`. The hostname is configurable via `localStorage.getItem('reaHostname')` in `api.js`.
+Requires Decaid running on `localhost:8080`. The hostname is configurable via the legacy `localStorage.getItem('reaHostname')` compatibility key in `api.js`.
 
 ## CSS Build (important)
 
@@ -25,7 +25,7 @@ Vanilla JS/HTML/CSS SPA — no framework, no JS bundler. ES modules via native b
 
 ### Module Roles (`src/modules/`)
 
-- `api.js` — all network I/O: REST fetch wrappers + WebSocket connections to Rea Prime. Exports `MachineState` enum and caches for shot/DE1 settings.
+- `api.js` — all network I/O: REST fetch wrappers + WebSocket connections to Decaid. Exports `MachineState` enum and caches for shot/DE1 settings.
 - `app.js` — bootstrap and orchestrator. Wires WebSocket callbacks, owns global state (`isDe1Connected`, `isScaleConnected`, `shotStartTime`), exposes `window.app`.
 - `ui.js` — DOM update functions called after state changes.
 - `chart.js` — real-time Plotly shot graph (pressure, flow, groupTemperature actual + target).
@@ -37,13 +37,13 @@ Vanilla JS/HTML/CSS SPA — no framework, no JS bundler. ES modules via native b
 ### Data Flow
 
 ```
-Rea Prime :8080
+Decaid :8080
   ├── REST  ──────────────────► api.js → app.js (loadInitialData) → ui.js / profileManager.js
   └── WebSocket
-        ws/v1/de1/snapshot ──► handleData() → chart.updateChart() + ui.*
+        ws/v1/machine/snapshot ──► handleData() → chart.updateChart() + ui.*
         ws/v1/scale/snapshot ► handleScaleData()
-        ws/v1/de1/waterLevels ► waterTank.js
-        ws/v1/de1/shotSettings ► updateShotSettingsCache()
+        ws/v1/machine/waterLevels ► waterTank.js
+        ws/v1/machine/shotSettings ► updateShotSettingsCache()
 ```
 
 Single global `appState` object as source of truth. No reactive framework — UI functions are called manually after state changes.
@@ -60,7 +60,8 @@ Single global `appState` object as source of truth. No reactive framework — UI
 
 ## Reference Files
 
-- `reaprime_api.md` — full REST + WebSocket API reference
+- `rest_v1.yml` and `websocket_v1.yml` — repository-local API contracts
+- [Decaid API documentation](https://github.com/decentespresso/decaid/blob/main/doc/Api.md) — current backend reference
 - `DESIGN_SYSTEM.md` — design tokens, component patterns, theming
 - `rewrite_roadmap.md` — feature roadmap
 - Original TCL skin at `/Users/markc/Documents/streamline_js/de1app/de1plus/skins/Streamline/skin.tcl` — reference for feature logic when unsure how something should behave
