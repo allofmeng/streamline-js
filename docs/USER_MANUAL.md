@@ -72,7 +72,16 @@ touch. This manual covers Decaid in Part I and the **Streamline.js** skin in Par
 
 Decaid connects over Bluetooth or USB, and supports the Bengle as well as the DE1.
 
-**Downloads:** <https://github.com/decentespresso/decaid/releases>
+### Downloads
+
+| Platform | Where |
+|---|---|
+| Android, macOS, Windows, Linux | <https://github.com/decentespresso/decaid/releases> |
+| iOS / iPadOS | <https://testflight.apple.com/join/R7YNeA67> |
+
+> **iOS users:** Decaid is still in testing on iOS, so it is distributed through TestFlight. Install
+> Apple's own **TestFlight** app from the App Store first, then open the link above to install
+> Decaid through it.
 
 > **A note on the name.** Decaid has been renamed several times: **REA** ("Reasonable Espresso App")
 > → **ReaPrime** → **Streamline Bridge** → **Decent.app** → **Decaid** in 2026, ten years after the
@@ -96,7 +105,8 @@ Decaid connects over Bluetooth or USB, and supports the Bengle as well as the DE
 
 ## 2. Installing Decaid and importing your de1app data
 
-Install Decaid from the releases page above, or from TestFlight on iOS.
+Install Decaid from the download links above — the releases page on Android, macOS, Windows and
+Linux, or TestFlight on iOS and iPadOS.
 
 The first time you run it on a tablet that already has `de1app`, Decaid offers to **import your
 existing data**. Accept it — this is the easiest way to carry over what you already have. Decaid
