@@ -103,9 +103,13 @@ existing data**. Accept it. This is the easiest way to carry over what you alrea
 Decaid reads `de1app`'s own files, including `settings.tdb` and the DYE plugin's `grinders.tdb`. It
 brings across your settings, profiles, shot history, beans and grinders.
 
-> 🎬 **Video — Importing your de1app data.** The first-run import, start to finish.
->
-> 🎬 **Video — Importing from inside the skin.** The same data brought in from the skin side.
+🎬 **Importing your de1app data.** The first-run import, start to finish.
+
+https://github.com/user-attachments/assets/fe61e277-34b1-488b-b40f-d07536eead59
+
+🎬 **Importing from inside the skin.** The same data brought in from the skin side.
+
+https://github.com/user-attachments/assets/1bd6a845-55d9-48f3-9764-fd1490874031
 
 First-run setup walks through a short sequence:
 
@@ -127,7 +131,9 @@ and connect.
 
 Decaid remembers your machine and auto-connects on later starts.
 
-> 🎬 **Video — Connecting your machine.** Scanning for a DE1 and pairing it.
+🎬 **Connecting your machine.** Scanning for a DE1 and pairing it.
+
+https://github.com/user-attachments/assets/a12ff0f1-82b1-4b7e-88c3-4a432e220c90
 
 Scales work the same way. Connect yours once, then enable auto-connect so it returns on its own.
 
@@ -148,7 +154,9 @@ supported:
 Decaid's skin registry also carries community skins: Passione, OverDose, Beanie, NSX and WorkFlow.
 They install the same way. This manual does not cover them.
 
-> 🎬 **Video — Switching skins.** Finding the skin list, installing one, and making it the default.
+🎬 **Switching skins.** Finding the skin list, installing one, and making it the default.
+
+https://github.com/user-attachments/assets/d0dc9b10-8bd3-4928-8bcf-21526e6b9615
 
 **To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen.**
 Your device's back gesture works too.
@@ -473,7 +481,9 @@ Derek answers questions about your DE1 and your equipment, and can look at a spe
 
 The same menu offers **Copy Shot Summary** if you only want the text.
 
-> 🎬 **Video — Asking Derek about a shot.** Copying a shot summary and asking a question.
+🎬 **Asking Derek about a shot.** Copying a shot summary and asking a question.
+
+https://github.com/user-attachments/assets/29869256-d63a-40ed-b8d3-2bf2876501ea
 
 Derek is not limited to shots you paste in — you can ask it general DE1 and equipment questions too.
 
