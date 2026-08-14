@@ -1,4 +1,4 @@
-import { REA_PORT, WS_PROTOCOL, API_BASE_URL } from './api.js';
+import { REA_PORT, WS_PROTOCOL } from './api.js';
 import { logger } from './logger.js';
 import { createSocketSlot } from './socket-slot.js';
 // Note: This assumes ReconnectingWebSocket is globally available as it is in other files.
@@ -55,27 +55,11 @@ if (typeof window !== 'undefined') {
     window.refreshWaterTankUnit = refreshWaterTankUnit;
 }
 
-export async function setWaterLevelWarning(percentage) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/de1/waterLevels`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ warningThresholdPercentage: percentage }),
-        });
-
-        if (response.status !== 202) {
-            const errorBody = await response.text();
-            throw new Error(`Failed to set water level warning. Status: ${response.status}, Body: ${errorBody}`);
-        }
-        logger.info(`Water level warning successfully set to ${percentage}%`);
-        return true;
-    } catch (error) {
-        logger.error('Error setting water level warning:', error);
-        throw error; // Re-throw to allow calling code to handle it
-    }
-}
+// setWaterLevelWarning lived here: it POSTed to /de1/waterLevels, a path that has
+// not existed since the machine namespace rename, carrying a
+// warningThresholdPercentage field the WaterLevels schema has no room for. It had
+// no callers, so nothing noticed. Use api.js setWaterLevels(refillLevel) — the
+// spec's only supported write to this endpoint.
 
 // The waterLevels socket is one of the sockets reaprime binds to a De1 *instance*
 // (de1handler.dart `_withDe1Ws`), so app.js re-opens it after a machine

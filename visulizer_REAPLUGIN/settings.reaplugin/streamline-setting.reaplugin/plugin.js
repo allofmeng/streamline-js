@@ -1307,7 +1307,7 @@ var createPlugin = (function() {
             <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
               <p class="leading-[1.2]">Online Help</p>
             </div>
-            <a href="https://decentespresso.com/support/submit" target="_blank" class="bg-[#385a92] h-[62.88px] rounded-[10px] w-[200px] text-white text-[24px] font-bold flex items-center justify-center">
+            <a href="https://decentespresso.com/support/submit" class="bg-[#385a92] h-[62.88px] rounded-[10px] w-[200px] text-white text-[24px] font-bold flex items-center justify-center">
               Visit
             </a>
           </div>
@@ -1327,7 +1327,7 @@ var createPlugin = (function() {
             <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
               <p class="leading-[1.2]">Tutorials</p>
             </div>
-            <a href="https://decentespresso.com/doc/quickstart/" target="_blank" class="bg-[#385a92] h-[62.88px] rounded-[10px] w-[200px] text-white text-[24px] font-bold flex items-center justify-center">
+            <a href="https://decentespresso.com/doc/quickstart/" class="bg-[#385a92] h-[62.88px] rounded-[10px] w-[200px] text-white text-[24px] font-bold flex items-center justify-center">
               View
             </a>
           </div>
@@ -1343,7 +1343,7 @@ var createPlugin = (function() {
             <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
               <p class="leading-[1.2]">Start writing your own skin.</p>
             </div>
-            <a href="https://github.com/decentespresso/decaid/blob/main/doc/Skins.md#skinsmd" target="_blank" class="bg-[#385a92] h-[62.88px] rounded-[10px] w-[200px] text-white text-[24px] font-bold flex items-center justify-center">
+            <a href="https://github.com/decentespresso/decaid/blob/main/doc/Skins.md#skinsmd" class="bg-[#385a92] h-[62.88px] rounded-[10px] w-[200px] text-white text-[24px] font-bold flex items-center justify-center">
               View
             </a>
           </div>
