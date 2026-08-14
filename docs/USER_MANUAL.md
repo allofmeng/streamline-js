@@ -178,6 +178,8 @@ Port `8080` is Decaid's API, which the skin calls in the background. You never o
 
 These are Decaid's own settings, separate from the skin's. The ones people reach for most:
 
+> Looking for the screen saver? That one belongs to the skin, not Decaid — see §13.
+
 ### Connections → Scale → scale power mode
 
 What the scale does when the machine goes to sleep. Three choices:
@@ -189,12 +191,6 @@ What the scale does when the machine goes to sleep. Three choices:
 | **Disconnect** | Drop the scale connection entirely — **the default** |
 
 `[SCREENSHOT: scale power mode]`
-
-### Screen saver
-
-Choose your own screen-saver image, or a plain black screen.
-
-`[SCREENSHOT: screen saver]`
 
 ### Language
 
@@ -460,30 +456,57 @@ calibration, voltage/stop-at-weight/steam saves and slow start are either not wi
 supported by the firmware API.
 
 ### 4. Machine
-Machine-level settings and information.
+Sub-pages for **USB**, **Machine Information**, and — on Bengle machines only — **Cup Warmer** and
+**Lighting** (LED strip).
 
 ### 5. Maintenance
-**Descaling** and **air purge**. Transport mode is not available — the firmware API does not expose
-it.
+**Machine Descaling** and air purge.
 
 ### 6. Skin
-Light/dark theme; the skin switcher (applying reloads the page); presence-based auto-sleep with a
-schedule; and a wake-lock toggle to stop the tablet screen sleeping.
+**Theme & Updates** — light/dark theme, and the skin switcher. Applying a different skin reloads the
+page.
 
 ### 7. Language
 Runtime language switching, CSV-backed. No reload needed.
 
 ### 8. Extensions
-**Decent Visualizer** — toggle on and enter credentials to upload shots automatically.
+Three sub-pages:
 
-**Describe Your Espresso (DYE2)** — the DYE2 master switch, **default off**. Turning it on adds the
-P/F/R toggle, the auto-favourite/recipe strip and the DYE button to the header (§7). Requires
+**Visualizer** — toggle on and enter your Decent Visualizer credentials to upload shots
+automatically.
+
+**Plugins** — the plugins Decaid has installed.
+
+**DYE2** — the *Describe Your Espresso* master switch, **default off**. Turning it on adds the P/F/R
+toggle, the auto-favourite/recipe strip and the DYE button to the header (§7). Requires
 `dye2.reaplugin` installed in Decaid.
 
 ### 9. Miscellaneous
-**Display size (zoom)**, persisted locally — useful on unusual tablet resolutions. **Smart
-charging** with a night-mode schedule and live charging status. Screen saver, units and resolution
-selectors exist in the UI but are not yet wired to the backend.
+A group of sub-pages: **Decent.app Settings**, **Brightness**, **Wake Lock**, **Presence
+Detection**, **Display Size**, **Temperature**, **Screen Saver** and **Keyboard Shortcuts**.
+
+**Display size (zoom)** is persisted locally — useful on unusual tablet resolutions. **Temperature**
+switches between °C and °F. **Smart charging** offers a night-mode schedule and live charging
+status.
+
+#### Screen Saver
+
+The screen saver belongs to the skin, not to Decaid — it is configured here, and it only appears
+while the machine is **confirmed asleep**. Tapping it wakes the machine.
+
+| Control | Notes |
+|---|---|
+| On / off | Enabled by default |
+| Your own images | Upload one or more; thumbnails are shown, and you can clear them again |
+| Image cycle | How long each image stays up, 2–600 seconds, default 10. Only meaningful with more than one image |
+| Black screen | A plain black screen saver instead of images |
+
+`[SCREENSHOT: screen saver — image selection]`
+`[SCREENSHOT: screen saver — black screen]`
+
+> The skin never raises the screen saver optimistically, and hiding it never wakes the machine —
+> only your tap does. This is deliberate: an earlier version put the machine to sleep and woke it
+> again 46 ms later because hiding the overlay also sent a wake command.
 
 ### 10. Updates
 Decaid's app version and build info; machine firmware version and serial; and **DE1 firmware
