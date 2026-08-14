@@ -97,7 +97,7 @@ const de1AdvancedSettingsCache = {
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
 };
-const reatsettingscache = { 
+const reatsettingscache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -1528,6 +1528,7 @@ export async function setDe1Settings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 settings:', error);
@@ -1610,6 +1611,7 @@ export async function setDe1AdvancedSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 advanced settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 advanced settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 advanced settings:', error);
@@ -1647,6 +1649,7 @@ export async function setReaSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set REA settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        reatsettingscache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('REA settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting REA settings:', error);
