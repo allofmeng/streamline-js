@@ -47,8 +47,21 @@ logging and device management happen in a separate middleware process called
 **[Decaid](https://github.com/decentespresso/decaid)**.
 Streamline.js is the front end; Decaid is the engine.
 
-> Decaid was previously called Streamline‑Bridge, and before that Rea Prime (repo `reaprime`). You
-> will still see those names in older docs, in some API paths, and in a few settings labels.
+> **A note on the name.** Decaid has been renamed several times: **REA** ("Reasonable Espresso App")
+> → **ReaPrime** → **Streamline Bridge** → **Decent.app** → **Decaid** in 2026, ten years after the
+> first commit to the original `de1app` repository. Only the display name changed — internal
+> identifiers were deliberately left alone so existing integrations keep working. That is why you
+> will still see the old names in the plumbing:
+>
+> | Identifier | Value |
+> |---|---|
+> | Dart package | `reaprime` |
+> | Bundle ID | `net.tadel.reaprime` |
+> | Database | `streamline_bridge` |
+> | Plugin extension | `.reaplugin` (e.g. `dye2.reaplugin`) |
+> | Streamline.js host key | `localStorage.reaHostname` |
+>
+> Use **Decaid** in prose; leave the identifiers as they are.
 
 ```
 ┌────────────────┐    REST + WebSocket    ┌──────────────────┐   Bluetooth LE   ┌────────┐
@@ -103,6 +116,11 @@ Every feature is built to work in both. Where the two differ, the manual says so
 
 Streamline.js detects the web view automatically (via the host's `window.__DECENT_HOST__` flag and
 the user‑agent) and adapts — you do not configure this.
+
+> **Android WebView versions.** The in‑app web view is only as good as the Android System WebView
+> installed on the tablet. Some older versions — Teclast tablets are the known case — render the
+> skin incorrectly. Update Android System WebView and restart the device. Decaid detects an
+> incompatible WebView and will point you at an external browser if the problem persists.
 
 > **Note for developers:** because the web view is the primary target, it is the one to test
 > against. Links must be plain same‑frame navigations — `target="_blank"` and `window.open()` do
@@ -469,6 +487,22 @@ Streamline.js cannot do from a browser:
 - A plugin system
 - Hosting the web UI skins themselves
 
+Decaid runs on Android (the Decent tablets), macOS, Linux, Windows and iPad. It connects to the
+machine over Bluetooth or USB, and supports the Bengle as well as the DE1. On Android it can run as
+a foreground service, holding the machine and scale connections while the app sits in the
+background.
+
+### Ports
+
+| Port | Serves |
+|---|---|
+| `3000` | The skin — this is what you open in a browser |
+| `8080` | REST API and WebSocket streams |
+| `4001` | Browsable API documentation, while Decaid is running |
+
+For the full API reference, start Decaid and open <http://localhost:4001>. You can also serve it
+yourself from the checkout: `cd assets/api/ && npx httpserver -p 4001`.
+
 It exposes two API interfaces, both on port `8080`:
 
 - **REST** — `http://<host>:8080/api/v1/...` (OpenAPI spec: `rest_v1.yml`)
@@ -780,6 +814,14 @@ Shot history lives in IndexedDB, not `localStorage`.
 | `websocket_v1.yml` | Full AsyncAPI 3.0 WebSocket specification |
 | `DESIGN_SYSTEM.md` | Design tokens and component patterns |
 | `CLAUDE.md` | Build and contribution conventions |
+
+In the [Decaid repository](https://github.com/decentespresso/decaid):
+
+| Location | Contents |
+|---|---|
+| `assets/api/` | The browsable API documentation served on port `4001` |
+| `doc/` | Decaid's own documentation |
+| `README.md` | Features, platforms, skins, plugins, naming history |
 
 ### D. Glossary
 
