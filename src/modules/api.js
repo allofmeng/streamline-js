@@ -510,8 +510,8 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
     if (onDisconnect) deviceDisconnectListeners.add(onDisconnect);
     if (onError) deviceErrorListeners.add(onError);
 
-    if (deviceWebSocket && deviceWebSocket.readyState === WebSocket.OPEN) {
-        logger.info('Device WebSocket already connected');
+    if (deviceWebSocket && deviceWebSocket.readyState < WebSocket.CLOSING) {
+        logger.info('Device WebSocket already active');
         return;
     }
 
@@ -650,8 +650,8 @@ export function connectDisplayWebSocket(onData) {
         if (lastDisplayState) onData(lastDisplayState);
     }
 
-    if (displayWebSocket && displayWebSocket.readyState === WebSocket.OPEN) {
-        logger.info('Display WebSocket already connected');
+    if (displayWebSocket && displayWebSocket.readyState < WebSocket.CLOSING) {
+        logger.info('Display WebSocket already active');
         return;
     }
 
@@ -735,11 +735,11 @@ export function getDisplayWebSocket() {
  * @param {Function} onData - Callback for update-state / error messages
  */
 export function connectUpdateWebSocket(onData, onOpen) {
-    if (updateWebSocket && updateWebSocket.readyState === WebSocket.OPEN) {
-        logger.info('Update WebSocket already connected');
+    if (updateWebSocket && updateWebSocket.readyState < WebSocket.CLOSING) {
+        logger.info('Update WebSocket already active');
         // Only when the socket is genuinely ready. onOpen sends a command immediately,
-        // and a still-CONNECTING socket short-circuiting to here would make that throw
-        // and toast on entry to the settings page.
+        // and this branch now also covers CONNECTING sockets, which would throw and
+        // toast on entry to the settings page.
         if (onOpen && updateWebSocketReady) onOpen();
         return;
     }
