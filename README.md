@@ -242,7 +242,6 @@ hold. A few examples:
 Values with **−** and **+** work as you would expect:
 
 - **Tap** to step once
-- **Press and hold** to repeat quickly
 - **Tap the number itself** to type an exact value
 
 The numpad also lists values from previous shots. Jump back to a known-good dose or temperature in
