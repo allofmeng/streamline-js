@@ -1,57 +1,86 @@
-# Streamline.js — User Manual
+# Decaid and Streamline.js — User Manual
 
-**Version:** 0.1.95 · **Applies to:** Streamline.js web skin + Decaid middleware
+**Applies to:** Decaid (the app formerly called decent.app) and the Streamline.js skin, v0.1.95
 
-> **Draft note.** This is a first English draft assembled from the shipping code. Screenshot/clip
-> placeholders are marked `[VIDEO: …]` and map to the sections of the existing screen recording.
+> **Draft note.** English manual built from Mark Chau's Chinese guide *decent.app 使用說明*, expanded
+> and checked against the Decaid and Streamline.js source. Clip placeholders are marked `[VIDEO: …]`.
 
 ---
 
 ## Table of Contents
 
-**Part I — Using Streamline.js**
-1. [What Streamline.js is](#1-what-streamlinejs-is)
-2. [Requirements and first run](#2-requirements-and-first-run)
-3. [The main screen](#3-the-main-screen)
-4. [Pulling a shot](#4-pulling-a-shot)
-5. [Steam, hot water, and flush](#5-steam-hot-water-and-flush)
-6. [Profiles](#6-profiles)
-7. [Shot history](#7-shot-history)
-8. [Settings](#8-settings)
-9. [Troubleshooting](#9-troubleshooting)
+**Part I — Getting started with Decaid**
+1. [What Decaid is](#1-what-decaid-is)
+2. [Installing Decaid and importing your de1app data](#2-installing-decaid-and-importing-your-de1app-data)
+3. [Connecting your DE1 and scale](#3-connecting-your-de1-and-scale)
+4. [Choosing a skin](#4-choosing-a-skin)
+5. [Decaid settings](#5-decaid-settings)
 
-**Part II — Using the middleware (Decaid)**
-10. [What the middleware does](#10-what-the-middleware-does)
-11. [Devices: scan, connect, forget](#11-devices-scan-connect-forget)
-12. [Machine control over REST](#12-machine-control-over-rest)
-13. [Live data over WebSocket](#13-live-data-over-websocket)
-14. [Profiles and the workflow API](#14-profiles-and-the-workflow-api)
-15. [Shots, beans, grinders](#15-shots-beans-grinders)
-16. [The key–value store](#16-the-keyvalue-store)
-17. [Plugins](#17-plugins)
-18. [Skins and the web UI server](#18-skins-and-the-web-ui-server)
-19. [Appendix](#19-appendix)
+**Part II — Using Streamline.js**
+6. [How the interface works](#6-how-the-interface-works)
+7. [The main screen](#7-the-main-screen)
+8. [Pulling a shot](#8-pulling-a-shot)
+9. [Steam, hot water, and flush](#9-steam-hot-water-and-flush)
+10. [Profiles and the profile editor](#10-profiles-and-the-profile-editor)
+11. [Derek, the smart assistant](#11-derek-the-smart-assistant)
+12. [Shot history](#12-shot-history)
+13. [Streamline settings](#13-streamline-settings)
+14. [Troubleshooting](#14-troubleshooting)
+
+**Part III — The Decaid API (for developers)**
+15. [What the API covers](#15-what-the-api-covers)
+16. [Devices: scan, connect, forget](#16-devices-scan-connect-forget)
+17. [Machine control over REST](#17-machine-control-over-rest)
+18. [Live data over WebSocket](#18-live-data-over-websocket)
+19. [Profiles and the workflow API](#19-profiles-and-the-workflow-api)
+20. [Shots, beans, grinders](#20-shots-beans-grinders)
+21. [The key–value store](#21-the-keyvalue-store)
+22. [Plugins](#22-plugins)
+23. [Skins and the web UI server](#23-skins-and-the-web-ui-server)
+24. [Appendix](#24-appendix)
 
 ---
 
-# Part I — Using Streamline.js
+# Part I — Getting started with Decaid
 
-## 1. What Streamline.js is
+## 1. What Decaid is
 
-Streamline.js is a browser-based control skin for the Decent Espresso DE1. It is a full rewrite of
-the original TCL Streamline skin as a static web app — plain HTML, CSS and JavaScript, no framework
-and no build step for the JavaScript.
+Decaid is a ground-up rewrite of the software that drives your Decent Espresso machine. It replaces
+the old `de1app`, and it was rebuilt with two goals: make the software easier to develop, and run on
+as many platforms as possible.
 
-It does **not** talk to the espresso machine directly. All Bluetooth work, profile storage, shot
-logging and device management happen in a separate middleware process called
-**[Decaid](https://github.com/decentespresso/decaid)**.
-Streamline.js is the front end; Decaid is the engine.
+Decaid does not draw the coffee screen itself. It is the **bridge** between your machine and
+whichever user interface — "skin" — you choose:
+
+```
+   DE1  ──►  tablet  ──►  Decaid  ──►  skin  ──►  your espresso
+```
+
+Decaid owns the hard parts: the Bluetooth or USB connection to the machine, the scale, profile
+storage, shot logging, and the API that skins are built on. The skin owns what you look at and
+touch. This manual covers Decaid in Part I and the **Streamline.js** skin in Part II.
+
+### Supported platforms
+
+| Platform | Notes |
+|---|---|
+| **Android** | Primary. Runs on the Decent tablets, and can run as a background service that holds the machine and scale connections |
+| **iOS / iPadOS** | Via TestFlight while in testing |
+| **macOS** | Full support |
+| **Windows** | Full support |
+| **Linux** | ARM64 and x86_64 |
+
+Decaid connects over Bluetooth or USB, and supports the Bengle as well as the DE1.
+
+**Downloads:** <https://github.com/decentespresso/decaid/releases>
 
 > **A note on the name.** Decaid has been renamed several times: **REA** ("Reasonable Espresso App")
 > → **ReaPrime** → **Streamline Bridge** → **Decent.app** → **Decaid** in 2026, ten years after the
-> first commit to the original `de1app` repository. Only the display name changed — internal
-> identifiers were deliberately left alone so existing integrations keep working. That is why you
-> will still see the old names in the plumbing:
+> first commit to the original `de1app` repository. The name commemorates that decade while
+> describing what the app does: it **aids** you in making *decent* espresso.
+>
+> Only the display name changed. Internal identifiers were deliberately left alone so existing
+> integrations keep working, which is why the old names still show up in the plumbing:
 >
 > | Identifier | Value |
 > |---|---|
@@ -61,279 +90,291 @@ Streamline.js is the front end; Decaid is the engine.
 > | Plugin extension | `.reaplugin` (e.g. `dye2.reaplugin`) |
 > | Streamline.js host key | `localStorage.reaHostname` |
 >
-> Use **Decaid** in prose; leave the identifiers as they are.
-
-```
-┌────────────────┐    REST + WebSocket    ┌──────────────────┐   Bluetooth LE   ┌────────┐
-│  Streamline.js │ ─────────────────────► │      Decaid      │ ───────────────► │  DE1   │
-│  (browser)     │ ◄───────────────────── │  (:8080)         │ ◄─────────────── │  Scale │
-└────────────────┘     live snapshots     └──────────────────┘                  └────────┘
-       ▲                                            │
-       └──────────── served on :3000 ───────────────┘
-```
-
-Consequence worth remembering: **if the app looks dead, the middleware is usually the thing that is
-down** — not the browser and not the machine.
-
-Streamline.js is designed to be used inside the Decent app's web view on the tablet; running it in
-an ordinary browser is fully supported but secondary. See §2 for what differs between the two.
+> Use **Decaid** in prose; leave the identifiers alone.
 
 ---
 
-## 2. Requirements and first run
+## 2. Installing Decaid and importing your de1app data
 
-### Prerequisites
+Install Decaid from the releases page above, or from TestFlight on iOS.
 
-| Item | Requirement |
+The first time you run it on a tablet that already has `de1app`, Decaid offers to **import your
+existing data**. Accept it — this is the easiest way to carry over what you already have. Decaid
+reads `de1app`'s own files, including `settings.tdb` and the DYE plugin's `grinders.tdb`, and brings
+across your settings, profiles, shot history, beans and grinders.
+
+`[VIDEO: Screen_Recording_20260723_154542.mp4 — first install and importing de1app data]`
+
+First-run setup walks through a short sequence: welcome, permissions, an Android warning where
+relevant, the data import, scanning for your machine, sign-in, and initialisation.
+
+> If you skip the import at first run, you can still import later from Decaid's data management
+> settings.
+
+---
+
+## 3. Connecting your DE1 and scale
+
+On first use Decaid asks **which DE1 to connect to**. Machines in range are listed; choose yours and
+connect. Decaid remembers it and auto-connects on later starts.
+
+`[VIDEO: 連機.mov — selecting and connecting your DE1]`
+
+Scales are handled the same way. Connect yours once and enable auto-connect so it comes back on its
+own. See §5 for what the scale does when the machine goes to sleep.
+
+---
+
+## 4. Choosing a skin
+
+A skin is the interface you actually touch. Decaid can install and serve several, and two are
+officially supported:
+
+| Skin | Notes |
 |---|---|
-| Middleware | [Decaid](https://github.com/decentespresso/decaid) running and reachable on port `8080` |
-| Host | The Decent app's in‑app web view (primary). A browser at `http://localhost:3000` also works |
-| Orientation | Landscape. Portrait devices get a "please rotate" prompt |
-| Machine | Decent DE1 (GHC and non‑GHC both supported) |
-| Scale | Optional but recommended (Decent Scale, Acaia, Felicita, and others Decaid supports) |
+| **Streamline** | Documented in Part II of this manual |
+| **Insight** | The other officially supported skin |
 
-### Where Streamline.js runs
+Decaid's skin registry also carries community skins — Passione, OverDose, Beanie, NSX and
+WorkFlow — which install the same way but are not documented here.
 
-**The in‑app web view is the primary way to use Streamline.js.** On the tablet, Decaid hosts the
-skin and the Decent app displays it in an embedded web view. That is the intended, supported,
-day‑to‑day setup — it is what the app is tuned for, and it is where the machine actually lives.
+`[VIDEO: 改皮膚.mov — finding and switching skins]`
 
-**A normal browser is the secondary way.** Streamline.js is a static web app, so any modern browser
-can load it — point one at `http://localhost:3000` and you get the same UI. Useful for development,
-for checking on the machine from a laptop or phone, and for testing. Everything works, but treat it
-as the second path, not the reference one.
+**To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen,**
+or use your device's back gesture. This is worth knowing before you open a skin for the first time,
+because a skin fills the whole screen.
 
-Every feature is built to work in both. Where the two differ, the manual says so.
+### Viewing a skin in a browser
 
-#### What changes between the two
-
-| | In‑app web view (primary) | Browser (secondary) |
-|---|---|---|
-| Fullscreen | The host OS owns the screen; the fullscreen button is hidden | Fullscreen button available, with a prompt on mobile |
-| External links | The host cancels the in‑page load and opens the link in the OS browser | Opens normally |
-| Exiting | An **Exit to Decent dashboard** button returns you to the host app | Not applicable |
-| Chromium version | Older embedded Chromium — avoid relying on very new browser APIs | Whatever the browser ships |
-
-Streamline.js detects the web view automatically (via the host's `window.__DECENT_HOST__` flag and
-the user‑agent) and adapts — you do not configure this.
-
-> **Android WebView versions.** The in‑app web view is only as good as the Android System WebView
-> installed on the tablet. Some older versions — Teclast tablets are the known case — render the
-> skin incorrectly. Update Android System WebView and restart the device. Decaid detects an
-> incompatible WebView and will point you at an external browser if the problem persists.
-
-> **Note for developers:** because the web view is the primary target, it is the one to test
-> against. Links must be plain same‑frame navigations — `target="_blank"` and `window.open()` do
-> not work there.
-
-### Running it in a browser
-
-Decaid serves the skin itself (see §18), so there is nothing to install. Just open:
+The skin also runs in an ordinary browser. Decaid serves it on **port 3000**:
 
 ```
 http://localhost:3000
 ```
 
-From another device on the same network, use the tablet's address instead — `http://<tablet-ip>:3000`.
+From another device on the same network, use the tablet's address — `http://<tablet-ip>:3000`.
+
+**The in-app web view is the primary way to use a skin**; a browser is the secondary way, handy for
+checking on the machine from a laptop or phone, and for development. Everything works in both.
+
+| | In-app web view (primary) | Browser (secondary) |
+|---|---|---|
+| Fullscreen | The host OS owns the screen; the fullscreen button is hidden | Fullscreen button available |
+| External links | The host opens them in the OS browser | Open normally |
+| Leaving the skin | Swipe right from the left edge, or the floating **Exit to Decent dashboard** button | Not applicable |
+| Browser engine | The tablet's Android System WebView | Whatever the browser ships |
+
+> **Android WebView versions.** The in-app web view is only as good as the Android System WebView
+> installed on the tablet. Some older versions — Teclast tablets are the known case — render skins
+> incorrectly. Update Android System WebView and restart the device. Decaid detects an incompatible
+> WebView and will point you at an external browser if the problem persists.
 
 **Two ports, two jobs.** Port `3000` serves the skin — that is the one you type into a browser.
 Port `8080` is Decaid's API, which the skin calls in the background. You never open `:8080` yourself.
 
-To serve the skin from a checkout instead — for development — run this from the repository root:
+---
 
-```bash
-python3 -m http.server
-```
+## 5. Decaid settings
 
-Then open `http://localhost:8000`. It still talks to Decaid's API on `8080`.
+These are Decaid's own settings, separate from the skin's. The ones people reach for most:
 
-### Pointing at a different host
+### Connections → Scale → scale power mode
 
-By default the app talks to `localhost:8080`. If the middleware runs on another machine, set the
-hostname once from the browser console before loading the app:
+What the scale does when the machine goes to sleep. Three choices:
 
-```js
-localStorage.setItem('reaHostname', '192.168.1.50')
-```
+| Mode | Behaviour |
+|---|---|
+| **None** | Stay connected and keep the scale's display on |
+| **Display off** | Stay connected but switch the scale's screen off; it comes back on when the machine wakes |
+| **Disconnect** | Drop the scale connection entirely — **the default** |
 
-Reload the page afterwards. The port stays `8080`.
+`[SCREENSHOT: scale power mode]`
 
-### First-run checklist
+### Screen saver
 
-1. Start the middleware.
-2. Open Streamline.js.
-3. Go to **Settings → 2. Connections** and scan for your DE1. Connect it.
-4. Scan for and connect your scale. Enable scale auto‑connect so it reconnects on its own.
-5. Go back to the main screen. The machine status should show as connected and the water tank level
-   should be live.
-6. Pick a profile (§6), set your dose (§4), and pull a shot.
+Choose your own screen-saver image, or a plain black screen.
 
-`[VIDEO: first-run — connecting machine and scale]`
+`[SCREENSHOT: screen saver]`
+
+### Language
+
+Decaid is translated into a number of languages; pick yours here.
+
+`[SCREENSHOT: language]`
+
+### Data management
+
+Import and export your data — the same machinery used by the first-run de1app import.
 
 ---
 
-## 3. The main screen
+# Part II — Using Streamline.js
 
-The main screen is a single dashboard; there is no navigation to get lost in. Everything below is on
-one page.
+## 6. How the interface works
+
+Streamline.js reduces the main screen to **two gestures**:
+
+| Gesture | What it does |
+|---|---|
+| **Single tap** | Runs the thing — applies a preset, starts an action, loads a profile |
+| **Long press** | Opens a menu of options for that control |
+
+That pattern is consistent, so when you want to *change* something rather than *use* it, press and
+hold. A few examples:
+
+| Long-press this | And you get |
+|---|---|
+| A brew-temperature preset | *Apply 92°C* · *Enter value* — the numpad, to redefine the preset |
+| A dose:yield ratio preset | *Apply 18:36* · *Enter value* — two numpads, dose then yield |
+| A favourite profile slot | *Browse Profiles*, or clear the slot if one is assigned |
+| The shot history panel | *Discuss with Derek* · *Copy Shot Summary* (§11) |
+| The active profile | *Use Profile Defaults*, to discard your adjustments |
+
+Values with **−** and **+** buttons work the same way as before: tap to step once, press and hold to
+repeat quickly, or tap the number itself to open a numpad. The numpad also lists values you used on
+previous shots, so you can jump back to a known-good dose or temperature.
+
+---
+
+## 7. The main screen
+
+Everything lives on one page. It is laid out to put extraction information front and centre:
+
+- **Left column** — the settings for the shot you are about to pull
+- **Centre** — the chart, showing your most recent shot until a new one starts, then drawing live
+- **Top** — five favourite profiles
+- **Bottom** — the summary of the shot on screen, and arrows to step back through history
+
+`[SCREENSHOT: main screen]`
 
 ### Top bar
 
-**The top bar has two different forms, depending on whether the DYE2 plugin is switched on.** DYE2
-is **off by default**, so unless you have turned it on you are looking at the first form below.
+**The top bar has two forms, depending on whether the DYE2 plugin is switched on.** DYE2 is **off by
+default**, so unless you have turned it on you are looking at the first form.
 
 #### Always present
 
 | Element | What it does |
 |---|---|
-| Favourite slots | Five quick‑access profile buttons. Tap to load that profile immediately |
-| **Warmer** | Toggles the cup warmer (only shown if your machine reports the capability) |
-| **Settings** | Opens the settings pages (§8) |
+| Favourite slots | Five quick-access profile buttons. Tap to load; long-press to reassign |
+| **Warmer** | Toggles the cup warmer (only if your machine reports the capability) |
+| **Settings** | Opens the skin's settings (§13) |
 | **Sleep** | Puts the DE1 to sleep |
-| Fullscreen | Toggles browser fullscreen. Hidden in the in‑app web view, where the host owns the screen |
+| Fullscreen | Toggles browser fullscreen. Hidden in the in-app web view |
 
-With DYE2 off, that is the whole top bar: profile favourites and nothing else. There is no P/F/R
-toggle, no DYE button and no auto‑favourite strip.
+With DYE2 off, that is the whole top bar: profile favourites and nothing else. No P/F/R toggle, no
+DYE button, no auto-favourite strip.
 
 #### Only when DYE2 is switched on
 
 | Element | What it does |
 |---|---|
-| **P / F / R** tabs | Switch the favourites strip between **P**rofile favourites (the default), **F** DYE2 auto‑favourites, and **R** DYE2 recipes |
-| Auto‑fav / recipe strip | In **F** and **R** modes, replaces the profile favourites with DYE2's bean‑and‑recipe snapshots. Ends with a **VIEW ALL** cell that opens the DYE2 page |
+| **P / F / R** tabs | Switch the strip between **P**rofile favourites (default), **F** DYE2 auto-favourites, and **R** DYE2 recipes |
+| Auto-fav / recipe strip | In **F** and **R** modes, shows DYE2's bean-and-recipe snapshots, ending with a **VIEW ALL** cell |
 | **DYE** | Opens the DYE2 dashboard — bean, grinder and notes for the shot |
 
-Turning DYE2 on also shifts the favourite slots right to make room for the P/F/R toggle, so the top
-bar visibly rearranges when you flip the switch.
+Turning DYE2 on shifts the favourite slots right to make room, so the bar visibly rearranges.
 
-**Turning it on:** Settings → **8. Extensions** → **Describe Your Espresso**, then the **DYE2**
-toggle. The DYE2 plugin (`dye2.reaplugin`) must be installed in Decaid and at or above its minimum
-version — if it isn't, the toggle refuses to stay on and offers you a download link. Streamline.js
-also checks for newer DYE2 releases and prompts you once per app run.
+**Turning it on:** Settings → **Extensions** → **Describe Your Espresso** → the **DYE2** toggle. The
+`dye2.reaplugin` plugin must be installed in Decaid and at or above its minimum version; if it
+isn't, the toggle refuses to stay on and offers a download link. Streamline.js only *reads* DYE2's
+data — a recipe hidden in DYE2 will not appear here.
 
-Streamline.js only *reads* DYE2's favourites and recipes; DYE2 itself owns that data. A recipe with
-"Show on Streamline Dashboard" switched off in DYE2 will not appear in the strip.
-
-In the in‑app web view there is also a floating **Exit to Decent dashboard** button. Drag it to
-reposition it; long‑press it to hide it.
+In the in-app web view there is also a floating **Exit to Decent dashboard** button. Drag it to
+move it; long-press to hide it.
 
 ### Left column — shot settings
 
-Each setting is a value with a **−** and **+** button. Two ways to change a value:
+- **Grind** — your grinder setting. Recorded with the shot; it does not command the grinder
+- **Dose in** — dry coffee weight in grams
+- **Drink out** — target beverage weight. Drives stop-at-weight when a scale is connected
+- **Temp** — brew temperature
+- **Steam** — tap the *label* to cycle between temperature, duration and flow
+- **Flush** — tap the label to switch between duration and flow
+- **Hot water** — tap the label to cycle volume, temperature, duration and flow
 
-- **Tap** −/+ for one step.
-- **Press and hold** −/+ to repeat quickly.
-- **Tap the number itself** to open a numeric keypad. The keypad also shows values you used on
-  previous shots, so you can jump back to a known-good dose or temperature.
+The "tap the label to change what you are editing" pattern is consistent across Steam, Flush and Hot
+Water. If a number looks wrong, check which mode the label is in.
 
-Settings on the left column:
+### Centre — the chart
 
-- **Grind** — your grinder setting. Recorded with the shot; it does not command the grinder.
-- **Dose in** — dry coffee weight in grams.
-- **Drink out** — target beverage weight in grams. Used for stop‑at‑weight when a scale is connected.
-- **Temp** — brew (group) temperature in °C.
-- **Steam** — steam setting. Tap the *label* to cycle what the number means (temperature / duration /
-  flow).
-- **Flush** — pre‑shot flush. Tap the label to switch between duration and flow.
-- **Hot water** — tap the label to switch between volume, temperature, duration and flow.
+Between shots the chart shows your **most recent shot**, so you always have something to compare
+against. During a shot it draws live:
 
-The "tap the label to change what you are editing" pattern is used consistently for Steam, Flush and
-Hot Water. If a number looks wrong, check which mode the label is in.
+- **Pressure** (bar) and **flow** (ml/s)
+- **Group temperature** — actual solid, target dashed
+- **Weight** and weight flow when a scale is connected
+- Markers where the profile steps over
 
-### Centre — the live chart
-
-A Plotly chart drawing, in real time:
-
-- **Pressure** (bar)
-- **Flow** (ml/s)
-- **Group temperature** — actual as a solid line, target as a dashed line
-- **Weight / weight flow** when a scale is connected
-- Phase markers where the profile steps over
-
-Tap the expand icon to blow the chart up to full screen; the back arrow returns you.
+Tap the expand icon for full screen; the back arrow returns you.
 
 `[VIDEO: live shot with chart]`
 
-### Right column — machine buttons (non‑GHC machines)
+### Right column — machine buttons (non-GHC machines)
 
-If your DE1 has no Group Head Controller, a column of large buttons appears on the right:
-
-**Coffee · Water · Steam · Flush · Stop**
-
-While the machine is busy, the action buttons dim out and **Stop** turns red. On GHC machines this
-column is hidden — you use the physical controller instead.
-
-### Bottom — shot summary and history nav
-
-Under the chart: the summary of the shot on screen (pre‑infusion, extraction and total figures), and
-left/right arrows to step through previous shots (§7).
+If your DE1 has no Group Head Controller, a column of large buttons appears: **Coffee · Water ·
+Steam · Flush · Stop**. While the machine is busy the action buttons dim and **Stop** turns red. On
+GHC machines this column is hidden — you use the physical controller.
 
 ---
 
-## 4. Pulling a shot
+## 8. Pulling a shot
 
-1. **Choose a profile** — either tap a favourite slot in the header, or open the profile selector
-   (§6) and pick one.
-2. **Set dose in** and **drink out** to match the basket and the ratio you want.
+1. **Choose a profile** — tap a favourite slot, or open the profile selector (§10).
+2. **Set dose in** and **drink out** for your basket and ratio.
 3. **Set brew temperature** if the profile default isn't what you want.
-4. **Flush** the group (Flush button, or the GHC).
-5. Lock in the portafilter, put the cup on the scale.
-6. **Start** — GHC lever, or the **Coffee** button in the right column.
-7. Watch the chart. If a scale is connected and *drink out* is set, the machine stops at weight.
+4. **Flush** the group.
+5. Lock in the portafilter, cup on the scale.
+6. **Tare** — tap the weight readout.
+7. **Start** — the GHC, or the **Coffee** button.
+8. Watch the chart. With a scale connected and *drink out* set, the machine stops at weight.
    Otherwise stop manually.
-8. When the shot ends, the summary fills in and the shot is written to history.
+9. The summary fills in and the shot is written to history.
 
-**Tare:** tap the weight readout on screen to tare the connected scale. Do this after the cup is on
-the scale and before you start.
-
-**No scale connected?** If your setup requires a scale for stop‑at‑weight, starting espresso is
-blocked until one is connected — both from the Coffee button and from the keyboard shortcut.
+**No scale connected?** If your setup requires a scale for stop-at-weight, starting espresso is
+blocked until one is connected — from the Coffee button and the keyboard shortcut alike.
 
 `[VIDEO: full shot start-to-finish]`
 
 ---
 
-## 5. Steam, hot water, and flush
+## 9. Steam, hot water, and flush
 
-**Steam.** Set the steam value in the left column (tap the *Steam* label to switch between
-temperature, duration and flow). Start steam from the GHC or the **Steam** button. Steam stops on
-the duration limit, or when you stop it.
+**Steam.** Set the value in the left column (tap the *Steam* label to switch between temperature,
+duration and flow). Start from the GHC or the **Steam** button. Steam stops on its duration limit,
+or when you stop it.
 
-**Hot water.** Tap the *Hot Water* label to choose what you're setting — volume, temperature,
-duration or flow — then set the value. Start with the GHC or the **Water** button.
+**Hot water.** Tap the *Hot Water* label to choose volume, temperature, duration or flow, then set
+the value. Start with the GHC or the **Water** button.
 
-**Flush.** Sets a pre‑shot flush of a given duration and flow. Useful for stabilising group
-temperature between shots.
+**Flush.** A pre-shot flush of a given duration and flow, for stabilising group temperature between
+shots.
 
-All three respect whatever the machine's own limits are; if a value refuses to go higher, the
-firmware is capping it.
+All three respect the machine's own limits; if a value refuses to go higher, the firmware is capping
+it.
 
 ---
 
-## 6. Profiles
+## 10. Profiles and the profile editor
 
-### Selecting a profile
+### The profile library
 
-Open the profile selector from the header. You get:
+Open the profile selector from the header for a searchable list of every profile Decaid knows about,
+with a detail panel showing author, notes and key parameters. From here you can select, edit, hide,
+delete and upload profiles, and assign any of them to one of the five header favourite slots.
 
-- A searchable, scrollable list of every profile the middleware knows about.
-- A detail panel on the right — author, notes, and the profile's key parameters.
-- Buttons to **select**, **edit**, **hide**, **delete**, and **upload** profiles.
+`[SCREENSHOT: profile library]`
 
-Assign a profile to one of the five header favourite slots to reach it in one tap next time.
+### The editor
 
-`[VIDEO: profile selector]`
+The **EDIT** button opens the in-browser editor, which has **three pages**:
 
-### Editing a profile
-
-The **EDIT** button opens the in‑browser profile editor. Three tabs:
-
-**Steps.** Step cards, four visible at a time, scrolling horizontally. Per step you can set:
+**Steps.** Step cards, four visible at a time, scrolling horizontally.
 
 | Field | Meaning |
 |---|---|
 | Name | Label for the step, shown on the chart |
-| Temperature | Target group temperature for this step (−/+) |
+| Temperature | Target group temperature for this step |
 | Pump | **Flow** or **Pressure** control |
 | Rate | The flow rate or pressure target |
 | Transition | **Fast** (step change) or **Smooth** (ramp) |
@@ -342,139 +383,148 @@ The **EDIT** button opens the in‑browser profile editor. Three tabs:
 
 **Settings.** Target weight, target volume, tank temperature, volume count start, beverage type.
 
-**Review.** Plain‑English summary of every step, the profile settings, and a preview graph with
-pressure, flow and temperature scaled onto a shared axis with step boundaries marked.
+**Review.** Plain-English summaries of every step, the profile settings, and a preview graph with
+pressure, flow and temperature on a shared axis with step boundaries marked.
+
+`[SCREENSHOT: editor — steps]`
+`[SCREENSHOT: editor — settings]`
+`[SCREENSHOT: editor — review]`
 
 ### How edits are saved
 
-**Original profiles are never modified.** When you save an edit, Streamline.js writes a *copy* into
-the middleware's key–value store under the `streamline` namespace. Those copies are merged into the
-list every time you open the selector, so your edited version appears alongside the stock ones.
+**Original profiles are never modified.** Saving an edit writes a *copy* into Decaid's key–value
+store under the `streamline` namespace, and those copies are merged into the list every time you
+open the selector.
 
-- Saving a profile whose name already exists auto‑suffixes it — `My Profile (2)`.
-- The **RESET** button in the selector's right panel deletes your edited copy and puts you back on
-  the original parent profile. It asks for confirmation first.
+- Saving over an existing name auto-suffixes it — `My Profile (2)`.
+- **RESET** in the selector's right panel deletes your copy and restores the original parent
+  profile, after a confirmation.
 
 ### Profile notes
 
-The profile editor has a full Markdown editor (bold, italics, headings, lists, links, live preview)
-for per‑profile notes. Notes autosave per profile.
+The editor includes a full Markdown editor for per-profile notes — bold, italics, headings, lists,
+links, live preview. Notes autosave per profile.
 
 ---
 
-## 7. Shot history
+## 11. Derek, the smart assistant
 
-Every shot is stored locally in the browser's IndexedDB *and* on the middleware.
+Derek answers questions about your DE1 and your equipment, and can look at a specific shot with you.
 
-- Use the **←** / **→** arrows below the chart to step through past shots.
-- Selecting a past shot replays its full curve on the main chart, so you can compare against what
-  you just pulled.
-- Each shot carries its metrics: pre‑infusion, extraction and total time/weight/volume summaries.
-- History is paginated — it loads more as you go back rather than all at once.
+**To ask Derek about a shot:**
+
+1. **Long-press the shot history panel** on the main screen.
+2. Choose **Discuss with Derek**.
+3. The shot summary is copied to your clipboard and Derek opens.
+4. Paste it into the chat and ask your question.
+
+The same menu offers **Copy Shot Summary** if you only want the text.
+
+`[VIDEO: Screen Recording 2026-07-23 at 4.09.16 PM.mov — Derek]`
+
+Derek is not limited to shots you paste in — you can ask it general DE1 and equipment questions too.
+
+> Technically: Decaid proxies Derek at `POST /api/v1/derek/answers/stream`, forwarding to
+> `derek.decentespresso.com` and streaming the answer back.
 
 ---
 
-## 8. Settings
+## 12. Shot history
 
-Settings is an eleven-section list. Numbering below matches the on-screen menu.
+Every shot is stored locally in the browser's IndexedDB *and* in Decaid.
+
+- The **←** / **→** arrows below the chart step through past shots.
+- Selecting a past shot replays its full curve on the main chart, to compare against what you just
+  pulled.
+- Each shot carries its metrics: pre-infusion, extraction and total summaries.
+- History is paginated — it loads more as you go back.
+- **Long-press the history panel** for Derek and copy options (§11).
+
+---
+
+## 13. Streamline settings
+
+Reached from the **Settings** button. Eleven sections; numbering matches the on-screen menu.
 
 ### 1. Quick Adjustments
-Fast access to steam, water and limit values. *Note: the save buttons in this section are present in
-the UI but not yet wired to the backend.*
+Fast access to steam, water and limit values. *The save buttons here are not yet wired up.*
 
 ### 2. Connections
-Bluetooth device management.
-
-- **Scan** for DE1 machines and scales.
-- **Connect** / **Disconnect** individual devices.
-- **Scale auto‑connect** — reconnects your scale automatically on startup. Recommended.
-- Machine auto‑connect is not implemented yet.
-
-This is the section to visit whenever devices stop responding.
+Scan for and connect the DE1 and scales; disconnect individual devices; **scale auto-connect**
+(recommended). Machine auto-connect is not implemented yet. This is the section to visit when
+devices stop responding.
 
 ### 3. Calibration
-- **Fan threshold** — temperature at which the machine's fan kicks in. Saveable.
-- **Advanced heater phase flow** — DE1 advanced heater setting.
-- Reset‑defaults, refill‑kit calibration, voltage/stop‑at‑weight/steam saves, and slow start are
-  either not wired up yet or not supported by the firmware API.
+**Fan threshold** (saveable) and **advanced heater phase flow**. Reset-defaults, refill-kit
+calibration, voltage/stop-at-weight/steam saves and slow start are either not wired up yet or not
+supported by the firmware API.
 
 ### 4. Machine
 Machine-level settings and information.
 
 ### 5. Maintenance
-- **Descaling** — starts the descale routine.
-- **Air purge**.
-- Transport mode is not available (firmware API does not expose it).
+**Descaling** and **air purge**. Transport mode is not available — the firmware API does not expose
+it.
 
 ### 6. Skin
-- **Light / dark theme** toggle, persisted locally.
-- **Skin switcher** — pick which web UI skin the bridge serves; applying reloads the page.
-- **Presence‑based auto‑sleep** with a configurable schedule — the machine sleeps when nobody is
-  around, on the hours you set.
-- **Wake lock** — keeps the tablet screen from sleeping.
+Light/dark theme; the skin switcher (applying reloads the page); presence-based auto-sleep with a
+schedule; and a wake-lock toggle to stop the tablet screen sleeping.
 
 ### 7. Language
-Runtime language switching. Translations are CSV‑backed; changing language does not require a
-reload.
+Runtime language switching, CSV-backed. No reload needed.
 
 ### 8. Extensions
-**Decent Visualizer** — toggle it on and enter your Visualizer credentials to have shots uploaded
-automatically.
+**Decent Visualizer** — toggle on and enter credentials to upload shots automatically.
 
-**Describe Your Espresso (DYE2)** — its own sub‑page with the DYE2 master switch. **Default OFF.**
-Switching it on adds the P/F/R toggle, the auto‑favourite/recipe strip and the DYE button to the
-dashboard header (§3); switching it off returns the header to profile favourites only. Requires the
-`dye2.reaplugin` plugin installed in Decaid — the toggle will not stay on without it.
+**Describe Your Espresso (DYE2)** — the DYE2 master switch, **default off**. Turning it on adds the
+P/F/R toggle, the auto-favourite/recipe strip and the DYE button to the header (§7). Requires
+`dye2.reaplugin` installed in Decaid.
 
 ### 9. Miscellaneous
-- **Display size (zoom)** — scales the whole UI. Persisted locally. Useful on very high or very low
-  DPI tablets.
-- **Smart charging** — charging mode selector, night‑mode schedule, and live charging status.
-- Screen saver toggle, units selector and resolution selector exist in the UI but are not yet wired
-  to the backend.
+**Display size (zoom)**, persisted locally — useful on unusual tablet resolutions. **Smart
+charging** with a night-mode schedule and live charging status. Screen saver, units and resolution
+selectors exist in the UI but are not yet wired to the backend.
 
 ### 10. Updates
-- Decaid app version and build info.
-- Machine firmware version and serial number.
-- **DE1 firmware upload** — select a firmware file and push it to the machine.
-- Firmware/app "check for update" buttons are present but not yet wired.
+Decaid's app version and build info; machine firmware version and serial; and **DE1 firmware
+upload**. The firmware/app "check for update" buttons are not yet wired.
 
 > **Firmware uploads are not reversible from the UI.** Do not power off the machine or the tablet
-> while a firmware upload is in progress.
+> while one is in progress.
 
 ### 11. User Manual
-Links out to Decent Espresso support, the quickstart, and the skin developer docs.
+Links to Decent Espresso support, the quickstart, and the skin developer docs.
 
-Also reachable from Settings, depending on build:
-
-- **Talk to Decent** — read and reply to support conversations in‑app.
-- **Send Feedback** — file a bug/feature/general report. Markdown description, optional Decent
-  account sign‑in so the report is attributed, and an optional system‑info attachment. Submits as a
-  GitHub issue through the middleware.
-- **Keyboard Shortcuts** — reference list.
+Also available, depending on build: **Talk to Decent** (read and reply to support conversations
+in-app), **Send Feedback** (bug/feature/general report with a Markdown description, optional Decent
+account sign-in and system info, submitted as a GitHub issue), and a **Keyboard Shortcuts**
+reference.
 
 `[VIDEO: settings walkthrough]`
 
 ---
 
-## 9. Troubleshooting
+## 14. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Page won't load at all in a browser | Wrong port, or the web UI server is stopped | The skin is on `:3000`, not `:8080`. Check Settings → Skin, or `GET /api/v1/webui/server/status` |
-| Page loads but everything is greyed out / no data | Middleware not running or not reachable | Confirm Decaid's API is up on `:8080`; check `localStorage.reaHostname` |
-| Machine shows disconnected after a network blip | WebSocket reconnected and reset connection state | Wait — auto‑reconnect uses exponential backoff. If it persists, reconnect from Settings → Connections |
-| Scale weight jumps or flickers | Normal noise; readings are throttled | If it never settles, disconnect/reconnect the scale |
-| Edited profile disappeared | The copy lives in the middleware KV store | Check the middleware is the same instance you saved from |
-| Uploading a profile appears to do nothing | Profiles are content‑addressed — an identical profile already exists | Change the content, not just the title |
-| Portrait "rotate device" prompt | App is landscape‑only | Rotate, or lock the tablet to landscape |
-| Chart stops updating mid‑shot | Snapshot WebSocket dropped | It reconnects automatically; the shot itself is unaffected — the machine keeps running |
+| Page loads but everything is greyed out | Decaid not running or not reachable | Confirm Decaid's API is up on `:8080`; check `localStorage.reaHostname` |
+| Skin renders wrong on the tablet only | Outdated Android System WebView | Update it and restart the device (§4) |
+| Can't get out of a skin | — | Swipe right from the left edge of the screen |
+| Machine shows disconnected after a network blip | WebSocket reconnected and reset connection state | Wait — reconnect uses exponential backoff. If it persists, reconnect from Settings → Connections |
+| Scale weight jumps or flickers | Normal noise; readings are throttled | If it never settles, disconnect and reconnect the scale |
+| Scale drops off every time the machine sleeps | Scale power mode is **Disconnect**, the default | Change it in Decaid's settings (§5) |
+| Edited profile disappeared | The copy lives in Decaid's KV store | Check you are on the same Decaid instance you saved from |
+| Uploading a profile appears to do nothing | Profiles are content-addressed — an identical one exists | Change the content, not just the title |
+| Portrait "rotate device" prompt | The skin is landscape-only | Rotate, or lock the tablet to landscape |
+| Chart stops updating mid-shot | Snapshot WebSocket dropped | It reconnects automatically; the machine keeps running regardless |
 
 ---
 
-# Part II — Using the middleware (Decaid)
+# Part III — The Decaid API (for developers)
 
-## 10. What the middleware does
+## 15. What the API covers
 
 [Decaid](https://github.com/decentespresso/decaid) is a local server that owns everything
 Streamline.js cannot do from a browser:
@@ -487,10 +537,8 @@ Streamline.js cannot do from a browser:
 - A plugin system
 - Hosting the web UI skins themselves
 
-Decaid runs on Android (the Decent tablets), macOS, Linux, Windows and iPad. It connects to the
-machine over Bluetooth or USB, and supports the Bengle as well as the DE1. On Android it can run as
-a foreground service, holding the machine and scale connections while the app sits in the
-background.
+Anything a skin can do, you can do — Streamline.js is an ordinary API client with no privileged
+access. Platforms and installation are covered in §1.
 
 ### Ports
 
@@ -515,7 +563,7 @@ All examples below use `localhost`; substitute the tablet's IP when calling from
 
 ---
 
-## 11. Devices: scan, connect, forget
+## 16. Devices: scan, connect, forget
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -536,7 +584,7 @@ emits device state. That is what the app uses so the Connections screen updates 
 
 ---
 
-## 12. Machine control over REST
+## 17. Machine control over REST
 
 ### State
 
@@ -599,7 +647,7 @@ curl -X POST http://localhost:8080/api/v1/scale/timer/reset
 
 ---
 
-## 13. Live data over WebSocket
+## 18. Live data over WebSocket
 
 Connect to `ws://<host>:8080/<channel>`. Every channel emits JSON frames.
 
@@ -639,7 +687,7 @@ ws.onmessage = (e) => {
 
 ---
 
-## 14. Profiles and the workflow API
+## 19. Profiles and the workflow API
 
 ### Profile endpoints
 
@@ -672,7 +720,7 @@ profile changes through the workflow wrapper for exactly this reason.
 
 ---
 
-## 15. Shots, beans, grinders
+## 20. Shots, beans, grinders
 
 ### Shots and steams
 
@@ -701,7 +749,7 @@ to a shot so history is searchable later.
 
 ---
 
-## 16. The key–value store
+## 21. The key–value store
 
 A general-purpose namespaced store any skin can use.
 
@@ -718,12 +766,12 @@ curl -X PUT http://localhost:8080/api/v1/store/streamline/<uuid> \
      -d '{"...":"..."}'
 ```
 
-Streamline.js uses the `streamline` namespace to hold user-edited profile copies (§6). Pick your own
+Streamline.js uses the `streamline` namespace to hold user-edited profile copies (§10). Pick your own
 namespace for your own skin; do not write into someone else's.
 
 ---
 
-## 17. Plugins
+## 22. Plugins
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -739,9 +787,20 @@ Plugins can also publish live streams at `ws/v1/plugins/{id}/{endpoint}`. Two th
 - `time-to-ready.reaplugin` → `timeToReady` — countdown until the machine is at temperature.
 - `decent-profile.reaplugin` → `profileGenerated` — generated-profile notifications.
 
+### Derek
+
+Derek (§11) is not a plugin — Decaid proxies it directly:
+
+| Method | Path | Behaviour |
+|---|---|---|
+| `POST` | `/api/v1/derek/answers/stream` | Forwards the request body to `https://derek.decentespresso.com/api/answers/stream` and streams the response back as `text/event-stream` |
+
+Proxying it through Decaid means a skin never needs the upstream address or its own network path to
+it.
+
 ---
 
-## 18. Skins and the web UI server
+## 23. Skins and the web UI server
 
 The middleware hosts the web UI itself, which is how a tablet gets Streamline.js without any separate
 web server. **The skin is served on port `3000`** — `http://localhost:3000`, or
@@ -778,7 +837,7 @@ path — this is what Settings → Skin drives.
 
 ---
 
-## 19. Appendix
+## 24. Appendix
 
 ### A. Keyboard shortcuts
 
@@ -830,7 +889,10 @@ In the [Decaid repository](https://github.com/decentespresso/decaid):
 | **DE1** | Decent Espresso machine |
 | **GHC** | Group Head Controller — the physical control ring on the machine |
 | **Decaid** | The middleware — <https://github.com/decentespresso/decaid>. Formerly Streamline‑Bridge, formerly Rea Prime (repo `reaprime`) |
-| **Skin** | A web UI served by the middleware; Streamline.js is one |
+| **Skin** | A web UI served by Decaid; Streamline.js and Insight are the two official ones |
+| **de1app** | The original TCL application Decaid replaces. Decaid can import its data |
+| **Derek** | Decent's assistant, reachable from the shot history long-press menu |
+| **Bengle** | The other machine Decaid supports alongside the DE1 |
 | **DYE2** | *Describe Your Espresso 2* — a separate Decaid plugin (`dye2.reaplugin`) for bean/grinder/notes, auto‑favourites and recipes. Off by default in Streamline.js |
 | **Workflow** | A profile plus its shot settings, bean and grinder as one unit |
 | **Content‑addressed** | Identified by a hash of the content, not by name |
