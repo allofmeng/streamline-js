@@ -171,7 +171,15 @@ The skin also runs in an ordinary browser. Decaid serves it on **port 3000**:
 http://localhost:3000
 ```
 
-From another device on the same network, use the tablet's address — `http://<tablet-ip>:3000`.
+From another device on the same network, replace `localhost` with the tablet's own IP address —
+the four numbers your router gave it, which you will find in the tablet's Wi‑Fi settings. If the
+tablet is `192.168.1.42`, you type:
+
+```
+http://192.168.1.42:3000
+```
+
+Your tablet's numbers will differ. Type its address, not the one in the example.
 
 **The in-app web view is the primary way to use a skin.** A browser is the secondary way. It is
 handy for checking the machine from a laptop or phone, and for development. Everything works in
