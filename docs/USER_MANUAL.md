@@ -1,6 +1,6 @@
 # Streamline.js — User Manual
 
-**Version:** 0.1.95 · **Applies to:** Streamline.js web skin + Streamline‑Bridge (Rea Prime) middleware
+**Version:** 0.1.95 · **Applies to:** Streamline.js web skin + Decaid middleware
 
 > **Draft note.** This is a first English draft assembled from the shipping code. Screenshot/clip
 > placeholders are marked `[VIDEO: …]` and map to the sections of the existing screen recording.
@@ -20,7 +20,7 @@
 8. [Settings](#8-settings)
 9. [Troubleshooting](#9-troubleshooting)
 
-**Part II — Using the middleware (Streamline‑Bridge / Rea Prime)**
+**Part II — Using the middleware (Decaid)**
 10. [What the middleware does](#10-what-the-middleware-does)
 11. [Devices: scan, connect, forget](#11-devices-scan-connect-forget)
 12. [Machine control over REST](#12-machine-control-over-rest)
@@ -43,13 +43,16 @@ the original TCL Streamline skin as a static web app — plain HTML, CSS and Jav
 and no build step for the JavaScript.
 
 It does **not** talk to the espresso machine directly. All Bluetooth work, profile storage, shot
-logging and device management happen in a separate middleware process called **Streamline‑Bridge**
-(also known as *Rea Prime*, repo name `reaprime`). Streamline.js is the front end; the middleware is
-the engine.
+logging and device management happen in a separate middleware process called
+**[Decaid](https://github.com/decentespresso/decaid)**.
+Streamline.js is the front end; Decaid is the engine.
+
+> Decaid was previously called Streamline‑Bridge, and before that Rea Prime (repo `reaprime`). You
+> will still see those names in older docs, in some API paths, and in a few settings labels.
 
 ```
 ┌────────────────┐    REST + WebSocket    ┌──────────────────┐   Bluetooth LE   ┌────────┐
-│  Streamline.js │ ─────────────────────► │ Streamline‑Bridge│ ───────────────► │  DE1   │
+│  Streamline.js │ ─────────────────────► │      Decaid      │ ───────────────► │  DE1   │
 │  (browser)     │ ◄───────────────────── │  (:8080)         │ ◄─────────────── │  Scale │
 └────────────────┘     live snapshots     └──────────────────┘                  └────────┘
 ```
@@ -65,16 +68,16 @@ down** — not the browser and not the machine.
 
 | Item | Requirement |
 |---|---|
-| Middleware | Streamline‑Bridge running and reachable on port `8080` |
+| Middleware | [Decaid](https://github.com/decentespresso/decaid) running and reachable on port `8080` |
 | Browser | Any modern browser; Chrome/Chromium recommended on tablets |
 | Orientation | Landscape. Portrait devices get a "please rotate" prompt |
 | Machine | Decent DE1 (GHC and non‑GHC both supported) |
-| Scale | Optional but recommended (Decent Scale, Acaia, Felicita, and others the bridge supports) |
+| Scale | Optional but recommended (Decent Scale, Acaia, Felicita, and others Decaid supports) |
 
 ### Running it
 
-Streamline.js is normally served by the middleware itself (see §18), so on a tablet you just open the
-bridge's address in a browser and you are done.
+Streamline.js is normally served by Decaid itself (see §18), so on a tablet you just open Decaid's
+address in a browser and you are done.
 
 To serve it yourself for development, from the repository root:
 
@@ -338,7 +341,7 @@ uploaded automatically.
   to the backend.
 
 ### 10. Updates
-- Streamline‑Bridge app version and build info.
+- Decaid app version and build info.
 - Machine firmware version and serial number.
 - **DE1 firmware upload** — select a firmware file and push it to the machine.
 - Firmware/app "check for update" buttons are present but not yet wired.
@@ -365,7 +368,7 @@ Also reachable from Settings, depending on build:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Everything is greyed out / no data | Middleware not running or not reachable | Confirm Streamline‑Bridge is up on `:8080`; check `localStorage.reaHostname` |
+| Everything is greyed out / no data | Middleware not running or not reachable | Confirm Decaid is up on `:8080`; check `localStorage.reaHostname` |
 | Machine shows disconnected after a network blip | WebSocket reconnected and reset connection state | Wait — auto‑reconnect uses exponential backoff. If it persists, reconnect from Settings → Connections |
 | Scale weight jumps or flickers | Normal noise; readings are throttled | If it never settles, disconnect/reconnect the scale |
 | Edited profile disappeared | The copy lives in the middleware KV store | Check the middleware is the same instance you saved from |
@@ -375,11 +378,12 @@ Also reachable from Settings, depending on build:
 
 ---
 
-# Part II — Using the middleware (Streamline‑Bridge / Rea Prime)
+# Part II — Using the middleware (Decaid)
 
 ## 10. What the middleware does
 
-Streamline‑Bridge is a local server that owns everything Streamline.js cannot do from a browser:
+[Decaid](https://github.com/decentespresso/decaid) is a local server that owns everything
+Streamline.js cannot do from a browser:
 
 - Bluetooth LE connections to the DE1 and to scales
 - Machine state, settings and firmware
@@ -704,7 +708,7 @@ Shot history lives in IndexedDB, not `localStorage`.
 |---|---|
 | **DE1** | Decent Espresso machine |
 | **GHC** | Group Head Controller — the physical control ring on the machine |
-| **Rea Prime / reaprime** | The middleware project; ships as Streamline‑Bridge |
+| **Decaid** | The middleware — <https://github.com/decentespresso/decaid>. Formerly Streamline‑Bridge, formerly Rea Prime (repo `reaprime`) |
 | **Skin** | A web UI served by the middleware; Streamline.js is one |
 | **DYE** | *Describe Your Espresso* — bean/grinder/notes attached to a shot |
 | **Workflow** | A profile plus its shot settings, bean and grinder as one unit |
