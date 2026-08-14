@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -7,7 +7,7 @@ import { loadPage } from '../modules/router.js'; // Singular and correctly forma
 import { logger } from '../modules/logger.js';
 import { isBengleMachine, setMachineModel } from '../modules/machine.js';
 import { resolveSteamStopMode, applyMilkProbeGate } from '../modules/steam-mode.js';
-import { summarizeFirmwareCatalog } from '../modules/firmware-progress.js';
+import { summarizeFirmwareCatalog, isFirmwareCancellationError } from '../modules/firmware-progress.js';
 import { setScreensaverSuppressed, isMachineAsleep } from '../modules/screensaver-policy.js';
 import { ledRgbToColor16, ledColor16ToHex8, ledHexToRgb, ledPreviewComposite } from '../modules/led-color.js';
 import { isCupWarmerOn, readCupWarmerTarget, clampCupWarmerTarget, clampPrewarmMinutes, resolvePrewarm, prewarmWarnings, prewarmShapeSignature, cupWarmerViewMode, formatCurrentMatTemp, getCupWarmerState, setCupWarmerState, patchCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY, PREWARM_MIN_MINUTES, PREWARM_MAX_MINUTES } from '../modules/cup-warmer.js';
@@ -140,6 +140,14 @@ let lastFirmwareProgress = null;
 // Set on window.cancelFirmwareUpdate, read once the stream's 'error' event
 // lands, so that expected termination reads as "cancelled" not "failed".
 let firmwareCancelRequested = false;
+// When the current operation started, and the 1 Hz repaint that shows it.
+// The stream is silent for the whole erase, and then again for the first ~1% of
+// the upload (the handler emits one event per percent, and a percent is ~290
+// BLE round-trips) -- in a real log the label sat on "Erase…" for minutes while
+// the machine was in fact uploading. A running clock is what separates "silent
+// because it is working" from "silent because it is dead".
+let firmwareStartedAt = 0;
+let firmwareElapsedTimer = null;
 
 // Enhanced cache for settings data with loading states
 let settingsCache = {
@@ -265,9 +273,9 @@ function renderErrorState(title, message) {
     return `
         <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden" role="alert">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
-                <p class="leading-[1.2]">${title}</p>
+                <p class="leading-[1.2]">${escapeHtml(title)}</p>
             </div>
-            <div class="text-red-500 p-4 text-[24px] text-center w-full">Failed to load settings: ${message}</div>
+            <div class="text-red-500 p-4 text-[24px] text-center w-full">Failed to load settings: ${escapeHtml(message)}</div>
             <button class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold mx-auto mt-4" onclick="window.retryLoadSettings()" data-i18n-key="Retry">Retry</button>
         </div>
     `;
@@ -329,9 +337,6 @@ function updateSettingsContentArea(category) {
         }
         if (category === 'tempunit') {
             setTimeout(initTempUnitSettings, 0);
-        }
-        if (category === 'feedback') {
-            setTimeout(() => window.updateDecentAccountUI?.(), 0);
         }
         if (category === 'talkdecent') {
             setTimeout(() => window.updateTalkToDecentUI?.(), 0);
@@ -1710,20 +1715,7 @@ export function renderFeedbackSettings() {
     return `
         <div class="content-stretch flex flex-col gap-[24px] items-start relative w-full">
             <p class="font-semibold text-[var(--text-primary)] text-[32px] w-full text-center" data-i18n-key="Send Feedback">Send Feedback</p>
-
-            <!-- Decent Account -->
-            <div id="decent-account-section" class="flex flex-col gap-[12px] w-full p-[18px] rounded-[12px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)]">
-                <p class="font-bold text-[#385a92] text-[22px]">Decent Account</p>
-
-                <div id="decent-logged-out">
-                    <p class="text-[19px] text-[var(--low-contrast-white)]">Link your Decent account in the Decent app to tag feedback with your account.</p>
-                </div>
-
-                <div id="decent-logged-in" class="hidden">
-                    <p class="text-[20px] text-[var(--text-primary)]">Decent account linked</p>
-                    <p id="decent-account-serial" class="text-[18px] text-[var(--low-contrast-white)] mt-[4px]"></p>
-                </div>
-            </div>
+            <p class="text-[19px] text-[var(--low-contrast-white)] w-full text-center">Feedback is submitted as a public GitHub issue. Do not include personal or private information.</p>
 
             <!-- Category -->
             <div class="flex flex-col gap-[10px] w-full">
@@ -1742,14 +1734,6 @@ export function renderFeedbackSettings() {
                        placeholder="Short summary of your feedback…">
             </div>
 
-            <!-- Contact email (optional) -->
-            <div class="flex flex-col gap-[8px] w-full">
-                <p class="font-bold text-[#385a92] text-[22px]">Contact Email <span class="text-[19px] font-normal opacity-60">(optional)</span></p>
-                <input type="email" id="feedback-email"
-                       class="bg-[var(--box-color)] border-2 border-[#385a92] h-[54px] rounded-[54px] w-full text-[var(--text-primary)] text-[22px] px-[24px]"
-                       placeholder="your@email.com">
-            </div>
-
             <!-- Description -->
             <div class="flex flex-col gap-[8px] w-full">
                 <p class="font-bold text-[#385a92] text-[22px]" data-i18n-key="Description">Description</p>
@@ -1764,8 +1748,8 @@ export function renderFeedbackSettings() {
             <!-- System info toggle -->
             <div class="flex items-center justify-between w-full">
                 <div class="flex flex-col gap-[4px]">
-                    <p class="font-bold text-[#385a92] text-[22px]" data-i18n-key="Attach System Info">Attach System Info</p>
-                    <p class="text-[var(--text-primary)] text-[19px]">Appends app version and machine firmware to the report</p>
+                    <p class="font-bold text-[#385a92] text-[22px]">Attach Diagnostics</p>
+                    <p class="text-[var(--text-primary)] text-[19px]">Includes application logs in a secret (unlisted) Gist. The Gist URL is added to the public GitHub issue, so anyone who can view the issue can access the logs. Also includes Decaid app version, platform, and OS version</p>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="feedback-attach-sysinfo" checked class="sr-only peer">
@@ -4641,7 +4625,7 @@ function compareVersions(a, b) {
 function skinRepoSlug(s) {
     const m = (s?.reaMetadata?.sourceUrl || '').match(/github_release:([^@\s]+)/i);
     if (m) return m[1];
-    if (s?.id === SKIN_ID) return 'allofmeng/streamline_project';
+    if (s?.id === SKIN_ID) return 'allofmeng/streamline-js';
     return null;
 }
 
@@ -5343,7 +5327,7 @@ async function initFirmwareCheck() {
 function firmwareProgressLabel(progress) {
     if (!progress) return '';
     const { phase, percent } = progress;
-    return {
+    const text = {
         erasing: `${getTranslation('Erase')}…`,
         // 100% here is "bytes sent", not "update applied" — only `done` is that.
         uploading: percent >= 100
@@ -5351,6 +5335,16 @@ function firmwareProgressLabel(progress) {
             : `${getTranslation('Uploading...')} ${percent}%`,
         done: getTranslation('Your DE1 firmware has been upgraded. Restart the machine to apply it.'),
     }[phase] || '';
+    // Only while something is actually running: a finished or failed update
+    // must not keep a clock next to it.
+    return text && phase !== 'done' ? `${text}${firmwareElapsed()}` : text;
+}
+
+// " — m:ss" since the operation started, or '' when nothing is running.
+function firmwareElapsed(now = Date.now()) {
+    if (!firmwareStartedAt) return '';
+    const seconds = Math.max(0, Math.round((now - firmwareStartedAt) / 1000));
+    return ` — ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 export function renderFirmwareUpdateSettings() {
@@ -5539,11 +5533,19 @@ function renderAppUpdateBlock(state) {
 // Connect ws/v1/update and keep #app-update-section in sync with AppUpdateState.
 // Exposes window.checkAppUpdate / window.installAppUpdate for the buttons.
 function initAppUpdateSection() {
-    window.checkAppUpdate = () => {
-        settingsCache.appUpdateChecked = true;
-        sendUpdateCommand({ command: 'check' });
+    const send = (command) => {
+        try {
+            sendUpdateCommand({ command });
+            // The command leaving is what proves a check happened. Keying this off the
+            // 'checking' frame instead would strand the "Up to date" pill forever
+            // whenever the server goes straight to a terminal phase.
+            if (command === 'check') settingsCache.appUpdateChecked = true;
+        } catch (error) {
+            ui.showToast(error.message, 5000, 'error');
+        }
     };
-    window.installAppUpdate = () => sendUpdateCommand({ command: 'install' });
+    window.checkAppUpdate = () => send('check');
+    window.installAppUpdate = () => send('install');
 
     connectUpdateWebSocket((data) => {
         // Command-level errors arrive as a direct {error[, url]} reply.
@@ -5554,10 +5556,7 @@ function initAppUpdateSection() {
         settingsCache.appUpdateState = data;
         const section = document.getElementById('app-update-section');
         if (section) section.innerHTML = renderAppUpdateBlock(data);
-    });
-
-    // Auto-check on entering the page so the status pill resolves without a manual click.
-    window.checkAppUpdate();
+    }, window.checkAppUpdate);
 }
 
 // Render updates settings
@@ -5946,6 +5945,13 @@ function getCategoryTitle(category) {
     }
 }
 
+function handleSettingsLanguageChange() {
+    translatePage();
+    if (activeSettingsCategory) {
+        updateSettingsContentArea(activeSettingsCategory);
+    }
+}
+
 // Initialize the settings page
 export async function initializeSettings() {
     resetPendingChanges();
@@ -6089,12 +6095,7 @@ export async function initializeSettings() {
     setLanguage(getCurrentLanguage());
 
     // Re-translate settings content whenever language changes
-    document.addEventListener('streamline:languagechange', () => {
-        translatePage();
-        if (activeSettingsCategory) {
-            updateSettingsContentArea(activeSettingsCategory);
-        }
-    });
+    document.addEventListener('streamline:languagechange', handleSettingsLanguageChange);
 
     // Expose update functions to global scope for inline event handlers
     window.updateReaSetting = updateReaSetting;
@@ -6497,40 +6498,6 @@ export async function initializeSettings() {
         container.scrollTop = container.scrollHeight;
     };
 
-    window.updateDecentAccountUI = async function() {
-        const loggedOut = document.getElementById('decent-logged-out');
-        const loggedIn  = document.getElementById('decent-logged-in');
-        if (!loggedOut || !loggedIn) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/account/decent`);
-            const { loggedIn: linked } = await res.json();
-            if (linked) {
-                loggedOut.classList.add('hidden');
-                loggedIn.classList.remove('hidden');
-                const token    = window.__REA_PROXY_TOKEN__;
-                const serialEl = document.getElementById('decent-account-serial');
-                if (token && serialEl) {
-                    try {
-                        const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-                        const snText = (await snRes.text()).trim();
-                        const serial = snText.split(/[\r\n]/)[0].trim();
-                        serialEl.textContent = serial ? `Serial: ${serial}` : '';
-                    } catch (_) {
-                        serialEl.textContent = '';
-                    }
-                }
-            } else {
-                loggedIn.classList.add('hidden');
-                loggedOut.classList.remove('hidden');
-            }
-        } catch (_) {
-            loggedIn.classList.add('hidden');
-            loggedOut.classList.remove('hidden');
-        }
-    };
-
     window.openFeedbackDescriptionEditor = function() {
         const hiddenTA = document.getElementById('feedback-description');
         const currentText = hiddenTA ? hiddenTA.value : '';
@@ -6563,18 +6530,10 @@ export async function initializeSettings() {
         });
     };
 
-    function xorEncode(str, key) {
-        let out = '';
-        for (let i = 0; i < str.length; i++)
-            out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-        return btoa(out);
-    }
-
     window.submitFeedback = async function() {
         const category  = document.getElementById('feedback-category')?.value || 'bug';
         const title     = (document.getElementById('feedback-title')?.value || '').trim();
         const desc      = (document.getElementById('feedback-description')?.value || '').trim();
-        const email     = (document.getElementById('feedback-email')?.value || '').trim();
         const attachSys = document.getElementById('feedback-attach-sysinfo')?.checked;
         const statusEl  = document.getElementById('feedback-status');
         const submitBtn = document.getElementById('feedback-submit-btn');
@@ -6584,25 +6543,7 @@ export async function initializeSettings() {
             return;
         }
 
-        let fullDesc = `**${title}**\n\n${desc}`;
-        const ENCODE_KEY = 'itisadecentcupofcoffee';
-        if (email) fullDesc += `\n\n---\n**Contact:** \`${xorEncode(email, ENCODE_KEY)}\``;
-
-        const proxyToken = window.__REA_PROXY_TOKEN__;
-        if (proxyToken) {
-            try {
-                const accountRes = await fetch(`${API_BASE_URL}/account/decent`);
-                const { loggedIn: linked } = await accountRes.json();
-                if (linked) {
-                    const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
-                        headers: { 'Authorization': `Bearer ${proxyToken}` }
-                    });
-                    const snText = (await snRes.text()).trim();
-                    const serial = snText.split(/[\r\n]/)[0].trim();
-                    if (serial) fullDesc += `\n\n---\n**Serial:** ${serial}`;
-                }
-            } catch (_) {}
-        }
+        const fullDesc = `**${title}**\n\n${desc}`;
 
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
         statusEl.innerHTML = '';
@@ -6858,6 +6799,15 @@ export async function initializeSettings() {
 
         firmwareUploadInFlight = true;
         firmwareCancelRequested = false;
+        firmwareStartedAt = Date.now();
+        // Label only — the bar is the stream's to move. Element looked up per
+        // tick for the same reason showProgress does it: the router swaps the
+        // page HTML out from under a running update.
+        clearInterval(firmwareElapsedTimer);
+        firmwareElapsedTimer = setInterval(() => {
+            const label = document.getElementById('firmware-progress-label');
+            if (label && lastFirmwareProgress) label.textContent = firmwareProgressLabel(lastFirmwareProgress);
+        }, 1000);
         const cancelBtn = document.getElementById('firmware-cancel-btn');
         if (cancelBtn) { cancelBtn.style.display = 'inline-flex'; cancelBtn.disabled = false; cancelBtn.textContent = getTranslation('Cancel'); }
         // A reload or a nav away aborts the POST mid-flash, which bricks nothing
@@ -6876,6 +6826,8 @@ export async function initializeSettings() {
         // Cleared in the finally, so the overlay is a pure function of machine
         // state again the moment the update ends (fails and cancels included).
         setScreensaverSuppressed(true);
+        // And keep our MMR-backed settings reads off the BLE radio the flash owns.
+        setFirmwareFlashInFlight(true);
 
         try {
             ui.showToast(getTranslation('Please be patient. It can take several minutes for your DE1 to update.'), 10000, 'info');
@@ -6892,7 +6844,7 @@ export async function initializeSettings() {
             // A cancel resolves through this same stream-error path (the DELETE
             // just requests it; the NDJSON stream's 'error' event is what
             // actually ends the in-flight promise) -- read as "cancelled", not "failed".
-            const cancelled = firmwareCancelRequested;
+            const cancelled = firmwareCancelRequested || isFirmwareCancellationError(error);
             if (label) {
                 label.textContent = cancelled ? getTranslation('Update cancelled') : `${getTranslation('Update failed')}: ${error.message}`;
                 label.classList.add('text-[#da515e]');
@@ -6906,7 +6858,14 @@ export async function initializeSettings() {
         } finally {
             firmwareUploadInFlight = false;
             firmwareCancelRequested = false;
+            // Stop the clock. The terminal lines ("upgraded", "cancelled",
+            // "failed") are painted in the try/catch above and must not end up
+            // with a counter still ticking beside them.
+            clearInterval(firmwareElapsedTimer);
+            firmwareElapsedTimer = null;
+            firmwareStartedAt = 0;
             setScreensaverSuppressed(false);
+            setFirmwareFlashInFlight(false);
             // The dim we suppressed was the idle->sleeping TRANSITION, and the
             // machine is normally still asleep here — no second transition is
             // coming, so nothing would ever re-dim. Catch up by hand. (The
@@ -6930,6 +6889,8 @@ export async function initializeSettings() {
         try {
             await cancelFirmwareUpdate();
         } catch (error) {
+            firmwareCancelRequested = false;
+            if (btn) { btn.disabled = false; btn.textContent = getTranslation('Cancel'); }
             logger.error('Failed to cancel firmware update:', error);
             ui.showToast(`${getTranslation('Failed to cancel')}: ${error.message}`, 4000, 'error');
         }
@@ -7714,7 +7675,8 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
 function highlightMatch(text, searchTerm) {
     if (!searchTerm) return text;
 
-    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedTerm})`, 'gi');
     return text.replace(regex, '<mark class="bg-yellow-300 text-black">$1</mark>');
 }
 
@@ -7756,38 +7718,40 @@ export function initDeviceWebSocket() {
     logger.info('Device WebSocket initialized');
 }
 
+function handleDisplayState(data) {
+    logger.debug('Display state received:', data);
+    displayStateCache = data; // REA truth for render-time reads
+
+    // Update brightness slider + number entry if they exist
+    if (data.brightness !== undefined) {
+        const brightnessSlider = document.getElementById('brightness-slider');
+        const brightnessNumber = document.getElementById('brightness-number');
+        if (brightnessSlider) {
+            brightnessSlider.value = data.brightness;
+            // Moving the thumb without repainting the fill is what leaves the
+            // bar behind when REA pushes a level we did not set locally.
+            syncBrightnessSliderFill(brightnessSlider, data.brightness);
+        }
+        if (brightnessNumber) brightnessNumber.value = data.brightness;
+    }
+
+    // Update wake-lock toggle if it exists. wakeLockOverride (not
+    // wakeLockEnabled) is REA's record of whether THIS APP asked for the
+    // lock -- wakeLockEnabled is just whether a lock is held right now,
+    // which can read false for reasons unrelated to our request and was
+    // fighting the user's own toggle taps.
+    const wakeLockToggle = document.getElementById('wake-lock-toggle');
+    if (wakeLockToggle && data.wakeLockOverride !== undefined) {
+        wakeLockToggle.checked = data.wakeLockOverride;
+        localStorage.setItem('wakeLockEnabled', data.wakeLockOverride.toString());
+    }
+}
+
 /**
  * Initialize display WebSocket connection
  */
 export function initDisplayWebSocket() {
-    connectDisplayWebSocket((data) => {
-        logger.debug('Display state received:', data);
-        displayStateCache = data; // REA truth for render-time reads
-
-        // Update brightness slider + number entry if they exist
-        if (data.brightness !== undefined) {
-            const brightnessSlider = document.getElementById('brightness-slider');
-            const brightnessNumber = document.getElementById('brightness-number');
-            if (brightnessSlider) {
-                brightnessSlider.value = data.brightness;
-                // Moving the thumb without repainting the fill is what leaves the
-                // bar behind when REA pushes a level we did not set locally.
-                syncBrightnessSliderFill(brightnessSlider, data.brightness);
-            }
-            if (brightnessNumber) brightnessNumber.value = data.brightness;
-        }
-
-        // Update wake-lock toggle if it exists. wakeLockOverride (not
-        // wakeLockEnabled) is REA's record of whether THIS APP asked for the
-        // lock -- wakeLockEnabled is just whether a lock is held right now,
-        // which can read false for reasons unrelated to our request and was
-        // fighting the user's own toggle taps.
-        const wakeLockToggle = document.getElementById('wake-lock-toggle');
-        if (wakeLockToggle && data.wakeLockOverride !== undefined) {
-            wakeLockToggle.checked = data.wakeLockOverride;
-            localStorage.setItem('wakeLockEnabled', data.wakeLockOverride.toString());
-        }
-    });
+    connectDisplayWebSocket(handleDisplayState);
 
     logger.info('Display WebSocket initialized');
 }
@@ -8268,63 +8232,6 @@ export function renderBluetoothScaleSettings(settings) {
     `;
 }
 
-// Function to render all available devices with individual connection controls
-async function renderAllDevices() {
-    try {
-     
-
-        // Get all available devices
-        // const devices = await getDevices();
-            const devices = await scanForDevices();
-        // Separate devices into machines and scales
-        const machines = devices.filter(device => 
-            device.name && (device.name.toLowerCase().includes('decent') || 
-                           device.name.toLowerCase().includes('espresso') || 
-                           device.type === 'espresso')
-        );
-        
-        const scales = devices.filter(device => 
-            device.name && (device.name.toLowerCase().includes('scale') || 
-                           device.name.toLowerCase().includes('weight') || 
-                           device.type === 'scale')
-        );
-
-        // Render devices in their respective containers
-        renderDeviceList('bluetooth-machine-devices-container', machines, 'Machine');
-        renderDeviceList('bluetooth-scale-devices-container', scales, 'Scale');
-        
-        // Also render to the general container if we're on the main bluetooth page
-        const generalContainer = document.getElementById('bluetooth-devices-container');
-        if (generalContainer) {
-            if (machines.length > 0 || scales.length > 0) {
-                let allDevicesHTML = '';
-                if (machines.length > 0) {
-                    allDevicesHTML += '<div class="mb-8">';
-                    allDevicesHTML += '<h3 class="text-[30px] text-[var(--text-primary)] mb-4" data-i18n-key="Espresso Machines">Espresso Machines</h3>';
-                    allDevicesHTML += renderSingleDeviceList(machines);
-                    allDevicesHTML += '</div>';
-                }
-                
-                if (scales.length > 0) {
-                    allDevicesHTML += '<div class="mb-8">';
-                    allDevicesHTML += '<h3 class="text-[30px] text-[var(--text-primary)] mb-4" data-i18n-key="Weighing Scales">Weighing Scales</h3>';
-                    allDevicesHTML += renderSingleDeviceList(scales);
-                    allDevicesHTML += '</div>';
-                }
-                
-                generalContainer.innerHTML = allDevicesHTML;
-            } else {
-                generalContainer.innerHTML = '<p class="text-[24px] text-[var(--text-primary)]" data-i18n-key="No Bluetooth devices found. Make sure your devices are powered on and in pairing mode.">No Bluetooth devices found. Make sure your devices are powered on and in pairing mode.</p>';
-            }
-        }
-
-        // statusDiv.innerHTML = `<p>Found ${devices.length} device(s). ${machines.length} machine(s), ${scales.length} scale(s).</p>`;
-    } catch (error) {
-        console.error('Error scanning for devices:', error);
-  
-    }
-}
-
 // Helper function to render a list of devices of a specific type
 function renderDeviceList(containerId, devices, type, preferredId = '', settingKey = '') {
     const container = document.getElementById(containerId);
@@ -8522,9 +8429,6 @@ window.handleForgetDevice = async function(deviceId, name) {
 // Rescan to reconnect an unavailable (remembered-absent) device — it reconnects
 // when it reappears in discovery. A direct connect would fail (no transport).
 window.handleDeviceRescan = function() {
-    // sendDeviceCommand returns silently (doesn't throw) when the device socket
-    // is closed — exactly the state we're often in when reconnecting. Guard so
-    // we don't show a "scanning" toast for a command that never went out.
     const ws = getDeviceWebSocket?.();
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         ui.showToast("Not connected — can't rescan right now", 5000, 'error');
@@ -8709,17 +8613,10 @@ window.handleNightModeTimeChange = async function(type, timeStr) {
     }
 };
 
-// Initialize Bluetooth settings when the page loads
-document.addEventListener('DOMContentLoaded', function() {
-    // Set up a global function to refresh the device list
-    window.refreshBluetoothDevices = renderAllDevices;
-});
-
-// Call the render function when the module functions are accessed
-setTimeout(() => {
-    if (document.getElementById('bluetooth-devices-container') ||
-        document.getElementById('bluetooth-machine-devices-container') ||
-        document.getElementById('bluetooth-scale-devices-container')) {
-        renderAllDevices();
-    }
-}, 100);
+// The Bluetooth pages paint from the devices-socket cache — renderDeviceListFromCache(),
+// called by both page renderers and on every socket update. A second painter used to
+// live here (renderAllDevices + a 100 ms bootstrap + window.refreshBluetoothDevices),
+// driven by a blocking scan; it referenced a scanForDevices that was never imported
+// into this module, so every call threw into its own catch and it painted nothing,
+// ever. Deleted rather than repaired: it would have repainted the same containers
+// without the preferred-device selection the cache painter passes in.
