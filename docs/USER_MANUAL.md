@@ -2,8 +2,9 @@
 
 **Applies to:** Decaid (the app formerly called decent.app) and the Streamline.js skin, v0.1.95
 
-> **Draft note.** English manual built from Mark Chau's Chinese guide *decent.app 使用說明*, expanded
-> and checked against the Decaid and Streamline.js source. Clip placeholders are marked `[VIDEO: …]`.
+> English manual built from Mark Chau's Chinese guide *decent.app 使用說明*, expanded and checked
+> against the Decaid and Streamline.js source. Screenshots are the app's own help overlays — tap the
+> **?** button on any screen to see them live.
 
 ---
 
@@ -113,7 +114,9 @@ existing data**. Accept it — this is the easiest way to carry over what you al
 reads `de1app`'s own files, including `settings.tdb` and the DYE plugin's `grinders.tdb`, and brings
 across your settings, profiles, shot history, beans and grinders.
 
-`[VIDEO: Screen_Recording_20260723_154542.mp4 — first install and importing de1app data]`
+🎬 **[Importing your de1app data](media/import-from-de1app.mp4)** — the first-run import, start to finish.
+
+🎬 **[Importing from inside the skin](media/import-in-skin.mp4)** — the same data brought in from the skin side.
 
 First-run setup walks through a short sequence: welcome, permissions, an Android warning where
 relevant, the data import, scanning for your machine, sign-in, and initialisation.
@@ -128,7 +131,7 @@ relevant, the data import, scanning for your machine, sign-in, and initialisatio
 On first use Decaid asks **which DE1 to connect to**. Machines in range are listed; choose yours and
 connect. Decaid remembers it and auto-connects on later starts.
 
-`[VIDEO: 連機.mov — selecting and connecting your DE1]`
+🎬 **[Connecting your machine](media/connecting-the-machine.mov)** — scanning for a DE1 and pairing it.
 
 Scales are handled the same way. Connect yours once and enable auto-connect so it comes back on its
 own. See §5 for what the scale does when the machine goes to sleep.
@@ -148,7 +151,7 @@ officially supported:
 Decaid's skin registry also carries community skins — Passione, OverDose, Beanie, NSX and
 WorkFlow — which install the same way but are not documented here.
 
-`[VIDEO: 改皮膚.mov — finding and switching skins]`
+🎬 **[Switching skins](media/switching-skins.mov)** — finding the skin list, installing one, and making it the default.
 
 **To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen,**
 or use your device's back gesture. This is worth knowing before you open a skin for the first time,
@@ -186,31 +189,16 @@ Port `8080` is Decaid's API, which the skin calls in the background. You never o
 
 ## 5. Decaid settings
 
-These are Decaid's own settings, separate from the skin's. The ones people reach for most:
+Decaid's dashboard handles the things that sit underneath any skin:
 
-> Looking for the screen saver? That one belongs to the skin, not Decaid — see §13.
+- **Data management** — import and export your data, the same machinery as the first-run de1app
+  import (§2)
+- **Device connections** and the machine it auto-connects to
+- **Which skin** is served, and starting or stopping the web UI server
 
-### Connections → Scale → scale power mode
-
-What the scale does when the machine goes to sleep. Three choices:
-
-| Mode | Behaviour |
-|---|---|
-| **None** | Stay connected and keep the scale's display on |
-| **Display off** | Stay connected but switch the scale's screen off; it comes back on when the machine wakes |
-| **Disconnect** | Drop the scale connection entirely — **the default** |
-
-`[SCREENSHOT: scale power mode]`
-
-### Language
-
-Decaid is translated into a number of languages; pick yours here.
-
-`[SCREENSHOT: language]`
-
-### Data management
-
-Import and export your data — the same machinery used by the first-run de1app import.
+> **Most day-to-day settings live in the skin, not here.** Scale behaviour, language, the screen
+> saver, brightness, themes and machine calibration are all reached from Streamline's own Settings
+> screen — see §13. Decaid stores some of them, but the skin is where you change them.
 
 ---
 
@@ -230,15 +218,27 @@ hold. A few examples:
 
 | Long-press this | And you get |
 |---|---|
-| A brew-temperature preset | *Apply 92°C* · *Enter value* — the numpad, to redefine the preset |
-| A dose:yield ratio preset | *Apply 18:36* · *Enter value* — two numpads, dose then yield |
-| A favourite profile slot | *Browse Profiles*, or clear the slot if one is assigned |
+| A favourite profile slot | Assign a different profile to the slot |
+| The profile name at the top of the chart | Browse, edit, or revert the current profile |
+| A preset (temperature, ratio, time…) | Edit it, save the current value into it, or reset it |
 | The shot history panel | *Discuss with Derek* · *Copy Shot Summary* (§11) |
-| The active profile | *Use Profile Defaults*, to discard your adjustments |
+| The **?** button | Hide the button |
 
-Values with **−** and **+** buttons work the same way as before: tap to step once, press and hold to
-repeat quickly, or tap the number itself to open a numpad. The numpad also lists values you used on
-previous shots, so you can jump back to a known-good dose or temperature.
+Values with **−** and **+** work as you would expect: tap to step once, press and hold to repeat
+quickly, or **tap the number itself to type an exact value**. The numpad also lists values you used
+on previous shots, so you can jump back to a known-good dose or temperature.
+
+### The built-in help
+
+You do not have to remember any of this. **Tap the ? button in the bottom-right corner** and the
+screen labels itself — every control gets a caption explaining what tap and long-press do. Tap
+anywhere to dismiss it.
+
+The help overlay exists on the main screen, the profile selector, the profile editor and the
+settings screen. The screenshots throughout this manual are those overlays, so you can read them
+here or on your own machine.
+
+If the **?** button is in your way, long-press it to hide it.
 
 ---
 
@@ -251,7 +251,7 @@ Everything lives on one page. It is laid out to put extraction information front
 - **Top** — five favourite profiles
 - **Bottom** — the summary of the shot on screen, and arrows to step back through history
 
-`[SCREENSHOT: main screen]`
+![The main screen with the help overlay showing](media/main-screen-help.jpg)
 
 ### Top bar
 
@@ -291,16 +291,23 @@ move it; long-press to hide it.
 
 ### Left column — shot settings
 
-- **Grind** — your grinder setting. Recorded with the shot; it does not command the grinder
-- **Dose in** — dry coffee weight in grams
-- **Drink out** — target beverage weight. Drives stop-at-weight when a scale is connected
-- **Temp** — brew temperature
-- **Steam** — tap the *label* to cycle between temperature, duration and flow
-- **Flush** — tap the label to switch between duration and flow
-- **Hot water** — tap the label to cycle volume, temperature, duration and flow
+| Row | What it sets |
+|---|---|
+| **Grind** | Your grinder setting. Recorded with the shot; it does not command the grinder |
+| **Dose** | Dry coffee weight in grams |
+| *(yield)* | Target beverage weight, shown with the ratio — `36g (1:2.0)`. Drives stop-at-weight when a scale is connected |
+| **Brew** | Brew temperature |
+| **Steam** | `Time \| Flow` |
+| **Flush** | Duration or flow |
+| **Hot Water** | `Temp \| Vol` |
 
-The "tap the label to change what you are editing" pattern is consistent across Steam, Flush and Hot
-Water. If a number looks wrong, check which mode the label is in.
+Under most rows sits a strip of **presets** — the four temperatures under Brew, the times under
+Steam and Flush, the volumes under Hot Water. Tap one to apply it; long-press to edit it, overwrite
+it with the current value, or reset it.
+
+Steam, Flush and Hot Water have a **mode switch** under the label — the small `Time | Flow` and
+`Temp | Vol` control. Tap it to change which quantity you are editing. If a number looks wrong,
+check the mode switch first.
 
 ### Centre — the chart
 
@@ -313,8 +320,6 @@ against. During a shot it draws live:
 - Markers where the profile steps over
 
 Tap the expand icon for full screen; the back arrow returns you.
-
-`[VIDEO: live shot with chart]`
 
 ### Right column — machine buttons (non-GHC machines)
 
@@ -340,8 +345,6 @@ GHC machines this column is hidden — you use the physical controller.
 **No scale connected?** If your setup requires a scale for stop-at-weight, starting espresso is
 blocked until one is connected — from the Coffee button and the keyboard shortcut alike.
 
-`[VIDEO: full shot start-to-finish]`
-
 ---
 
 ## 9. Steam, hot water, and flush
@@ -365,53 +368,81 @@ it.
 
 ### The profile library
 
-Open the profile selector from the header for a searchable list of every profile Decaid knows about,
-with a detail panel showing author, notes and key parameters. From here you can select, edit, hide,
-delete and upload profiles, and assign any of them to one of the five header favourite slots.
+Open the profile selector from the header. The list of every profile Decaid knows about runs down
+the left; tapping one previews its graph and notes on the right.
 
-`[SCREENSHOT: profile library]`
+![The profile selector with the help overlay showing](media/profile-selector-help.jpg)
+
+**Tap** a profile to preview it. **Long-press** for more options: hide it, assign it to a favourite,
+or edit it.
+
+The toolbar above the list:
+
+| Button | What it does |
+|---|---|
+| **+** Add profile | Start a new profile from scratch, upload a file, or import a share code |
+| Eye — View all | Show hidden profiles as well |
+| Magnifier — Search | Search your profiles |
+| Sparkle — Decent Profile Generator | Design a new espresso profile in a few guided steps |
+| Bin — Delete | Delete the selected profile. Built-in profiles are *hidden* rather than removed |
+
+And the buttons around the preview:
+
+| Button | What it does |
+|---|---|
+| **CONFIRM** | Use this profile for your next shot |
+| **CANCEL** | Discard changes and return without switching profile |
+| **EDIT** | Open the selected profile in the editor |
+| **RESET** | Restore the selected profile to its original settings |
+| **1**–**5** | Assign the selected profile to a favourite slot on the home screen |
 
 ### The editor
 
-The **EDIT** button opens the in-browser editor, which has **three pages**:
+**EDIT** opens the profile editor. Three tabs: **STEP**, **SUMMARY** and **SETTINGS**.
 
-**Steps.** Step cards, four visible at a time, scrolling horizontally.
+![The profile editor with the help overlay showing](media/profile-editor-help.jpg)
 
-| Field | Meaning |
+**STEP** is a grid. Each **column is one step**, and each row is one aspect of it. Tap any value to
+edit it, or use the −/+ buttons; the card buttons under each column insert or delete steps.
+
+| Row | What it means |
 |---|---|
-| Name | Label for the step, shown on the chart |
-| Temperature | Target group temperature for this step |
-| Pump | **Flow** or **Pressure** control |
-| Rate | The flow rate or pressure target |
-| Transition | **Fast** (step change) or **Smooth** (ramp) |
-| Exit condition | What ends the step — time, pressure, flow, weight |
-| Message | Text shown on screen during the step |
+| **Temp** | Target temperature for the step, and which sensor it follows — Coffee or Water |
+| **Pump** | The step's pressure or flow, and how fast it ramps there (**Quickly** or **Slowly**). **+ Limit** caps the opposite value |
+| **Max** | The longest this step runs before moving on — by weight, time or volume |
+| **Exit if** | End the step early when pressure or flow goes over or under a set value |
 
-**Settings.** Target weight, target volume, tank temperature, volume count start, beverage type.
+Two ways to view the same profile:
 
-**Review.** Plain-English summaries of every step, the profile settings, and a preview graph with
-pressure, flow and temperature on a shared axis with step boundaries marked.
+- **Grid view** — the step cards above
+- **Text view** — the profile as plain sentences, with a graph preview
 
-`[SCREENSHOT: editor — steps]`
-`[SCREENSHOT: editor — settings]`
-`[SCREENSHOT: editor — review]`
+**SETTINGS** holds the profile-wide values: dose, yield, temperature and so on.
 
-### How edits are saved
+Across the top:
 
-**Original profiles are never modified.** Saving an edit writes a *copy* into Decaid's key–value
-store under the `streamline` namespace, and those copies are merged into the list every time you
-open the selector.
+| Control | What it does |
+|---|---|
+| Profile name | Tap the title to rename it |
+| ↺ Version history | Restore an earlier version of this profile |
+| **CANCEL** | Discard changes and exit the editor |
+| **SAVE** | Save over this profile |
 
-- Saving over an existing name auto-suffixes it — `My Profile (2)`.
-- **RESET** in the selector's right panel deletes your copy and restores the original parent
-  profile, after a confirmation.
+### How renaming protects the original
+
+**Saving under a new name leaves the original untouched and keeps your version as a separate
+profile.** Saving without renaming overwrites the profile you opened. So if you want to keep both,
+rename first, then save.
+
+Behind the scenes your edited copy goes into Decaid's key–value store under the `streamline`
+namespace, and those copies are merged into the list every time you open the selector. Built-in
+profiles are never modified. **RESET** in the selector removes your copy and restores the original.
 
 ### Profile notes
 
 The editor includes a full Markdown editor for per-profile notes — bold, italics, headings, lists,
 links, live preview. Notes autosave per profile.
 
----
 
 ## 11. Derek, the smart assistant
 
@@ -426,7 +457,7 @@ Derek answers questions about your DE1 and your equipment, and can look at a spe
 
 The same menu offers **Copy Shot Summary** if you only want the text.
 
-`[VIDEO: Screen Recording 2026-07-23 at 4.09.16 PM.mov — Derek]`
+🎬 **[Asking Derek about a shot](media/derek.mov)** — copying a shot summary and asking a question.
 
 Derek is not limited to shots you paste in — you can ask it general DE1 and equipment questions too.
 
@@ -452,13 +483,41 @@ Every shot is stored locally in the browser's IndexedDB *and* in Decaid.
 
 Reached from the **Settings** button. Eleven sections; numbering matches the on-screen menu.
 
-### 1. Quick Adjustments
-Fast access to steam, water and limit values. *The save buttons here are not yet wired up.*
+Settings has a **search box** — type a keyword to find any setting without knowing which category it
+lives in. The category list runs down the left, its sub-pages appear alongside, and the divider
+between the panels can be dragged to resize them. **SAVE** and **CANCEL** sit at the top right.
 
-### 2. Connections
-Scan for and connect the DE1 and scales; disconnect individual devices; **scale auto-connect**
-(recommended). Machine auto-connect is not implemented yet. This is the section to visit when
-devices stop responding.
+![The settings screen with the help overlay showing](media/settings-help.jpg)
+
+### 1. Quick Adjustments
+Sub-pages for **Flow Multiplier**, **Steam**, **Hot Water**, **Water Tank**, **Flush** and **Machine
+Advanced Settings**.
+
+The two flow multipliers are worth understanding if your shots stop slightly early or late:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Weight Flow Multiplier** | 1.0 | Applied to weight flow when projecting the final weight for stop-at-weight. Higher stops the shot earlier, lower stops it later |
+| **Volume Flow Multiplier** | 0.3 s | Applied to machine flow when projecting volume for stop-at-volume. Accounts for the lag between the stop command and flow actually stopping |
+
+### 2. Connection
+Two sub-pages, **Machine** and **Scale**. This is the section to visit when devices stop responding.
+
+Each known device is listed with its ID, a **Preferred** toggle, its availability, and **Reconnect**
+and **Forget** buttons. Scales can also be added by hand with **Add WiFi scale manually**.
+
+![Scale settings, showing scale power mode and scale required](media/scale-power-mode.jpg)
+
+**Scale Power Mode** — what the scale does when the machine sleeps:
+
+| Mode | Behaviour |
+|---|---|
+| **Nothing** | Stay connected and keep the scale's display on |
+| **Display Off** | Stay connected but switch the scale's screen off; it comes back when the machine wakes |
+| **Disconnect** | Drop the scale connection entirely |
+
+**Scale Required** — prevents shots from starting when no scale is connected. This is the setting
+behind the blocked-start behaviour described in §8.
 
 ### 3. Calibration
 **Fan threshold** (saveable) and **advanced heater phase flow**. Reset-defaults, refill-kit
@@ -477,7 +536,10 @@ Sub-pages for **USB**, **Machine Information**, and — on Bengle machines only 
 page.
 
 ### 7. Language
-Runtime language switching, CSV-backed. No reload needed.
+**Select Language → Display Language.** Choose the language for the interface. Switching takes
+effect immediately — no reload needed.
+
+![Language settings](media/language.jpg)
 
 ### 8. Extensions
 Three sub-pages:
@@ -511,9 +573,6 @@ while the machine is **confirmed asleep**. Tapping it wakes the machine.
 | Image cycle | How long each image stays up, 2–600 seconds, default 10. Only meaningful with more than one image |
 | Black screen | A plain black screen saver instead of images |
 
-`[SCREENSHOT: screen saver — image selection]`
-`[SCREENSHOT: screen saver — black screen]`
-
 > The skin never raises the screen saver optimistically, and hiding it never wakes the machine —
 > only your tap does. This is deliberate: an earlier version put the machine to sleep and woke it
 > again 46 ms later because hiding the overlay also sent a wake command.
@@ -532,8 +591,6 @@ Also available, depending on build: **Talk to Decent** (read and reply to suppor
 in-app), **Send Feedback** (bug/feature/general report with a Markdown description, optional Decent
 account sign-in and system info, submitted as a GitHub issue), and a **Keyboard Shortcuts**
 reference.
-
-`[VIDEO: settings walkthrough]`
 
 ---
 
