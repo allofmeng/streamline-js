@@ -97,7 +97,7 @@ const de1AdvancedSettingsCache = {
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
 };
-const reatsettingscache = { 
+const reatsettingscache = {
     data: null,
     timestamp: null,
     TTL: 40000 // 40 seconds TTL
@@ -1528,6 +1528,7 @@ export async function setDe1Settings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 settings:', error);
@@ -1610,6 +1611,7 @@ export async function setDe1AdvancedSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set DE1 advanced settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 advanced settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting DE1 advanced settings:', error);
@@ -1626,6 +1628,8 @@ export async function resetDe1Settings() {
             const errorBody = await response.text();
             throw new Error(`Failed to reset DE1 settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        de1SettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
+        de1AdvancedSettingsCache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('DE1 settings reset to defaults');
     } catch (error) {
         logger.error('Error resetting DE1 settings:', error);
@@ -1647,6 +1651,7 @@ export async function setReaSettings(settings) {
             const errorBody = await response.text();
             throw new Error(`Failed to set REA settings. Status: ${response.status}, Body: ${errorBody}`);
         }
+        reatsettingscache.timestamp = null; // expire, but keep data for the mid-flash and error fallbacks
         logger.info('REA settings updated successfully:', settings);
     } catch (error) {
         logger.error('Error setting REA settings:', error);
@@ -1918,9 +1923,7 @@ export async function getFirmwareCatalog() {
 // `error` or a truncated stream — a stream that ends without `done` means CRC
 // verification never confirmed, so it is NOT a success.
 async function consumeFirmwareStream(response, onProgress) {
-    // No streaming body (old middleware, or a proxy that buffered it): the POST
-    // still completed, so treat it as a legacy success rather than failing.
-    if (!response.body?.getReader) return;
+    if (!response.body?.getReader) throw new Error('Firmware response did not provide a progress stream');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

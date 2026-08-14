@@ -338,9 +338,6 @@ function updateSettingsContentArea(category) {
         if (category === 'tempunit') {
             setTimeout(initTempUnitSettings, 0);
         }
-        if (category === 'feedback') {
-            setTimeout(() => window.updateDecentAccountUI?.(), 0);
-        }
         if (category === 'talkdecent') {
             setTimeout(() => window.updateTalkToDecentUI?.(), 0);
         }
@@ -1718,20 +1715,7 @@ export function renderFeedbackSettings() {
     return `
         <div class="content-stretch flex flex-col gap-[24px] items-start relative w-full">
             <p class="font-semibold text-[var(--text-primary)] text-[32px] w-full text-center" data-i18n-key="Send Feedback">Send Feedback</p>
-
-            <!-- Decent Account -->
-            <div id="decent-account-section" class="flex flex-col gap-[12px] w-full p-[18px] rounded-[12px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)]">
-                <p class="font-bold text-[#385a92] text-[22px]">Decent Account</p>
-
-                <div id="decent-logged-out">
-                    <p class="text-[19px] text-[var(--low-contrast-white)]">Link your Decent account in the Decent app to tag feedback with your account.</p>
-                </div>
-
-                <div id="decent-logged-in" class="hidden">
-                    <p class="text-[20px] text-[var(--text-primary)]">Decent account linked</p>
-                    <p id="decent-account-serial" class="text-[18px] text-[var(--low-contrast-white)] mt-[4px]"></p>
-                </div>
-            </div>
+            <p class="text-[19px] text-[var(--low-contrast-white)] w-full text-center">Feedback is submitted as a public GitHub issue. Do not include personal or private information.</p>
 
             <!-- Category -->
             <div class="flex flex-col gap-[10px] w-full">
@@ -1750,14 +1734,6 @@ export function renderFeedbackSettings() {
                        placeholder="Short summary of your feedback…">
             </div>
 
-            <!-- Contact email (optional) -->
-            <div class="flex flex-col gap-[8px] w-full">
-                <p class="font-bold text-[#385a92] text-[22px]">Contact Email <span class="text-[19px] font-normal opacity-60">(optional)</span></p>
-                <input type="email" id="feedback-email"
-                       class="bg-[var(--box-color)] border-2 border-[#385a92] h-[54px] rounded-[54px] w-full text-[var(--text-primary)] text-[22px] px-[24px]"
-                       placeholder="your@email.com">
-            </div>
-
             <!-- Description -->
             <div class="flex flex-col gap-[8px] w-full">
                 <p class="font-bold text-[#385a92] text-[22px]" data-i18n-key="Description">Description</p>
@@ -1772,8 +1748,8 @@ export function renderFeedbackSettings() {
             <!-- System info toggle -->
             <div class="flex items-center justify-between w-full">
                 <div class="flex flex-col gap-[4px]">
-                    <p class="font-bold text-[#385a92] text-[22px]" data-i18n-key="Attach System Info">Attach System Info</p>
-                    <p class="text-[var(--text-primary)] text-[19px]">Appends app version and machine firmware to the report</p>
+                    <p class="font-bold text-[#385a92] text-[22px]">Attach Diagnostics</p>
+                    <p class="text-[var(--text-primary)] text-[19px]">Includes application logs in a secret (unlisted) Gist. The Gist URL is added to the public GitHub issue, so anyone who can view the issue can access the logs. Also includes Decaid app version, platform, and OS version</p>
                 </div>
                 <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
                     <input type="checkbox" id="feedback-attach-sysinfo" checked class="sr-only peer">
@@ -4649,7 +4625,7 @@ function compareVersions(a, b) {
 function skinRepoSlug(s) {
     const m = (s?.reaMetadata?.sourceUrl || '').match(/github_release:([^@\s]+)/i);
     if (m) return m[1];
-    if (s?.id === SKIN_ID) return 'allofmeng/streamline_project';
+    if (s?.id === SKIN_ID) return 'allofmeng/streamline-js';
     return null;
 }
 
@@ -6515,40 +6491,6 @@ export async function initializeSettings() {
         container.scrollTop = container.scrollHeight;
     };
 
-    window.updateDecentAccountUI = async function() {
-        const loggedOut = document.getElementById('decent-logged-out');
-        const loggedIn  = document.getElementById('decent-logged-in');
-        if (!loggedOut || !loggedIn) return;
-        try {
-            const res = await fetch(`${API_BASE_URL}/account/decent`);
-            const { loggedIn: linked } = await res.json();
-            if (linked) {
-                loggedOut.classList.add('hidden');
-                loggedIn.classList.remove('hidden');
-                const token    = window.__REA_PROXY_TOKEN__;
-                const serialEl = document.getElementById('decent-account-serial');
-                if (token && serialEl) {
-                    try {
-                        const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-                        const snText = (await snRes.text()).trim();
-                        const serial = snText.split(/[\r\n]/)[0].trim();
-                        serialEl.textContent = serial ? `Serial: ${serial}` : '';
-                    } catch (_) {
-                        serialEl.textContent = '';
-                    }
-                }
-            } else {
-                loggedIn.classList.add('hidden');
-                loggedOut.classList.remove('hidden');
-            }
-        } catch (_) {
-            loggedIn.classList.add('hidden');
-            loggedOut.classList.remove('hidden');
-        }
-    };
-
     window.openFeedbackDescriptionEditor = function() {
         const hiddenTA = document.getElementById('feedback-description');
         const currentText = hiddenTA ? hiddenTA.value : '';
@@ -6581,18 +6523,10 @@ export async function initializeSettings() {
         });
     };
 
-    function xorEncode(str, key) {
-        let out = '';
-        for (let i = 0; i < str.length; i++)
-            out += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-        return btoa(out);
-    }
-
     window.submitFeedback = async function() {
         const category  = document.getElementById('feedback-category')?.value || 'bug';
         const title     = (document.getElementById('feedback-title')?.value || '').trim();
         const desc      = (document.getElementById('feedback-description')?.value || '').trim();
-        const email     = (document.getElementById('feedback-email')?.value || '').trim();
         const attachSys = document.getElementById('feedback-attach-sysinfo')?.checked;
         const statusEl  = document.getElementById('feedback-status');
         const submitBtn = document.getElementById('feedback-submit-btn');
@@ -6602,25 +6536,7 @@ export async function initializeSettings() {
             return;
         }
 
-        let fullDesc = `**${title}**\n\n${desc}`;
-        const ENCODE_KEY = 'itisadecentcupofcoffee';
-        if (email) fullDesc += `\n\n---\n**Contact:** \`${xorEncode(email, ENCODE_KEY)}\``;
-
-        const proxyToken = window.__REA_PROXY_TOKEN__;
-        if (proxyToken) {
-            try {
-                const accountRes = await fetch(`${API_BASE_URL}/account/decent`);
-                const { loggedIn: linked } = await accountRes.json();
-                if (linked) {
-                    const snRes = await fetch(`${API_BASE_URL}/account/proxy/support/api/sn`, {
-                        headers: { 'Authorization': `Bearer ${proxyToken}` }
-                    });
-                    const snText = (await snRes.text()).trim();
-                    const serial = snText.split(/[\r\n]/)[0].trim();
-                    if (serial) fullDesc += `\n\n---\n**Serial:** ${serial}`;
-                }
-            } catch (_) {}
-        }
+        const fullDesc = `**${title}**\n\n${desc}`;
 
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
         statusEl.innerHTML = '';
@@ -7752,7 +7668,8 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
 function highlightMatch(text, searchTerm) {
     if (!searchTerm) return text;
 
-    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedTerm})`, 'gi');
     return text.replace(regex, '<mark class="bg-yellow-300 text-black">$1</mark>');
 }
 
