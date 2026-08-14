@@ -643,6 +643,17 @@ access. Platforms and installation are covered in §1.
 For the full API reference, start Decaid and open <http://localhost:4001>. You can also serve it
 yourself from the checkout: `cd assets/api/ && npx httpserver -p 4001`.
 
+> **Building a skin or a plugin?** This part is an orientation, not the specification. Decaid's own
+> [Documentation](https://github.com/decentespresso/decaid/blob/main/README.md#documentation) goes
+> deeper — [Skins.md](https://github.com/decentespresso/decaid/blob/main/doc/Skins.md) for the skin
+> development workflow and release process,
+> [Plugins.md](https://github.com/decentespresso/decaid/blob/main/doc/Plugins.md) for the plugin
+> host API and manifest format,
+> [Profiles.md](https://github.com/decentespresso/decaid/blob/main/doc/Profiles.md) for profile
+> storage and hashing, and
+> [DeviceManagement.md](https://github.com/decentespresso/decaid/blob/main/doc/DeviceManagement.md)
+> for adding new device types. Full list in §24.
+
 It exposes two API interfaces, both on port `8080`:
 
 - **REST** — `http://<host>:8080/api/v1/...` (OpenAPI spec: `rest_v1.yml`)
@@ -966,15 +977,29 @@ Shot history lives in IndexedDB, not `localStorage`.
 | `DESIGN_SYSTEM.md` | Design tokens and component patterns |
 | `CLAUDE.md` | Build and contribution conventions |
 
-In the [Decaid repository](https://github.com/decentespresso/decaid):
+### D. Decaid's own documentation
+
+Decaid keeps its in-depth guides in
+[`doc/`](https://github.com/decentespresso/decaid/tree/main/doc), indexed from the
+[Documentation section](https://github.com/decentespresso/decaid/blob/main/README.md#documentation)
+of its README. Go there for anything this manual only summarises:
+
+| Document | Covers |
+|---|---|
+| [Skins.md](https://github.com/decentespresso/decaid/blob/main/doc/Skins.md) | Skin development — REST and WebSocket reference, development workflow, deployment via GitHub Releases |
+| [Plugins.md](https://github.com/decentespresso/decaid/blob/main/doc/Plugins.md) | JavaScript plugin development — host API, event system, manifest structure, examples |
+| [Profiles.md](https://github.com/decentespresso/decaid/blob/main/doc/Profiles.md) | Profiles API — content-based hash IDs, version tracking, import/export, storage architecture |
+| [DeviceManagement.md](https://github.com/decentespresso/decaid/blob/main/doc/DeviceManagement.md) | Device discovery and connection management — transport abstraction, auto-connect, adding device types |
+| [RELEASE.md](https://github.com/decentespresso/decaid/blob/main/doc/RELEASE.md) | Release process — Git tag workflow, GitHub Actions CI, versioning |
+
+Also in that repository:
 
 | Location | Contents |
 |---|---|
-| `assets/api/` | The browsable API documentation served on port `4001` |
-| `doc/` | Decaid's own documentation |
-| `README.md` | Features, platforms, skins, plugins, naming history |
+| [`assets/api/`](https://github.com/decentespresso/decaid/tree/main/assets/api) | The browsable API documentation served on port `4001` |
+| [`README.md`](https://github.com/decentespresso/decaid/blob/main/README.md) | Features, platforms, skins, plugins, naming history |
 
-### D. Glossary
+### E. Glossary
 
 | Term | Meaning |
 |---|---|
