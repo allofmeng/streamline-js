@@ -109,7 +109,7 @@ https://github.com/user-attachments/assets/fe61e277-34b1-488b-b40f-d07536eead59
 
 🎬 **Importing from inside the skin.** The same data brought in from the skin side.
 
-https://github.com/user-attachments/assets/1bd6a845-55d9-48f3-9764-fd1490874031
+https://github.com/user-attachments/assets/e9a01cce-31a1-4e6d-b858-4d970db71739
 
 First-run setup walks through a short sequence:
 
