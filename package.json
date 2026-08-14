@@ -10,15 +10,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/allofmeng/streamline_project.git"
+    "url": "git+https://github.com/allofmeng/streamline-js.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/allofmeng/streamline_project/issues"
+    "url": "https://github.com/allofmeng/streamline-js/issues"
   },
-  "homepage": "https://github.com/allofmeng/streamline_project#readme",
+  "homepage": "https://github.com/allofmeng/streamline-js#readme",
   "devDependencies": {
     "daisyui": "^4.11.1",
     "tailwindcss": "^3.4.19"
