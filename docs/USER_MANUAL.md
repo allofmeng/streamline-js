@@ -42,8 +42,8 @@
 
 ## 1. What Decaid is
 
-Decaid is a ground-up rewrite of the software that drives your Decent Espresso machine.  The rewrite had two goals: make the software easier to develop, and run it on as
-many platforms as possible.
+Decaid is a ground-up rewrite of the software that drives your Decent Espresso machine. The rewrite
+had two goals: easier development, and support for as many platforms as possible.
 
 Decaid does not draw the coffee screen itself. It is the **bridge** between your machine and
 whichever user interface — "skin" — you choose:
