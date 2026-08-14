@@ -55,6 +55,8 @@ Streamline.js is the front end; Decaid is the engine.
 │  Streamline.js │ ─────────────────────► │      Decaid      │ ───────────────► │  DE1   │
 │  (browser)     │ ◄───────────────────── │  (:8080)         │ ◄─────────────── │  Scale │
 └────────────────┘     live snapshots     └──────────────────┘                  └────────┘
+       ▲                                            │
+       └──────────── served on :3000 ───────────────┘
 ```
 
 Consequence worth remembering: **if the app looks dead, the middleware is usually the thing that is
@@ -72,7 +74,7 @@ an ordinary browser is fully supported but secondary. See §2 for what differs b
 | Item | Requirement |
 |---|---|
 | Middleware | [Decaid](https://github.com/decentespresso/decaid) running and reachable on port `8080` |
-| Host | The Decent app's in‑app web view (primary). A desktop or tablet browser also works |
+| Host | The Decent app's in‑app web view (primary). A browser at `http://localhost:3000` also works |
 | Orientation | Landscape. Portrait devices get a "please rotate" prompt |
 | Machine | Decent DE1 (GHC and non‑GHC both supported) |
 | Scale | Optional but recommended (Decent Scale, Acaia, Felicita, and others Decaid supports) |
@@ -84,8 +86,9 @@ skin and the Decent app displays it in an embedded web view. That is the intende
 day‑to‑day setup — it is what the app is tuned for, and it is where the machine actually lives.
 
 **A normal browser is the secondary way.** Streamline.js is a static web app, so any modern browser
-can load it — useful for development, for checking on the machine from a laptop or phone, and for
-testing. Everything works, but treat it as the second path, not the reference one.
+can load it — point one at `http://localhost:3000` and you get the same UI. Useful for development,
+for checking on the machine from a laptop or phone, and for testing. Everything works, but treat it
+as the second path, not the reference one.
 
 Every feature is built to work in both. Where the two differ, the manual says so.
 
@@ -107,16 +110,24 @@ the user‑agent) and adapts — you do not configure this.
 
 ### Running it in a browser
 
-Streamline.js is served by Decaid itself (see §18), so on any machine on the network you can open
-Decaid's address in a browser and get the same UI.
+Decaid serves the skin itself (see §18), so there is nothing to install. Just open:
 
-To serve it yourself for development, from the repository root:
+```
+http://localhost:3000
+```
+
+From another device on the same network, use the tablet's address instead — `http://<tablet-ip>:3000`.
+
+**Two ports, two jobs.** Port `3000` serves the skin — that is the one you type into a browser.
+Port `8080` is Decaid's API, which the skin calls in the background. You never open `:8080` yourself.
+
+To serve the skin from a checkout instead — for development — run this from the repository root:
 
 ```bash
 python3 -m http.server
 ```
 
-Then open `http://localhost:8000`.
+Then open `http://localhost:8000`. It still talks to Decaid's API on `8080`.
 
 ### Pointing at a different host
 
@@ -432,7 +443,8 @@ Also reachable from Settings, depending on build:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Everything is greyed out / no data | Middleware not running or not reachable | Confirm Decaid is up on `:8080`; check `localStorage.reaHostname` |
+| Page won't load at all in a browser | Wrong port, or the web UI server is stopped | The skin is on `:3000`, not `:8080`. Check Settings → Skin, or `GET /api/v1/webui/server/status` |
+| Page loads but everything is greyed out / no data | Middleware not running or not reachable | Confirm Decaid's API is up on `:8080`; check `localStorage.reaHostname` |
 | Machine shows disconnected after a network blip | WebSocket reconnected and reset connection state | Wait — auto‑reconnect uses exponential backoff. If it persists, reconnect from Settings → Connections |
 | Scale weight jumps or flickers | Normal noise; readings are throttled | If it never settles, disconnect/reconnect the scale |
 | Edited profile disappeared | The copy lives in the middleware KV store | Check the middleware is the same instance you saved from |
@@ -457,7 +469,7 @@ Streamline.js cannot do from a browser:
 - A plugin system
 - Hosting the web UI skins themselves
 
-It exposes two interfaces, both on port `8080`:
+It exposes two API interfaces, both on port `8080`:
 
 - **REST** — `http://<host>:8080/api/v1/...` (OpenAPI spec: `rest_v1.yml`)
 - **WebSocket** — `ws://<host>:8080/ws/v1/...` (AsyncAPI spec: `websocket_v1.yml`)
@@ -698,7 +710,10 @@ Plugins can also publish live streams at `ws/v1/plugins/{id}/{endpoint}`. Two th
 ## 18. Skins and the web UI server
 
 The middleware hosts the web UI itself, which is how a tablet gets Streamline.js without any separate
-web server.
+web server. **The skin is served on port `3000`** — `http://localhost:3000`, or
+`http://<tablet-ip>:3000` from another device — while the REST and WebSocket APIs stay on `8080`.
+
+The `/webui/server/*` endpoints below control that port‑3000 server.
 
 | Method | Path | Purpose |
 |---|---|---|
