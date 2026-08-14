@@ -1220,7 +1220,14 @@ function renderSettingsTab() {
         shareInput.type = 'text';
         shareInput.maxLength = 4;
         shareInput.placeholder = 'ABCD';
-        shareInput.className = 'flex-1 h-[56px] text-[22px] font-bold text-center tracking-[6px] bg-[var(--box-color)] border-2 border-[var(--border-color)] rounded-[12px] outline-none focus:border-[var(--mimoja-blue)]';
+        // min-w-0: an input's min-content width comes from its size attribute (20 chars
+        // by default), and a flex item will not shrink below that. At text-[22px] with
+        // tracking-[6px] those 20 characters are wider than the whole middle column, so
+        // the shrink-0 Import button got pushed past the column edge and rendered on top
+        // of the Notes column. size=4 matches maxLength so the intrinsic width is honest
+        // even if the flex context changes later.
+        shareInput.size = 4;
+        shareInput.className = 'flex-1 min-w-0 h-[56px] text-[22px] font-bold text-center tracking-[6px] bg-[var(--box-color)] border-2 border-[var(--border-color)] rounded-[12px] outline-none focus:border-[var(--mimoja-blue)]';
         shareInput.addEventListener('input', () => { shareInput.value = shareInput.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
 
         const shareImportBtn = document.createElement('button');
