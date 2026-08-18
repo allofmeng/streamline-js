@@ -16,7 +16,7 @@ import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
-import { ensureDye2PluginReady } from '../modules/dyeStrip.js';
+import { ensureDye2PluginReady, getDye2VersionInfo, PLUGIN_RELEASES_PAGE } from '../modules/dyeStrip.js';
 import { haYamlBlocks } from '../modules/home-assistant.js';
 
 // Config for each numeric input that should get two-click numpad support
@@ -4936,10 +4936,64 @@ export function renderDye2Settings() {
                             <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                     </div>
+
+                    <!-- Installed plugin version vs latest GitHub release tag. -->
+                    <div class="content-stretch flex flex-col gap-[10px] items-start relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Plugin Version">Plugin Version</p>
+                        </div>
+                        <div id="dye2-version-info" class="w-full text-[24px] text-[var(--text-secondary)]">
+                            ${getTranslation('Checking')}…
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     `;
+}
+
+// Paint the installed / latest version rows. Every unknown stays "—" rather than
+// being guessed: no plugin, no network, and a GitHub rate limit are all normal.
+function renderDye2VersionInfo(info) {
+    const el = document.getElementById('dye2-version-info');
+    if (!el) return;
+    const pill = (text, cls) =>
+        `<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full ${cls}">${text}</span>`;
+
+    let status;
+    if (!info.installed) {
+        status = pill(getTranslation('Not installed'), 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-70');
+    } else if (!info.loaded) {
+        status = pill(getTranslation('Not loaded'), 'bg-amber-500/15 text-amber-600');
+    } else if (!info.latest) {
+        status = pill(getTranslation('Could not check'), 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-70');
+    } else if (info.outdated) {
+        status = pill(getTranslation('Update available'), 'bg-green-500/15 text-green-600');
+    } else {
+        status = pill(getTranslation('Up to date'), 'bg-[#385a92]/15 text-[#385a92]');
+    }
+
+    const row = (label, value) => `
+        <div class="flex items-center justify-between w-full">
+            <span data-i18n-key="${label}">${getTranslation(label)}</span>
+            <span class="font-bold text-[var(--text-primary)]">${value}</span>
+        </div>`;
+
+    el.innerHTML = `
+        <div class="flex flex-col gap-[10px] w-full">
+            ${row('Installed version', info.installed ? `v${escapeHtml(info.installed)}` : '—')}
+            ${row('Latest release', info.latest ? `v${escapeHtml(info.latest)}` : '—')}
+            <div class="flex items-center gap-[14px] flex-wrap pt-[4px]">
+                ${status}
+                ${info.outdated ? `<button id="dye2-download-update" class="bg-[#385a92] h-[56px] px-[28px] rounded-[64px] text-white text-[22px] font-bold">${getTranslation('Download')}</button>` : ''}
+            </div>
+        </div>`;
+
+    // Same-frame nav, no _blank/window.open: the tablet webview hands the
+    // external URL to the OS browser.
+    document.getElementById('dye2-download-update')?.addEventListener('click', () => {
+        window.location.href = PLUGIN_RELEASES_PAGE;
+    });
 }
 
 // DYE2 master on/off. Persists streamline.dye2Enabled (default OFF). Flipping it
@@ -4947,6 +5001,10 @@ export function renderDye2Settings() {
 // dyeStrip.js installs on the main page; if the header isn't mounted (e.g. deep in
 // settings on some flows) the flag still takes effect on the next dashboard load.
 function setupDye2SettingsListeners() {
+    getDye2VersionInfo()
+        .then(renderDye2VersionInfo)
+        .catch(() => renderDye2VersionInfo({ installed: null, latest: null, loaded: false, outdated: false }));
+
     const toggle = document.getElementById('dye2-enabled');
     if (!toggle) return;
     const KEY = 'streamline.dye2Enabled';

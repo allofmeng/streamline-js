@@ -32,7 +32,7 @@ const MAX_FAV_CELLS = 4; // + a trailing "VIEW ALL AUTO FAV" cell
 // Plugin update check (see checkPluginVersion below).
 const PLUGIN_ID = 'dye2.reaplugin';
 const PLUGIN_LATEST_RELEASE = 'https://api.github.com/repos/decentespresso/dye2/releases/latest';
-const PLUGIN_RELEASES_PAGE = 'https://github.com/decentespresso/dye2/releases/latest';
+export const PLUGIN_RELEASES_PAGE = 'https://github.com/decentespresso/dye2/releases/latest';
 const NAG_KEY = 'streamline.dye2UpdateNagged'; // sessionStorage: prompt once per app run
 
 // Cell classes mirror the existing profile favourite buttons (index.html) so the
@@ -464,6 +464,27 @@ export async function ensureDye2PluginReady() {
     const check = await checkDye2PluginRequirement();
     if (!check.ok) promptPluginRequired(check.reason, check.installed);
     return check.ok;
+}
+
+// Installed + latest version, for the Settings → DYE2 info row. Same two sources
+// as checkPluginVersion but with no nag, no session gate, and every failure
+// reported as null instead of silently skipped so the UI can say "unknown".
+export async function getDye2VersionInfo() {
+    const [plugins, release] = await Promise.all([
+        getPlugins().catch(() => null),
+        fetch(PLUGIN_LATEST_RELEASE, { headers: { Accept: 'application/vnd.github+json' } })
+            .then(r => (r.ok ? r.json() : null))
+            .catch(() => null),
+    ]);
+    const plugin = (plugins || []).find(p => p?.id === PLUGIN_ID);
+    const installed = plugin?.version || null;
+    const latest = release?.tag_name?.trim().replace(/^v/i, '') || null;
+    return {
+        installed,
+        latest,
+        loaded: !!plugin?.loaded,
+        outdated: !!(installed && latest && isOlderVersion(installed, latest)),
+    };
 }
 
 export async function checkPluginVersion() {
