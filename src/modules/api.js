@@ -1529,7 +1529,8 @@ export async function getDe1AdvancedSettings() {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6-second timeout
+    const timeoutMs = 20000; // DE1 advanced settings = 9 MMR reads over BLE; slow when the machine is busy
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const url = `${API_BASE_URL}/machine/settings/advanced`;
     logger.info(`Fetching advanced settings from: ${url}`); // Log the URL
@@ -1557,7 +1558,7 @@ export async function getDe1AdvancedSettings() {
     } catch (error) {
         clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
-            logger.error(`Error in getDe1AdvancedSettings: Request timed out after 5 seconds.`);
+            logger.error(`Error in getDe1AdvancedSettings: Request timed out after ${timeoutMs} ms.`);
             // window.location.reload(); // Reload the page on timeout to attempt recovery
         } else {
             logger.error("Error in getDe1AdvancedSettings:", error);
