@@ -443,8 +443,8 @@ edit it, or use the −/+ buttons; the card buttons under each column insert or 
 
 Two ways to view the same profile:
 
-- **Grid view** — the step cards above
-- **Text view** — the profile as plain sentences, with a graph preview
+- **STEP (Grid view)** — the step cards above
+- **SUMMARY (Text view)** — the profile as plain sentences, with a graph preview
 
 **SETTINGS** holds the profile-wide values: dose, yield, temperature and so on.
 
