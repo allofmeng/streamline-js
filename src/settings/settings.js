@@ -17,6 +17,7 @@ import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
 import { ensureDye2PluginReady } from '../modules/dyeStrip.js';
+import { haYamlBlocks } from '../modules/home-assistant.js';
 
 // Config for each numeric input that should get two-click numpad support
 const SETTINGS_NUMPAD_CONFIGS = {
@@ -437,7 +438,8 @@ const settingsTree = {
             { id: 'fontsize', name: 'Display Size', settingsCategory: 'fontsize' },
             { id: 'tempunit', name: 'Temperature', settingsCategory: 'tempunit', i18nKey: 'Temperature' },
             { id: 'screensaver', name: 'Screen Saver', settingsCategory: 'screensaver' },
-            { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' }
+            { id: 'keyboard-shortcuts', name: 'Keyboard Shortcuts', settingsCategory: 'keyboard_shortcuts' },
+            { id: 'homeassistant', name: 'Home Assistant', settingsCategory: 'homeassistant', i18nKey: 'Home Assistant' }
         ]
     },
     'updates': {
@@ -726,6 +728,8 @@ export function renderSettingsContent(category) {
             return renderHotWaterSettings(settingsCache.de1);
         case 'keyboard_shortcuts':
             return renderKeyboardShortcutsSettings();
+        case 'homeassistant':
+            return renderHomeAssistantSettings();
         default:
             return renderGeneralSettings();
     }
@@ -831,7 +835,7 @@ export function renderReaSettingsForm(settings) {
         return `
             <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden">
                 <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
-                    <p class="leading-[1.2]" data-i18n-key="Application Settings">Application Settings</p>
+                    <p class="leading-[1.2]" data-i18n-key="Decaid Settings">Decaid Settings</p>
                 </div>
                 <div class="text-red-500 p-4 text-[24px]">Failed to load settings</div>
             </div>
@@ -841,7 +845,7 @@ export function renderReaSettingsForm(settings) {
     return `
         <div class="flex flex-col gap-[60px] items-start relative w-full max-w-full overflow-x-hidden">
             <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] not-italic relative text-[var(--text-primary)] text-[36px] text-center w-full">
-                <p class="leading-[1.2]">Decaid Application Settings</p>
+                <p class="leading-[1.2]" data-i18n-key="Decaid Settings">Decaid Settings</p>
             </div>
 
             <!-- Divider -->
@@ -5932,7 +5936,7 @@ async function _preloadSettingsInternal() {
 // Helper function to get title for a category
 function getCategoryTitle(category) {
     switch(category) {
-        case 'rea': return 'Decaid Application Settings';
+        case 'rea': return 'Decaid Settings';
         case 'quickadjustments': return 'Quick Adjustments';
         case 'flowmultiplier': return 'Flow Multiplier Settings';
         case 'steam': return 'Steam Settings';
@@ -5946,6 +5950,7 @@ function getCategoryTitle(category) {
         case 'ledstrip': return 'Lighting';
         case 'machineinfo': return 'Machine Info';
         case 'de1advanced': return 'Machine Advanced Settings';
+        case 'homeassistant': return 'Home Assistant';
         default: return 'Settings';
     }
 }
@@ -8603,6 +8608,110 @@ window.resetKeyboardBindings = function() {
     localStorage.removeItem('keyboardBindings');
     updateSettingsContentArea('keyboard_shortcuts');
     ui.showToast(`${getTranslation('Keyboard Shortcuts')} ${getTranslation('Reset to default')}`, 3000, 'success');
+};
+
+// ── Home Assistant ─────────────────────────────────────────────────────────
+// Decaid already exposes everything Home Assistant needs over plain REST, so
+// this page is documentation, not an integration: it prints the YAML with the
+// tablet's address already filled in, plus a copy button.
+
+// The host the browser is talking to. When the skin is opened on the tablet
+// itself this reads "localhost", which is useless inside Home Assistant, so the
+// field stays editable.
+function haDefaultHost() {
+    try {
+        const u = new URL(API_BASE_URL);
+        const local = ['localhost', '127.0.0.1', '::1', ''].includes(u.hostname);
+        return { host: local ? '' : u.hostname, port: u.port || '8080' };
+    } catch {
+        return { host: '', port: '8080' };
+    }
+}
+
+function haBlockHtml(id, title, yaml) {
+    return `
+        <div class="w-full flex flex-col gap-[10px]">
+            <div class="flex items-center justify-between w-full">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[26px] text-[var(--text-primary)]">${title}</span>
+                <button onclick="window.haCopyYaml('${id}', this)"
+                        class="text-[20px] font-semibold text-[#385a92] px-4 py-1 rounded-[8px] border border-[#385a92] hover:bg-[#385a92] hover:text-white transition-colors">
+                    ${getTranslation('Copy')}
+                </button>
+            </div>
+            <pre id="${id}" class="w-full overflow-x-auto rounded-[10px] border border-[#c9c9c9] bg-[var(--box-color)] p-4 text-[18px] leading-[1.4] text-[var(--text-primary)] whitespace-pre">${escapeHtml(yaml)}</pre>
+        </div>`;
+}
+
+export function renderHomeAssistantSettings() {
+    const { host, port } = haDefaultHost();
+    const y = haYamlBlocks(host, port);
+
+    return `
+        <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Home Assistant">Home Assistant</p>
+            </div>
+
+            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] text-[var(--text-primary)] text-[22px] w-full">
+                ${getTranslation('Copy the blocks below into your Home Assistant configuration, restart Home Assistant, then add the DE1 Machine switch and sensors to a dashboard. No MQTT broker is needed.')}
+            </p>
+
+            <div class="flex items-center gap-[20px] w-full">
+                <span class="font-['Inter:Semi_Bold',sans-serif] font-semibold text-[24px] text-[var(--text-primary)] whitespace-nowrap">
+                    ${getTranslation('Tablet address')}
+                </span>
+                <input id="haHostInput" type="text" value="${escapeHtml(host)}" placeholder="192.168.1.50"
+                       oninput="window.haSetHost(this.value)"
+                       class="flex-1 rounded-[10px] border border-[#c9c9c9] bg-[var(--box-color)] px-4 h-[52px] text-[24px] text-[var(--text-primary)]" />
+                <span class="font-['Inter:Regular',sans-serif] text-[24px] text-[var(--text-primary)]">:${port}</span>
+            </div>
+            <p class="font-['Inter:Regular',sans-serif] leading-[1.4] text-[var(--text-primary)] text-[20px] w-full opacity-70">
+                ${getTranslation('Use the IP address or hostname Home Assistant can reach this tablet on. A static IP or DHCP reservation is recommended so the address does not change.')}
+            </p>
+
+            ${haBlockHtml('haYamlRest', getTranslation('Sensors'), y.rest)}
+            ${haBlockHtml('haYamlCommand', getTranslation('Commands'), y.command)}
+            ${haBlockHtml('haYamlTemplate', getTranslation('On/Off switch'), y.template)}
+        </div>`;
+}
+
+window.haSetHost = function(value) {
+    const { port } = haDefaultHost();
+    const y = haYamlBlocks(value.trim(), port);
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('haYamlRest', y.rest);
+    set('haYamlCommand', y.command);
+    set('haYamlTemplate', y.template);
+};
+
+window.haCopyYaml = async function(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = el.textContent;
+    let ok = false;
+    try {
+        // navigator.clipboard needs a secure context; the tablet is served over
+        // plain http from its own IP, so fall back to the legacy path there.
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            ok = document.execCommand('copy');
+            ta.remove();
+        }
+    } catch (e) {
+        console.warn('haCopyYaml failed:', e);
+    }
+    if (btn) {
+        btn.textContent = getTranslation(ok ? 'Copied!' : 'Could not copy');
+        setTimeout(() => { btn.textContent = getTranslation('Copy'); }, 1500);
+    }
 };
 
 window.handleNightModeToggle = async function(enabled) {
