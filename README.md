@@ -463,9 +463,8 @@ Across the top:
 profile.** Saving without renaming overwrites the profile you opened. So if you want to keep both,
 rename first, then save.
 
-Your edited copy goes into Decaid's key–value store, under the `streamline` namespace. The selector
-merges those copies into the list each time you open it.
-
+Your edited copy is saved into Decaid's shared profile store — the same store every skin reads from — so it's visible from other skins too, not just Streamline.
+ 
 Built-in profiles never change. **RESET** in the selector removes your copy and restores the
 original.
 
