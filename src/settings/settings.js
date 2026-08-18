@@ -4628,7 +4628,7 @@ function compareVersions(a, b) {
 function skinRepoSlug(s) {
     const m = (s?.reaMetadata?.sourceUrl || '').match(/github_release:([^@\s]+)/i);
     if (m) return m[1];
-    if (s?.id === SKIN_ID) return 'allofmeng/streamline-js';
+    if (s?.id === SKIN_ID) return 'decentespresso/streamline-js';
     return null;
 }
 

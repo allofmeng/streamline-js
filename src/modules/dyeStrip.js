@@ -31,8 +31,8 @@ const MAX_FAV_CELLS = 4; // + a trailing "VIEW ALL AUTO FAV" cell
 
 // Plugin update check (see checkPluginVersion below).
 const PLUGIN_ID = 'dye2.reaplugin';
-const PLUGIN_LATEST_RELEASE = 'https://api.github.com/repos/allofmeng/dye2/releases/latest';
-const PLUGIN_RELEASES_PAGE = 'https://github.com/allofmeng/dye2/releases/latest';
+const PLUGIN_LATEST_RELEASE = 'https://api.github.com/repos/decentespresso/dye2/releases/latest';
+const PLUGIN_RELEASES_PAGE = 'https://github.com/decentespresso/dye2/releases/latest';
 const NAG_KEY = 'streamline.dye2UpdateNagged'; // sessionStorage: prompt once per app run
 
 // Cell classes mirror the existing profile favourite buttons (index.html) so the
@@ -352,7 +352,7 @@ function closePluginOverlay(refresh) {
 // Streamline is a read-only consumer of DYE2's KV contract, so an outdated plugin
 // shows up here as missing keys / empty strips rather than an error. Compare the
 // installed version the bridge reports (GET /plugins -> version) against the latest
-// GitHub release tag of allofmeng/dye2 and prompt once per app run. Every failure
+// GitHub release tag of decentespresso/dye2 and prompt once per app run. Every failure
 // mode is silent-skip: offline, GitHub rate limit, no release, plugin not installed,
 // or a bridge that reports no version — none of those mean "out of date".
 //
