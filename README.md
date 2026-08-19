@@ -1,6 +1,6 @@
 # Decaid and Streamline.js — User Manual
 
-**Applies to:** Decaid (the app formerly called decent.app) and the Streamline.js skin, v0.1.95
+**Applies to:** Decaid (the app formerly called decent.app) and the Streamline.js skin, v0.1.96
 
 ---
 
@@ -493,8 +493,10 @@ https://github.com/user-attachments/assets/29869256-d63a-40ed-b8d3-2bf2876501ea
 
 Derek is not limited to shots you paste in — you can ask it general DE1 and equipment questions too.
 
-> Technically: Decaid proxies Derek at `POST /api/v1/derek/answers/stream`, forwarding to
-> `derek.decentespresso.com` and streaming the answer back.
+> Technically: the skin opens `derek.decentespresso.com` in the browser and copies the shot summary
+> to your clipboard on the same tap. (Decaid also exposes a proxy at
+> `POST /api/v1/derek/answers/stream` for skins and plugins that want to stream answers directly —
+> see docs/API.md.)
 
 ---
 
@@ -553,16 +555,17 @@ Each known device shows its ID, a **Preferred** toggle, its availability, and **
 behind the blocked-start behaviour described in §8.
 
 ### 3. Calibration
-**Fan threshold** (saveable) and **advanced heater phase flow**. Reset-defaults, refill-kit
-calibration, voltage/stop-at-weight/steam saves and slow start are either not wired up yet or not
-supported by the firmware API.
+Sub-pages for **Default load settings**, **Refill Kit**, **Voltage**, **Fan**, **Steam** and — on
+Bengle machines only — **Load Cells**, which walks through a load-cell calibration with a reference
+weight. Some values here are read from the machine but not saveable, depending on what the firmware
+API supports.
 
 ### 4. Machine
 Sub-pages for **USB**, **Machine Information**, and — on Bengle machines only — **Cup Warmer** and
 **Lighting** (LED strip).
 
 ### 5. Maintenance
-**Machine Descaling** and air purge.
+**Machine Descaling** and **Transport Mode** (air purge).
 
 ### 6. Skin
 **Theme & Updates** — light/dark theme, and the skin switcher. Applying a different skin reloads the
@@ -588,7 +591,8 @@ toggle, the auto-favourite/recipe strip and the DYE button to the header (§7). 
 
 ### 9. Miscellaneous
 A group of sub-pages: **Decaid Settings**, **Brightness**, **Wake Lock**, **Presence
-Detection**, **Display Size**, **Temperature**, **Screen Saver** and **Keyboard Shortcuts**.
+Detection**, **Display Size**, **Temperature**, **Screen Saver**, **Keyboard Shortcuts** and
+**Home Assistant**.
 
 **Display size (zoom)** is persisted locally — useful on unusual tablet resolutions. **Temperature**
 switches between °C and °F. **Smart charging** offers a night-mode schedule and live charging
@@ -638,14 +642,15 @@ The machine serial number is on the **Machine Info** page (§4), not here.
 > while one is in progress.
 
 ### 11. User Manual
-Links to Decent Espresso support, the quickstart, and the skin developer docs.
+Three sub-pages:
 
-Three more pages appear depending on the build:
-
+- **Quick Start Guide** — links to Decent Espresso support, the quickstart, and the skin developer
+  docs
 - **Talk to Decent** — read and reply to support conversations without leaving the app
 - **Send Feedback** — file a bug, feature request or general report. Write it in Markdown, sign in
   with your Decent account to tag it, and attach system info. It arrives as a GitHub issue
-- **Keyboard Shortcuts** — the reference list in §15
+
+The keyboard shortcut reference (§15) lives under **Miscellaneous** (§9), not here.
 
 ---
 
@@ -659,7 +664,7 @@ Three more pages appear depending on the build:
 | Can't get out of a skin | — | Swipe right from the left edge of the screen |
 | Machine shows disconnected after a network blip | WebSocket reconnected and reset connection state | Wait — reconnect uses exponential backoff. If it persists, reconnect from Settings → Connections |
 | Scale weight jumps or flickers | Normal noise; readings are throttled | If it never settles, disconnect and reconnect the scale |
-| Scale drops off every time the machine sleeps | Scale power mode is **Disconnect**, the default | Change it in Settings → Connection → Scale (§13) |
+| Scale drops off every time the machine sleeps | Scale power mode is set to **Disconnect** | Change it in Settings → Connection → Scale (§13). The default is **Nothing** |
 | Edited profile disappeared | The copy lives in Decaid's KV store | Check you are on the same Decaid instance you saved from |
 | Uploading a profile appears to do nothing | Profiles are content-addressed — an identical one exists | Change the content, not just the title |
 | Portrait "rotate device" prompt | The skin is landscape-only | Rotate, or lock the tablet to landscape |
