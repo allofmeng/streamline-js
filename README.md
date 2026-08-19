@@ -463,8 +463,11 @@ Across the top:
 profile.** Saving without renaming overwrites the profile you opened. So if you want to keep both,
 rename first, then save.
 
-Your edited copy is saved into Decaid's shared profile store — the same store every skin reads from — so it's visible from other skins too, not just Streamline.
- 
+Your edited copy is saved into Decaid's shared profile store — the same store every skin reads from
+— so it is visible from other skins too, not just Streamline. Copies made by older versions of the
+skin lived in a private key–value namespace; those are moved into the shared store automatically the
+first time this version loads your profiles.
+
 Built-in profiles never change. **RESET** in the selector removes your copy and restores the
 original.
 
@@ -665,7 +668,7 @@ The keyboard shortcut reference (§15) lives under **Miscellaneous** (§9), not 
 | Machine shows disconnected after a network blip | WebSocket reconnected and reset connection state | Wait — reconnect uses exponential backoff. If it persists, reconnect from Settings → Connections |
 | Scale weight jumps or flickers | Normal noise; readings are throttled | If it never settles, disconnect and reconnect the scale |
 | Scale drops off every time the machine sleeps | Scale power mode is set to **Disconnect** | Change it in Settings → Connection → Scale (§13). The default is **Nothing** |
-| Edited profile disappeared | The copy lives in Decaid's KV store | Check you are on the same Decaid instance you saved from |
+| Edited profile disappeared | The copy lives in Decaid's shared profile store | Check you are on the same Decaid instance you saved from |
 | Uploading a profile appears to do nothing | Profiles are content-addressed — an identical one exists | Change the content, not just the title |
 | Portrait "rotate device" prompt | The skin is landscape-only | Rotate, or lock the tablet to landscape |
 | Chart stops updating mid-shot | Snapshot WebSocket dropped | It reconnects automatically; the machine keeps running regardless |
