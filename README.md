@@ -158,7 +158,7 @@ They install the same way. This manual does not cover them.
 
 https://github.com/user-attachments/assets/d0dc9b10-8bd3-4928-8bcf-21526e6b9615
 
-**To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen.**
+**To leave a skin and return to Decaid's dashboard: swipe right from the left edge of the screen or tap the blue house icon.**
 Your device's back gesture works too.
 
 Learn this before you open a skin. A skin fills the whole screen, with no visible way out.
