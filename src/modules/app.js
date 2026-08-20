@@ -14,6 +14,7 @@ import { logger, setDebug } from './logger.js';
 import { deriveScreensaverAction, isMachineAsleep, isScreensaverSuppressed } from './screensaver-policy.js';
 import { createMachineLinkWatcher, machineFromDevicesPayload } from './machine-link.js';
 import { setMachineModel, isBengleMachine } from './machine.js';
+import { classifyStopReason, canonicalStopReason, STOP_TARGET_WEIGHT, STOP_TARGET_VOLUME, STOP_PROFILE_ENDED } from './stop-reason.js';
 import { resolveMilkProbePresence } from './steam-mode.js';
 import { readTimeToReadyFrame, heatingSecondsLeft } from './heating-countdown.js';
 import { isCupWarmerOn, readCupWarmerTarget, resolvePrewarm, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
@@ -666,11 +667,11 @@ function handleData(data) {
     // gateway-mode fallback (no sequencer -> feed stays idle -> seqTrackedShot false).
     if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE) && seqTrackedShot) {
         logger.info('Shot finished — handled by shotState feed; skipping stop-reason heuristics.');
+        scheduleStopToastBackstop();
     } else if (previousState.state === MachineState.ESPRESSO && (state === MachineState.READY || state === MachineState.IDLE)) {
         logger.info('Shot finished. Checking for upload confirmation and refreshing history.');
 
         (async () => {
-            const finishedShot = shotData.getCurrentShot();
             const totalS = shotData.getTotalTime();
 
             // Detect REA-side block: very short transition + no scale + setting enabled
@@ -685,39 +686,11 @@ function handleData(data) {
                 } catch { /* fall through to normal stop reason */ }
             }
 
-            // Stop-reason classification — priority depends on whether scale is connected.
-            // Scale present → weight is the authoritative stop signal; volume match is
-            // coincidental and would mislead, so suppress it. Scale absent → volume
-            // is the only mass proxy DE1 has, so it's the valid non-time stop reason.
-            const finalWeight = finishedShot.finalWeight ?? finishedShot.weights?.at(-1) ?? latestScaleWeight;
-            const finalVolume = finishedShot.volumes?.at(-1) ?? 0;
-            // Prefer the live active profile: favorite-button switches update profileManager's
-            // active record but not the local currentActiveProfile (only set on page load).
-            const activeRecord = profileManager.getActiveProfileRecord();
-            const activeProfile = activeRecord?.profile ?? currentActiveProfile;
-            // targetYield (metadata, set via UI) overrides profile.target_weight everywhere
-            // else (profileManager.js:599) — mirror that precedence or the weight stop reason
-            // is missed when only the metadata yield was changed.
-            const targetWeight = parseFloat(activeRecord?.metadata?.targetYield ?? activeProfile?.target_weight ?? 0);
-            const targetVolume = parseFloat(activeProfile?.target_volume ?? 0);
-            const profileSeconds = (activeProfile?.steps ?? [])
-                .reduce((sum, s) => sum + (parseFloat(s.seconds) || 0), 0);
-
-            const WEIGHT_HIT = targetWeight > 0 && finalWeight !== null && finalWeight >= targetWeight * 0.93;
-            const VOLUME_HIT = targetVolume > 0 && finalVolume >= targetVolume * 0.93;
-            const TIME_HIT = profileSeconds > 0 && totalS >= profileSeconds * 0.95;
-
-            let stopReason;
-            if (isScaleConnected && WEIGHT_HIT) {
-                stopReason = stopReasonText('Stopped by weight:', `${finalWeight.toFixed(1)}g`);
-            } else if (!isScaleConnected && VOLUME_HIT) {
-                stopReason = stopReasonText('Stopped by volume:', `${Math.round(finalVolume)}ml`);
-            } else if (TIME_HIT) {
-                stopReason = stopReasonText('Stopped by time:', `${totalS.toFixed(1)}s`);
-            } else {
-                stopReason = `${getTranslation('Shot Stopped')}: ${totalS.toFixed(1)}s`;
-            }
-            ui.showToast(stopReason, 6000, 'info');
+            // Stop-reason reconstruction — gateway-mode fallback only; when the
+            // shotState feed ran this shot it owns the toast (guard above).
+            // Ordering and tolerances live in stop-reason.js, which explains why
+            // TIME is decided first.
+            ui.showToast(fallbackStopToast(), 6000, 'info');
 
             // Start polling for upload confirmation
             setTimeout(async () => {
@@ -778,6 +751,7 @@ function handleData(data) {
                 // Feed frames during this shot re-assert it; stays false in
                 // gateway mode so the fallback heuristics run at shot end.
                 seqTrackedShot = false;
+                seqStopToastShown = false;
                 chart.clearChart();
                 shotData.clearShotData();
                 const historyLabelEl = document.getElementById('shot-history-label');
@@ -982,6 +956,44 @@ let seqLastState = 'idle';
 let seqScaleLostWarned = false;
 let seqHistoryRefreshed = false;
 let seqUploadPolled = false;
+let seqStopToastShown = false; // a stop/abort/terminal toast fired for this shot
+
+// Reconstruct the stop toast from the finished shot. Used when no sequencer
+// decision is available: gateway mode, and the backstop below.
+function fallbackStopToast() {
+    const finishedShot = shotData.getCurrentShot();
+    const totalS = shotData.getTotalTime();
+    const finalWeight = finishedShot.finalWeight ?? finishedShot.weights?.at(-1) ?? latestScaleWeight;
+    const finalVolume = finishedShot.volumes?.at(-1) ?? 0;
+    const reason = classifyStopReason({
+        totalS, finalWeight, finalVolume, isScaleConnected, ...getActiveShotTargets(),
+    });
+    return formatStopReason(reason, { weight: finalWeight, volume: finalVolume, totalS });
+}
+
+// The feed owns the stop toast, so handleData stands its fallback down as soon
+// as the sequencer emits ANY frame for the shot — which a pouring frame does,
+// long before the decision. If the socket then blips at shot end and swallows
+// the stop frame, nobody toasts and the shot ends silently. That is the same
+// blip seqRefreshHistory already guards the history refresh against (it accepts
+// stop OR finalize); the toast had no equivalent.
+//
+// The delay is not optional: the two sockets are independent, so on a perfectly
+// healthy connection the machine's ESPRESSO->READY snapshot can arrive before
+// the decision frame. Toasting immediately would double up. It must also stay
+// well under SHOT_RESTART_COOLDOWN_MS, which is what stops a new shot from
+// calling clearShotData() out from under the deferred read below.
+const STOP_TOAST_BACKSTOP_MS = 2000;
+function scheduleStopToastBackstop() {
+    setTimeout(() => {
+        if (seqStopToastShown) return; // the feed delivered it after all
+        // Nothing was poured (fewer than two samples), so there is no ending to
+        // report — an espresso state entered and left without a pour.
+        if (shotData.getTotalTime() === 0) return;
+        logger.warn('Shot finished but no shotState decision arrived — using reconstructed stop reason.');
+        ui.showToast(fallbackStopToast(), 6000, 'info');
+    }, STOP_TOAST_BACKSTOP_MS);
+}
 
 // Refresh the history panel to the finished shot and confirm its upload.
 // Fired from stop/terminal AND finalize (first one wins): the feed replays
@@ -1007,21 +1019,57 @@ function stopReasonText(key, value) {
     return `${getTranslation(key)} ${value}`;
 }
 
+// Render a canonical stop reason (see stop-reason.js) as the toast text. Both
+// the shotState feed and the gateway-mode fallback answer in that one
+// vocabulary, so this is the only place the four messages are built.
+function formatStopReason(reason, { weight, volume, totalS }) {
+    switch (reason) {
+        // decision.data is freeform on the wire (additionalProperties: true), so
+        // projectedWeight can parse to NaN. Say nothing rather than "NaN g" —
+        // the generic message below is still true.
+        case STOP_TARGET_WEIGHT:
+            if (!Number.isFinite(weight)) break;
+            return stopReasonText('Stopped by weight:', `${weight.toFixed(1)}g`);
+        case STOP_TARGET_VOLUME:
+            return stopReasonText('Stopped by volume:', `${Math.round(volume)}ml`);
+        case STOP_PROFILE_ENDED:
+            return stopReasonText('Stopped by time:', `${totalS.toFixed(1)}s`);
+    }
+    // apiStop / appStop / stoppingBackstop, a machineEnded we could not pin to a
+    // cause, 'unknown' from the fallback, a reason whose number did not parse —
+    // and any unrecognised value: the wire enum is an open set.
+    return `${getTranslation('Shot Stopped')}: ${totalS.toFixed(1)}s`;
+}
+
+// The active profile's stop targets. Prefer the live active record: favorite-button
+// switches update profileManager's active record but not the local
+// currentActiveProfile (only set on page load). targetYield (metadata, set via UI)
+// overrides profile.target_weight everywhere else (profileManager.js:599) — mirror
+// that precedence or the weight stop reason is missed when only the metadata yield
+// was changed.
+function getActiveShotTargets() {
+    const activeRecord = profileManager.getActiveProfileRecord();
+    const activeProfile = activeRecord?.profile ?? currentActiveProfile;
+    return {
+        targetWeight: parseFloat(activeRecord?.metadata?.targetYield ?? activeProfile?.target_weight ?? 0),
+        targetVolume: parseFloat(activeProfile?.target_volume ?? 0),
+        profileSeconds: (activeProfile?.steps ?? [])
+            .reduce((sum, st) => sum + (parseFloat(st.seconds) || 0), 0),
+    };
+}
+
 function shotStateStopMessage(decision, machineHasAutonomousSAW) {
-    const reason = decision.reason;
-    // With firmware-side stop-at-weight (Bengle) the target-yield stop is
-    // reported as machineEnded — present it as a weight stop like app-side SAW.
-    if (reason === 'targetWeight' || (reason === 'machineEnded' && machineHasAutonomousSAW && isScaleConnected)) {
-        const w = parseFloat(decision.data?.projectedWeight ?? latestScaleWeight);
-        return stopReasonText('Stopped by weight:', `${w.toFixed(1)}g`);
-    }
-    if (reason === 'targetVolume') {
-        const v = shotData.getCurrentShot()?.volumes?.at(-1) ?? 0;
-        return stopReasonText('Stopped by volume:', `${Math.round(v)}ml`);
-    }
-    // apiStop / appStop / machineEnded / stoppingBackstop — and any unknown
-    // reason: the enum is an open set, newer builds may add values.
-    return `${getTranslation('Shot Stopped')}: ${shotData.getTotalTime().toFixed(1)}s`;
+    const { targetWeight, profileSeconds } = getActiveShotTargets();
+    const totalS = shotData.getTotalTime();
+    const weight = parseFloat(decision.data?.projectedWeight ?? latestScaleWeight);
+    const volume = shotData.getCurrentShot()?.volumes?.at(-1) ?? 0;
+
+    // Normalise the one reason whose meaning is hardware-dependent BEFORE
+    // rendering, so the same shot reads the same on a Bengle and a plain DE1.
+    const reason = canonicalStopReason(decision.reason, {
+        machineHasAutonomousSAW, isScaleConnected, weight, targetWeight, totalS, profileSeconds,
+    });
+    return formatStopReason(reason, { weight, volume, totalS });
 }
 
 function handleShotStateEvent(frame) {
@@ -1035,6 +1083,7 @@ function handleShotStateEvent(frame) {
         seqScaleLostWarned = false;
         seqHistoryRefreshed = false;
         seqUploadPolled = false;
+        seqStopToastShown = false;
     }
     seqLastState = frame.state ?? seqLastState;
 
@@ -1047,6 +1096,9 @@ function handleShotStateEvent(frame) {
 
     const d = frame.decision;
     if (!d) return;
+
+    // Every branch below that toasts an ENDING marks the backstop satisfied.
+    if (d.kind === 'abort' || d.kind === 'stop' || d.kind === 'terminal') seqStopToastShown = true;
 
     switch (d.kind) {
         case 'abort':
