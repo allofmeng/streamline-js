@@ -13,6 +13,8 @@ import { readFile } from 'node:fs/promises';
 import {
     hasMachineGFlow,
     createScaleFlowResolver,
+    isPourPhase,
+    createPourPhaseTracker,
 } from '../src/modules/historical-gflow.js';
 
 const SMOOTHING_FACTOR = 0.1; // mirrors chart.js
@@ -107,4 +109,47 @@ test('fixture: pre-GFlow shot record falls back to the scale chain', async () =>
     const frame = shot.measurements.find(m => m.scale?.weightFlow !== undefined);
     const resolve = createScaleFlowResolver(SMOOTHING_FACTOR);
     assert.equal(resolve(frame.scale, 1.0), frame.scale.weightFlow);
+});
+
+// ── Pour-phase gating for the scale-sourced GFlow trace ─────────────────────
+// The scale branch of plotHistoricalShot used to sit outside the substate check
+// every other trace obeys, so GFlow was drawn across phases where pressure and
+// flow stop — and, on a record whose machine frames carry no substate at all,
+// drawn alone across the whole record.
+
+test('only the two espresso substates count as pouring', () => {
+    assert.equal(isPourPhase('preinfusion'), true);
+    assert.equal(isPourPhase('pouring'), true);
+    for (const s of ['preparingForShot', 'ending', 'heating', 'steaming', 'idle', '', undefined, null]) {
+        assert.equal(isPourPhase(s), false, `${s} must not count as pouring`);
+    }
+});
+
+test('the phase starts closed, so a record with no substate yields no GFlow', () => {
+    const phase = createPourPhaseTracker();
+    assert.equal(phase.inPour, false);
+    // Gateway-shaped record: machine frames carry no substate at all. Every
+    // other trace is empty for it, and GFlow must be too rather than being
+    // plotted alone against a shotStartTime that is only the first timestamp.
+    for (let i = 0; i < 5; i++) phase.observe(undefined);
+    assert.equal(phase.inPour, false);
+});
+
+test('a scale-only snapshot inherits the last machine frame phase', () => {
+    const phase = createPourPhaseTracker();
+    phase.observe('pouring');
+    // machine === undefined on this snapshot; the reading is still mid-pour and
+    // must be kept, not dropped for having no machine frame of its own.
+    assert.equal(phase.observe(undefined), true);
+    assert.equal(phase.inPour, true);
+});
+
+test('the phase closes when the machine leaves the pour', () => {
+    const phase = createPourPhaseTracker();
+    assert.equal(phase.observe('preparingForShot'), false);
+    assert.equal(phase.observe('preinfusion'), true);
+    assert.equal(phase.observe('pouring'), true);
+    assert.equal(phase.observe('ending'), false);
+    // Trailing scale frames after the pour inherit the closed phase.
+    assert.equal(phase.observe(undefined), false);
 });

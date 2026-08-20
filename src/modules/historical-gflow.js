@@ -50,3 +50,28 @@ export function createScaleFlowResolver(smoothingFactor) {
         return weightChange;
     };
 }
+
+// The substates every trace in the historical rebuild is gated on -- and that
+// the live path gates on too (chart.js updateChart returns early otherwise).
+export function isPourPhase(substate) {
+    return substate === 'preinfusion' || substate === 'pouring';
+}
+
+// Carries the pour phase forward across measurements so SCALE frames can be
+// gated the same way machine frames are.
+//
+// A ShotSnapshot's `machine` and `scale` are both optional (rest_v1.yml:6773),
+// so a snapshot may carry a scale reading and no machine frame. Such a frame
+// must INHERIT the phase of the last machine frame seen, not be dropped for
+// having none -- dropping them would thin or empty the GFlow trace on any
+// record whose scale and machine frames are not paired one-to-one.
+//
+// Feed every machine frame's substate in measurement order; read `inPour` when
+// deciding whether a scale frame contributes a GFlow sample.
+export function createPourPhaseTracker() {
+    let inPour = false;
+    return {
+        observe(substate) { if (substate) inPour = isPourPhase(substate); return inPour; },
+        get inPour() { return inPour; },
+    };
+}

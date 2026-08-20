@@ -1,6 +1,6 @@
 import { logger } from './logger.js';
 import { getTranslation } from './i18n.js';
-import { hasMachineGFlow, createScaleFlowResolver } from './historical-gflow.js';
+import { hasMachineGFlow, createScaleFlowResolver, createPourPhaseTracker } from './historical-gflow.js';
 import { EXP_TOP_FLOOR, computeExpandedTopYMax, computeExpandedTempRange } from './chart-autoscale.js';
 
 // Maps internal trace key → i18n key used for the chart label.
@@ -535,6 +535,19 @@ function pushExpandedFrame(time, data, gflowY) {
     expandedDataRev++;
 }
 
+// Anchor both targets' PREVIOUS value at a step boundary, so a pump-mode swap
+// draws as a vertical step instead of a diagonal. The live path wrote this to
+// chartData only, while the historical rebuild carried it (plotHistoricalShot
+// pushes the same anchor into tempChartData) -- so the same profile stepped
+// vertically once loaded from history and ramped diagonally while pouring.
+function pushExpandedTargetAnchor(time, prevPressure, prevFlow) {
+    expandedSeries.targetPressure.x.push(time);
+    expandedSeries.targetPressure.y.push(prevPressure);
+    expandedSeries.targetFlow.x.push(time);
+    expandedSeries.targetFlow.y.push(prevFlow);
+    expandedDataRev++;
+}
+
 // Mirror the current chartData (populated by a historical-shot load) into the
 // expanded series. chartData stores temperatures scaled to /10 of °C, so ×10
 // recovers real °C. `mixSeries` / `mixTargetSeries` carry the Mix Temp and Mix
@@ -602,6 +615,18 @@ function expandedLayout(theme, yRange, isTemp) {
             fixedrange: true, range: yRange, zeroline: false,
             ticksuffix: isTemp ? '°' : '',
         },
+        // Step-boundary markers, mirrored from whichever layout the main chart is
+        // currently drawing. addStepMarker() writes into `theme === 'dark' ?
+        // darkLayout : lightLayout`, so reading back through the same expression
+        // gives the overlay exactly the markers the main chart has -- including
+        // after a mid-shot theme switch, which leaves the other layout empty.
+        // Copied, not shared: lightLayout and darkLayout spread the same
+        // baseLayout and so alias ONE shapes array until the first clearChart()
+        // reassigns them, and Plotly writes bookkeeping onto the shape objects it
+        // is handed. Three plots sharing them would cross-contaminate.
+        // yref 'paper' is per-plot, so each chart gets a full-height line.
+        shapes: ((theme === 'dark' ? darkLayout : lightLayout).shapes || [])
+            .map((sh) => ({ ...sh, line: { ...sh.line } })),
         showlegend: true,
         // y 1.07 with yanchor 'bottom': the gap below the legend is (y - 1) x the
         // plot height, so 1.07 keeps the legend close to the chart it labels now
@@ -836,6 +861,9 @@ export function updateChart(shotStartTime, data, weight, weightFlow = null, filt
         chartData.targetPressure.y.push(lastTargetPressureY);
         chartData.targetFlow.x.push(time);
         chartData.targetFlow.y.push(lastTargetFlowY);
+        // Must land before pushExpandedFrame() below pushes the NEW target, or
+        // the anchor sorts after it and the step draws backwards.
+        pushExpandedTargetAnchor(time, lastTargetPressureY, lastTargetFlowY);
     }
 
     chartData.pressure.x.push(time);
@@ -982,6 +1010,9 @@ export function plotHistoricalShot(measurements, workflow = null) {
     const histMixTarget = { x: [], y: [] };
 
     let historicalCurrentProfileFrame = -1; // Track current profileFrame for historical data
+    // Phase of the most recent machine frame, carried forward so SCALE frames get
+    // gated the same way every other trace is. See historical-gflow.js.
+    const phase = createPourPhaseTracker();
     let histLastTargetPressure = null;      // for the vertical-jump anchor at step boundaries
     let histLastTargetFlow = null;
 
@@ -1000,7 +1031,7 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 const time = (new Date(machineData.timestamp) - shotStartTime) / 1000;
 
                 // Only add data points during espresso phases
-                if (currentState === 'preinfusion' || currentState === 'pouring') {
+                if (phase.observe(currentState)) {
                     if (time >= 0) {
                         tempChartData.pressure.x.push(time);
                         tempChartData.pressure.y.push(machineData.pressure);
@@ -1053,7 +1084,14 @@ export function plotHistoricalShot(measurements, workflow = null) {
             }
 
 
-            if (!useMachineGFlow && scaleData && scaleData.weight) {
+            // phase.inPour: this branch sits outside the substate check every
+            // other trace obeys, so without it the scale-sourced GFlow line was
+            // drawn past where pressure and flow stop — and, on a record whose
+            // machine frames carry no substate at all, drawn alone across the
+            // whole record (shotEndTime is null there, so the bound below never
+            // applies either). The live path and the machine-sourced GFlow above
+            // are both pouring-only; this was the one source that disagreed.
+            if (phase.inPour && !useMachineGFlow && scaleData && scaleData.weight) {
                 const scaleTimestamp = new Date(scaleData.timestamp);
                 if (shotEndTime && scaleTimestamp > shotEndTime) {
                     continue;
@@ -1079,7 +1117,7 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 const currentState = machineData.state.substate;
 
                 // Only add data points during espresso phases
-                if (currentState === 'preinfusion' || currentState === 'pouring') {
+                if (phase.observe(currentState)) {
                     const time = (new Date(machineData.timestamp) - shotStartTime) / 1000;
                     if (time >= 0) {
                         tempChartData.pressure.x.push(time);
@@ -1112,7 +1150,8 @@ export function plotHistoricalShot(measurements, workflow = null) {
                 }
             }
 
-            if (!useMachineGFlow && scaleData && scaleData.weight) {
+            // Pouring-gated for the same reason as the loop above.
+            if (phase.inPour && !useMachineGFlow && scaleData && scaleData.weight) {
                 const scaleTimestamp = new Date(scaleData.timestamp);
                 if (shotEndTime && scaleTimestamp > shotEndTime) {
                     continue;
