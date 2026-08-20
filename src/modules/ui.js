@@ -1,8 +1,8 @@
-import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, setStopAtTemperature, MachineState, getPlugins, persistSharedValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
+import { getProfile, getWorkflow, updateWorkflow, setMachineState, setTargetHotWaterVolume, setTargetHotWaterTemp, setTargetHotWaterDuration, setDe1Settings, setTargetSteamFlow, setTargetSteamDuration, setStopAtTemperature, resyncSteamFromStore, MachineState, getPlugins, persistSharedValue, FLUSH_DURATION_LAST_VALUE_KEY, isBlackScreenSaver } from './api.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { deriveSleepButtonAction, isWakePending } from './screensaver-policy.js';
 import { isBengleMachine, isBengleModel } from './machine.js';
-import { STEAM_FLOW_PRESETS_BY_MODEL, MILK_STOP_PRESETS, resolveSteamFlowPresetsForModel, resolveSteamTileMode, milkTelemetryValue, steamFlowHighlightIndex } from './steam-mode.js';
+import { STEAM_FLOW_PRESETS_BY_MODEL, MILK_STOP_PRESETS, resolveSteamFlowPresetsForModel, resolveSteamTileMode, milkTelemetryValue, steamFlowHighlightIndex, STEAM_SYNC_SYNCED, steamSyncField, foldSteamSyncState, shouldRetrySteamSync } from './steam-mode.js';
 import { shouldUseNumpad, openModal as openNumpadModal } from './numpad-modal.js';
 import { openContextMenu } from './context-menu.js';
 import { logger } from './logger.js';
@@ -186,6 +186,11 @@ export function updateTemperatureValue(newValue) {
             // Partial update via workflow - only send profile field
             updateWorkflow({ profile: workflow.profile }).then(() => {
                 logger.debug('Temperature updated via workflow:', newValue);
+                // Save it as a per-profile override, same as dose/yield/grind.
+                // The live workflow alone survives an app restart but NOT a
+                // profile switch, which re-sends the cached record and would
+                // silently restore the profile's baked-in temperature.
+                window.app?.saveContextToActiveProfile?.({ brewTemperature: parseFloat(newValue) });
             }).catch(error => {
                 logger.error('Failed to update temperature via workflow:', error);
             });
@@ -698,17 +703,91 @@ export function updateSteamDisplay(data) {
         modeFlowEl.className = ACTIVE;
         modeTimeEl.className = INACTIVE;
     }
+
+    paintSteamSyncMark(durationEl, flowEl);
+}
+
+// ── Unsynced steam values ────────────────────────────────────────────────────
+// A steam write can 503 out of Rea's workflow queue 30s after it was sent
+// (decaid#634) — long after the tile painted the new number, so the user is
+// left reading a value the machine never got. Colour the number that didn't
+// land, and replay it from the KV store, which api.setTargetSteam* now writes
+// BEFORE the push precisely so the user's intent survives a failed one.
+const STEAM_UNSYNCED_CLASS = 'text-[var(--status-red-color)]';
+const STEAM_PRIMARY_CLASS = 'text-[var(--text-primary)]';
+const STEAM_SYNC_RETRY_MS = 8000;
+let steamSync = { ...STEAM_SYNC_SYNCED };
+let steamSyncRetryTimer = null;
+
+// Runs last in updateSteamDisplay: the per-mode branches above re-add
+// STEAM_PRIMARY_CLASS on every render, and two colour classes on one element
+// would be settled by stylesheet order rather than by us.
+function paintSteamSyncMark(durationEl, flowEl) {
+    [durationEl, flowEl].forEach(el => {
+        el.classList.remove(STEAM_UNSYNCED_CLASS);
+        el.classList.add(STEAM_PRIMARY_CLASS);
+    });
+    if (!steamSync.field) return;
+    const target = steamSync.field === 'flow' ? flowEl : durationEl;
+    target.classList.remove(STEAM_PRIMARY_CLASS);
+    target.classList.add(STEAM_UNSYNCED_CLASS);
+}
+
+function applySteamSyncEvent(event) {
+    const next = foldSteamSyncState(steamSync, event);
+    if (next === steamSync) return;
+    const changed = next.field !== steamSync.field;
+    steamSync = next;
+    if (changed) updateSteamDisplay({});
+}
+
+/**
+ * Wrap a steam push so a failure is visible instead of silent. The tile has
+ * already painted the value optimistically by the time this settles — on
+ * failure the number goes red and a retry replays it from the store; on
+ * success the same field's mark clears.
+ * @param {'duration'|'flow'} field  which tile number this push backs
+ * @param {Promise} promise  the in-flight api.setTargetSteam* call
+ */
+export function pushSteamSetting(field, promise) {
+    return promise.then(() => {
+        applySteamSyncEvent({ type: 'push-ok', field });
+    }).catch(e => {
+        logger.error(`Steam ${field} did not reach the machine:`, e);
+        applySteamSyncEvent({ type: 'push-failed', field });
+        showToast(getTranslation('Steam setting did not reach the machine. Retrying...'), 3000, 'error');
+        clearTimeout(steamSyncRetryTimer);
+        steamSyncRetryTimer = setTimeout(runSteamSyncRetry, STEAM_SYNC_RETRY_MS);
+    });
+}
+
+async function runSteamSyncRetry() {
+    try {
+        await resyncSteamFromStore();
+        applySteamSyncEvent({ type: 'retry-ok' });
+    } catch (e) {
+        logger.warn('Steam resync retry failed:', e);
+        applySteamSyncEvent({ type: 'retry-failed' });
+        if (shouldRetrySteamSync(steamSync)) {
+            steamSyncRetryTimer = setTimeout(runSteamSyncRetry, STEAM_SYNC_RETRY_MS);
+        } else {
+            showToast(getTranslation('Steam setting still not applied — check the machine connection.'), 4000, 'error');
+        }
+    }
 }
 
 function scheduleSteamApi() {
     clearTimeout(steamApiDebounce);
     steamApiDebounce = setTimeout(() => {
         if (steamMode === 'time') {
-            setTargetSteamDuration(currentSteamDuration).catch(e => logger.error(e));
+            pushSteamSetting(steamSyncField(steamMode), setTargetSteamDuration(currentSteamDuration));
         } else if (steamMode === 'temperature') {
-            setStopAtTemperature(currentMilkStop).catch(e => logger.error(e));
+            // Milk stop now has a KV record of its own, so it takes the same
+            // marked-and-retried path as duration and flow (steamSyncField maps
+            // it onto 'duration' -- they share the tile element).
+            pushSteamSetting(steamSyncField(steamMode), setStopAtTemperature(currentMilkStop));
         } else {
-            setTargetSteamFlow(currentSteamFlow).catch(e => logger.error(e));
+            pushSteamSetting(steamSyncField(steamMode), setTargetSteamFlow(currentSteamFlow));
         }
     }, API_DEBOUNCE_MS);
 }
@@ -729,7 +808,7 @@ function incrementSteam() {
     if (steamMode === 'time') {
         currentSteamDuration += 1;
     } else if (steamMode === 'temperature') {
-        if (currentMilkStop < 85) currentMilkStop = Math.min(85, currentMilkStop + displayStepToCelsius(1));
+        if (currentMilkStop < 80) currentMilkStop = Math.min(80, currentMilkStop + displayStepToCelsius(1));
     } else {
         if (currentSteamFlow < 2.5) {
             currentSteamFlow += 0.1;
@@ -1669,7 +1748,7 @@ export function initUI(callbacks) {
                 const newValue = steamTimePresets[index];
                 if (newValue === undefined) return;
 
-                setTargetSteamDuration(newValue).catch(e => logger.error(e));
+                pushSteamSetting('duration', setTargetSteamDuration(newValue));
                 updateSteamDisplay({ targetSteamDuration: newValue });
 
                 syncPresetHighlight(steamPresets, t => t === button.textContent.trim());
@@ -1744,15 +1823,17 @@ export function initUI(callbacks) {
                 const currentValueC = fromDisplayTemp(parseFloat(valueEl.textContent));
                 const presetValue = milkStopPresets[index];
                 const defaultValue = DEFAULT_MILK_STOP_PRESETS[index];
-                // Milk-stop writes are clamped to 30–85 °C everywhere (tile
+                // Milk-stop writes are clamped to 30–80 °C everywhere (tile
                 // +/- and the settings page) — preset edits follow the same rule.
-                const clampMilkStop = (num) => Math.max(30, Math.min(85, Math.round(num)));
+                // 80 is the API ceiling: rest_v1.yml SteamSettings.stopAtTemperature
+                // documents range 0..80.
+                const clampMilkStop = (num) => Math.max(30, Math.min(80, Math.round(num)));
                 openContextMenu(button, [
                     { label: getTranslation('Apply {value}').replace('{value}', formatTemp(presetValue, 0)), onSelect: clickCallback },
                     { label: getTranslation('Enter value'), onSelect: () => {
                         openNumpadModal(makeNumpadMockInput(boundToDisplay(presetValue)), {
                             fieldType: 'milk-stop',
-                            config: { title: 'MILK STOP', unit: getTempUnit() === 'F' ? '°F' : '°c', defaultValue: '60', min: boundToDisplay(30), max: boundToDisplay(85) },
+                            config: { title: 'MILK STOP', unit: getTempUnit() === 'F' ? '°F' : '°c', defaultValue: '60', min: boundToDisplay(30), max: boundToDisplay(80) },
                             onConfirm: (newVal) => {
                                 const num = fromDisplayTemp(parseFloat(newVal));
                                 if (isNaN(num)) return;
@@ -2029,7 +2110,7 @@ export function initUI(callbacks) {
                 value = 0;
             }
             currentSteamDuration = value;
-            setTargetSteamDuration(currentSteamDuration).catch(e => logger.error(e));
+            pushSteamSetting('duration', setTargetSteamDuration(currentSteamDuration));
             updateSteamDisplay({ targetSteamDuration: currentSteamDuration });
         });
     }

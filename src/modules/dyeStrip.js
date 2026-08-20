@@ -18,6 +18,7 @@
 import { API_BASE_URL, getWorkflow, updateWorkflow, getDye2KvArray, getPlugins } from './api.js';
 import { applyWorkflowToMainPageUI } from './profileManager.js';
 import { logger } from './logger.js';
+import { fitTextToBox } from './i18n.js';
 
 const AF_KEY = 'autoFavourites';
 const RECIPES_KEY = 'recipes';
@@ -39,11 +40,16 @@ const NAG_KEY = 'streamline.dye2UpdateNagged'; // sessionStorage: prompt once pe
 // F/R strip is visually identical to the P strip.
 const CELL_BASE =
     'flex justify-center items-center text-center text-balance px-3 leading-tight ' +
-    'line-clamp-2 [overflow-wrap:anywhere] w-[240px] h-[98px] text-[22px] rounded-[19px] ' +
+    'overflow-hidden [overflow-wrap:anywhere] w-[240px] h-[98px] text-[22px] rounded-[19px] ' +
     'border-2 font-semibold cursor-pointer';
 const CELL_IDLE = ' border-[var(--profile-button-outline-color)] bg-[var(--profile-button-background-color)] text-[var(--profile-button-text-color)]';
 const CELL_ACTIVE = ' border-[var(--mimoja-blue)] bg-[var(--mimoja-blue-v2)] text-white';
 const CELL_ACCENT = ' border-[var(--mimoja-blue)] bg-[var(--box-color)] text-[var(--mimoja-blue)]'; // VIEW ALL
+// Empty-state hint. Carries the cell height explicitly: in R mode it is the only
+// child, so without it the strip collapses to one line of text and the hint sits
+// at the top of the band instead of centred against where the cells would be.
+const HINT_CLASS =
+    'flex items-center h-[98px] text-[20px] text-[var(--low-contrast-white)] px-2';
 
 let favCache = [];
 let recipeCache = [];
@@ -121,7 +127,7 @@ export function renderStrip(mode) {
         if (favs.length === 0) {
             // Nothing captured yet — a soft hint before the VIEW ALL cell.
             const hint = document.createElement('span');
-            hint.className = 'flex items-center text-[20px] text-[var(--low-contrast-white)] px-2';
+            hint.className = HINT_CLASS;
             hint.textContent = 'No auto-favourites yet';
             strip.insertBefore(hint, strip.firstChild);
         }
@@ -129,7 +135,7 @@ export function renderStrip(mode) {
         const recipes = visibleRecipes().slice(0, 5);
         if (recipes.length === 0) {
             const hint = document.createElement('span');
-            hint.className = 'flex items-center text-[20px] text-[var(--low-contrast-white)] px-2';
+            hint.className = HINT_CLASS;
             hint.textContent = 'No recipes yet';
             strip.appendChild(hint);
         }
@@ -143,6 +149,16 @@ export function renderStrip(mode) {
             strip.appendChild(cell);
         });
     }
+    // Fit only once attached: wrapping depends on the real box width, which an
+    // unattached node does not have.
+    fitStripCells(strip);
+}
+
+// Shrink any label that wraps past its cell. Cells are a fixed 98px tall and the
+// box only clips, so without this a long bean name loses its last line under the
+// bottom border.
+function fitStripCells(nav) {
+    if (nav) nav.querySelectorAll('button').forEach(el => fitTextToBox(el));
 }
 
 // ─── Apply ─────────────────────────────────────────────────────────────────────
@@ -543,6 +559,53 @@ export function setStripMode(mode) {
     }
 }
 
+// ─── Header collision guard ──────────────────────────────────────────────────
+// The favourite strip and the right-hand controls are both absolutely positioned,
+// so neither pushes the other out of the way. With DYE2 on the strip starts 50px
+// further right and the DYE button widens the controls; add the Bengle cup warmer
+// and the five 240px cells run underneath them. Bound the strips at the controls'
+// measured edge and let the cells shrink into what is left — measured rather than
+// hardcoded so it follows cup-warmer/fullscreen visibility and translated labels.
+const STRIP_GAP = 20;
+const STRIP_IDS = ['profile-fav-nav', 'dye-strip'];
+let controlsObserver = null;
+
+function syncStripBounds() {
+    const controls = document.getElementById('header-right-controls');
+    const header = controls?.closest('header');
+    if (!controls || !header) return;
+    const right = header.getBoundingClientRect().right
+        - controls.getBoundingClientRect().left + STRIP_GAP;
+    STRIP_IDS.forEach(id => {
+        const nav = document.getElementById(id);
+        if (!nav) return;
+        nav.style.right = `${Math.max(0, Math.round(right))}px`;
+        fitStripCells(nav); // narrower cells wrap more, so the fit has to be redone
+    });
+}
+
+// The controls resize when the cup warmer or fullscreen button shows/hides and when
+// data-fit-text refits a translated label. Width is anchored to the header's right
+// edge, so a plain window resize needs no handling.
+function observeControls() {
+    if (controlsObserver || typeof ResizeObserver === 'undefined') return;
+    const controls = document.getElementById('header-right-controls');
+    if (!controls) return;
+    controlsObserver = new ResizeObserver(() => syncStripBounds());
+    controlsObserver.observe(controls);
+}
+
+function clearStripBounds() {
+    controlsObserver?.disconnect();
+    controlsObserver = null;
+    STRIP_IDS.forEach(id => {
+        const nav = document.getElementById(id);
+        if (!nav) return;
+        nav.style.right = '';
+        fitStripCells(nav); // cells are back to full width — labels can grow again
+    });
+}
+
 // ─── Master enable/disable (gates the whole DYE2 header UI) ─────────────────────
 
 export function isDye2Enabled() {
@@ -589,6 +652,8 @@ export async function enableDye2Ui() {
     if (profileNav) { profileNav.classList.remove('left-[30px]'); profileNav.classList.add('left-[80px]'); }
     if (toggle) toggle.style.display = '';   // revert to class-defined flex
     if (dyeBtn) dyeBtn.style.display = '';
+    syncStripBounds();
+    observeControls();
     wireOnce();
     try { await loadDyeStripData(); } catch (e) { logger.error('dyeStrip load failed', e); }
     checkPluginVersion(); // not awaited — a GitHub round-trip must not hold up the header
@@ -612,6 +677,7 @@ export function disableDye2Ui() {
         profileNav.classList.remove('left-[80px]');
         profileNav.classList.add('left-[30px]');
     }
+    clearStripBounds();
 }
 
 export async function initDyeStrip() {

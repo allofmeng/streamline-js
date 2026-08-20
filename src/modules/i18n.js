@@ -162,6 +162,41 @@ else document.addEventListener('DOMContentLoaded', () => document.body.appendChi
  * a fixed 150px box). The ResizeObserver above only fires on size changes, and
  * the box never changes size — so a text swap must re-fit explicitly.
  */
+/**
+ * Height variant of fitTextToWidth, for labels that WRAP inside a fixed box
+ * (the 240x98 favourite cells). Shrinks until the wrapped text stops overflowing.
+ *
+ * Measures the element itself rather than the off-screen meter: wrapping depends
+ * on the real box width, which the meter (white-space:nowrap) cannot reproduce.
+ * The box has overflow:hidden, so scrollHeight is the honest unclipped height.
+ *
+ * Floors at 14px — below that a bean name is unreadable at arm's length on a
+ * tablet, so the remainder is left to clip rather than shrink into illegibility.
+ */
+let _boxObserver;
+export function fitTextToBox(el, min = 14) {
+    // Re-fit when the box gains or changes size: 0 -> 98px when the header returns
+    // from display:none, and 240 -> ~209px when the cup warmer widens the header
+    // controls. The box is fixed-size, so setting font-size never resizes it and
+    // this cannot feed back on itself.
+    if (!_boxObserver && typeof ResizeObserver !== 'undefined') {
+        _boxObserver = new ResizeObserver(entries => {
+            for (const e of entries) fitTextToBox(e.target, min);
+        });
+    }
+    if (_boxObserver) _boxObserver.observe(el);
+
+    el.style.fontSize = '';
+    // Not laid out yet (hidden / zero-height): leave the CSS size; the observer
+    // above re-fits as soon as it has a real box.
+    if (!el.clientHeight) return;
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    while (size > min && el.scrollHeight > el.clientHeight) {
+        size -= 1;
+        el.style.fontSize = size + 'px';
+    }
+}
+
 export function fitTextToWidth(el) {
     el.style.fontSize = '';
     // clientWidth excludes border; -8px inset so text clears the rounded corners.

@@ -116,7 +116,7 @@ function initMobileValueInputs() {
                             // firmware disables the steam heater (temporary, reversible).
                             const v = (newVal === '' || isNaN(parseFloat(newVal))) ? 0 : parseFloat(newVal);
                             window.app.ui.updateSteamDisplay({ targetSteamDuration: v });
-                            window.app.api.setTargetSteamDuration(v).catch(e => logger.error('setTargetSteamDuration failed:', e));
+                            window.app.ui.pushSteamSetting('duration', window.app.api.setTargetSteamDuration(v));
                         } else if (type === 'steam-flow') {
                             // Numpad blanks a bare "0" to ''. Unlike duration, 0 steam
                             // flow has no meaning (steam is gated on duration, not flow),
@@ -125,7 +125,7 @@ function initMobileValueInputs() {
                             const parsed = parseFloat(newVal);
                             const v = (newVal === '' || isNaN(parsed) || parsed < 0.4) ? 0.4 : parsed;
                             window.app.ui.updateSteamDisplay({ targetSteamFlow: v });
-                            window.app.api.setTargetSteamFlow(v).catch(e => logger.error('setTargetSteamFlow failed:', e));
+                            window.app.ui.pushSteamSetting('flow', window.app.api.setTargetSteamFlow(v));
                         } else if (type === 'flush') {
                             window.app.ui.updateFlushValue(parseFloat(newVal));
                             window.app.ui.updateFlushDisplay(parseFloat(newVal));
@@ -366,6 +366,13 @@ const deviceErrorCopy = {
 function handleDeviceConnectionError(err) {
     // scaleDisconnected is handled silently — the [Reconnect] UI on the main page covers it
     if (err.kind === 'scaleDisconnected') return;
+    // Rea's quick-connect re-adopt emits machineDisconnected for the De1 instance
+    // it just REPLACED -- "Quick-connect: machine adopted" -> "De1Controller -
+    // resetting de1" -> emit, all inside 1 ms -- while the machine never left
+    // (decaid#634 logs). The devices feed is the authority on link state (see the
+    // machineLink block below), and it is now dispatched ahead of errors, so a
+    // real drop has already flipped this to false by the time we read it.
+    if (err.kind === 'machineDisconnected' && machineLink.isConnected()) return;
     // Adapter-level nags (Bluetooth off / permission missing) are meaningless
     // while a machine is already connected -- connected over USB serial with BT
     // off is a fully valid state, so don't tell the user to turn BT on. If the
@@ -1065,6 +1072,37 @@ function handleShotStateEvent(frame) {
     }
 }
 
+// The three ShotSettings fields that are also main-page tile values with a KV
+// record behind them (websocket_v1.yml ShotSettings). Steam flow, the milk stop
+// and the flush duration are NOT in that payload, so no frame can move them.
+const SHOT_SETTINGS_KV_FIELDS = [
+    ['targetSteamDuration', api.STEAM_DURATION_LAST_VALUE_KEY, api.setTargetSteamDuration],
+    ['targetHotWaterVolume', api.HOT_WATER_VOLUME_LAST_VALUE_KEY, api.setTargetHotWaterVolume],
+    ['targetHotWaterTemp', api.HOT_WATER_TEMP_LAST_VALUE_KEY, api.setTargetHotWaterTemp],
+];
+// Last value each field arrived with, so a steady stream of identical frames
+// doesn't become a steady stream of KV lookups.
+const lastSeenShotSettings = {};
+
+// The boot resync runs once; a shotSettings frame can move these at any time
+// after it (BLE reconnect, Rea restart, the machine's own tablet, another skin)
+// and updateSteamDisplay/updateHotWaterDisplay repaint from it unconditionally.
+// Re-run the same comparison on every frame that actually changes one, so the
+// user's setting is restored instead of silently sitting wrong until reload.
+//
+// Converges rather than loops: our push makes Rea emit a corrected frame, and a
+// machine that refuses to take the value keeps sending the same number, which
+// the seen-check skips.
+function resyncDriftedShotSettings(data) {
+    for (const [field, key, push] of SHOT_SETTINGS_KV_FIELDS) {
+        const value = data[field];
+        if (value === undefined || value === lastSeenShotSettings[field]) continue;
+        lastSeenShotSettings[field] = value;
+        api.resyncIfDrifted(key, value, push)
+            .catch(e => logger.warn(`${field} drift resync failed:`, e));
+    }
+}
+
 async function handleShotSettingsData(data) {
     updateShotSettingsCache(data);
     ui.updateHotWaterDisplay(data);
@@ -1073,10 +1111,7 @@ async function handleShotSettingsData(data) {
     // Avoiding unnecessary API call to get DE1 settings on every WebSocket message
     ui.updateSteamDisplay(data);
 
-    if (data.flushTimeout !== undefined) {
-        logger.debug('Received flush timeout data:', data.flushTimeout);
-        ui.updateFlushDisplay(data.flushTimeout);
-    }
+    resyncDriftedShotSettings(data);
 }
 
 async function loadInitialData() {
@@ -1228,9 +1263,12 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         if (flushtimeout !== undefined) {
             logger.debug('Received flush timeout data:', flushtimeout);
             ui.updateFlushDisplay(flushtimeout.duration);
-            api.resyncIfDrifted(api.FLUSH_DURATION_LAST_VALUE_KEY, flushtimeout.duration, (v) => ui.updateFlushValue(v))
-                .catch(e => logger.warn('Flush duration resync failed:', e));
         }
+        // Outside the guard on purpose: a workflow with no rinseData at all is
+        // exactly the case where the user's remembered value most needs
+        // pushing. resyncIfDrifted no-ops when nothing was ever remembered.
+        api.resyncIfDrifted(api.FLUSH_DURATION_LAST_VALUE_KEY, flushtimeout?.duration, (v) => ui.updateFlushValue(v))
+            .catch(e => logger.warn('Flush duration resync failed:', e));
 
         // Update grind display - prefer context.grinderSetting over legacy grinderData.setting
         if (context?.grinderSetting) {
@@ -1254,16 +1292,16 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         const steamsettings = workflow?.steamSettings;
         if (hotwatersettings) {
             ui.updateHotWaterDisplay({ targetHotWaterVolume: hotwatersettings.volume, targetHotWaterTemp: hotwatersettings.targetTemperature });
-            // Re-push only if the DE1 disagrees with what we last set — a plain GET
-            // can't tell us the device itself stayed in sync (BLE reconnect / Rea
-            // restart can leave it stale), but blindly re-pushing every boot would
-            // be wasteful and could clobber a legitimate reading if our cache were
-            // ever the stale one. See api.resyncIfDrifted.
-            api.resyncIfDrifted(api.HOT_WATER_VOLUME_LAST_VALUE_KEY, hotwatersettings.volume, api.setTargetHotWaterVolume)
-                .catch(e => logger.warn('Hot water volume resync failed:', e));
-            api.resyncIfDrifted(api.HOT_WATER_TEMP_LAST_VALUE_KEY, hotwatersettings.targetTemperature, api.setTargetHotWaterTemp)
-                .catch(e => logger.warn('Hot water temp resync failed:', e));
         }
+        // Re-push whenever the workflow disagrees with what the user last set — a
+        // plain GET can't tell us the device itself stayed in sync (BLE reconnect
+        // / Rea restart can leave it stale). Runs outside the guard above so an
+        // absent hotWaterData still gets the remembered values. See
+        // api.resyncIfDrifted.
+        api.resyncIfDrifted(api.HOT_WATER_VOLUME_LAST_VALUE_KEY, hotwatersettings?.volume, api.setTargetHotWaterVolume)
+            .catch(e => logger.warn('Hot water volume resync failed:', e));
+        api.resyncIfDrifted(api.HOT_WATER_TEMP_LAST_VALUE_KEY, hotwatersettings?.targetTemperature, api.setTargetHotWaterTemp)
+            .catch(e => logger.warn('Hot water temp resync failed:', e));
 
         // Resolve the machine model BEFORE the first updateSteamDisplay:
         // Bengle-only steam UI (an armed milk stop persisted in the workflow)
@@ -1303,11 +1341,16 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
                 ...(typeof steamsettings.flow === 'number' && isFinite(steamsettings.flow)
                     ? { targetSteamFlow: steamsettings.flow } : {}),
             });
-            api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings.duration, api.setTargetSteamDuration)
-                .catch(e => logger.warn('Steam duration resync failed:', e));
-            api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings.flow, api.setTargetSteamFlow)
-                .catch(e => logger.warn('Steam flow resync failed:', e));
         }
+        // Outside the guard: an absent steamSettings is not a reason to drop the
+        // user's remembered targets. The milk stop keeps its own armed-only
+        // guard — 0/absent there means the stop is off, a real choice.
+        api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings?.duration, api.setTargetSteamDuration)
+            .catch(e => logger.warn('Steam duration resync failed:', e));
+        api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings?.flow, api.setTargetSteamFlow)
+            .catch(e => logger.warn('Steam flow resync failed:', e));
+        api.resyncMilkStopIfDrifted(steamsettings?.stopAtTemperature)
+            .catch(e => logger.warn('Milk stop resync failed:', e));
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
         // presets based on machine model (group-head size).

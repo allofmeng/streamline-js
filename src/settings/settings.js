@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight, persistSharedValue, MILK_STOP_LAST_VALUE_KEY, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -57,7 +57,7 @@ const SETTINGS_NUMPAD_CONFIGS = {
     // tablet like every other settings number, instead of the OS keyboard.
     cupWarmerTempInput:      { title: 'CUP WARMER TEMP',   unit: '°C',   min: 30,  max: 80,   fieldType: 'settings-cupwarmer-temp' },
     cupWarmerPrewarmInput:   { title: 'PRE-WARM LEAD',     unit: 'min',  min: PREWARM_MIN_MINUTES, max: PREWARM_MAX_MINUTES, fieldType: 'settings-cupwarmer-prewarm' },
-    steamMilkStopInput:      { title: 'STOP AT MILK TEMP', unit: '°C',   min: 30,  max: 85,   fieldType: 'settings-steam-milk-stop' },
+    steamMilkStopInput:      { title: 'STOP AT MILK TEMP', unit: '°C',   min: 30,  max: 80,   fieldType: 'settings-steam-milk-stop' },
 };
 
 // Settings-page numeric temperature inputs hold their number in the ACTIVE
@@ -199,13 +199,34 @@ function hasPendingChanges() {
         Object.keys(pendingChanges.de1Advanced).length > 0 ||
         Object.keys(pendingChanges.workflow).length > 0;
 }
+const isNum = (v) => typeof v === 'number' && isFinite(v);
+
 async function flushPendingChanges() {
     const tasks = [];
     if (Object.keys(pendingChanges.rea).length) tasks.push(setReaSettings(pendingChanges.rea));
     if (Object.keys(pendingChanges.de1).length) tasks.push(setDe1Settings(pendingChanges.de1));
     if (Object.keys(pendingChanges.de1Advanced).length) tasks.push(setDe1AdvancedSettings(pendingChanges.de1Advanced));
-    if (pendingChanges.workflow.steamSettings) tasks.push(updateWorkflow({ steamSettings: pendingChanges.workflow.steamSettings }));
-    if (pendingChanges.workflow.hotWaterData) tasks.push(updateWorkflow({ hotWaterData: pendingChanges.workflow.hotWaterData }));
+    // The boot resync (api.resyncIfDrifted) compares Rea's workflow record
+    // against the shared KV record of what the user last set, and KV wins. This
+    // page writes the workflow directly instead of going through the api
+    // setters that maintain that record, so every field with a KV key has to be
+    // written here too -- otherwise the older main-page value is pushed back
+    // over whatever was just saved here, on the next load.
+    if (pendingChanges.workflow.steamSettings) {
+        const steam = pendingChanges.workflow.steamSettings;
+        tasks.push(updateWorkflow({ steamSettings: steam }));
+        if (isNum(steam.duration)) persistSharedValue(STEAM_DURATION_LAST_VALUE_KEY, steam.duration);
+        if (isNum(steam.flow)) persistSharedValue(STEAM_FLOW_LAST_VALUE_KEY, steam.flow);
+        // Armed targets only: 0 means the stop was switched off, not a
+        // temperature worth remembering -- see api.setStopAtTemperature.
+        if (steam.stopAtTemperature > 0) persistSharedValue(MILK_STOP_LAST_VALUE_KEY, steam.stopAtTemperature);
+    }
+    if (pendingChanges.workflow.hotWaterData) {
+        const water = pendingChanges.workflow.hotWaterData;
+        tasks.push(updateWorkflow({ hotWaterData: water }));
+        if (isNum(water.volume)) persistSharedValue(HOT_WATER_VOLUME_LAST_VALUE_KEY, water.volume);
+        if (isNum(water.targetTemperature)) persistSharedValue(HOT_WATER_TEMP_LAST_VALUE_KEY, water.targetTemperature);
+    }
     if (tasks.length) await Promise.all(tasks);
     saveSettingsBackup();
     resetPendingChanges();
@@ -705,12 +726,6 @@ export function renderSettingsContent(category) {
             return renderTalkToDecentSettings();
         case 'quickstart':
             return renderQuickstartGuideSettings();
-        case 'usermanual':
-        case 'onlinehelp':
-        case 'tutorials':
-        case 'help':
-            console.log("rendering user manual ");
-            return renderUserManualSettings();
         case 'de1':
         case 'fanthreshold':
             return renderFanThresholdSettings(settingsCache.de1);
@@ -1489,6 +1504,18 @@ export function renderQuickstartGuideSettings() {
                             View
                         </a>
                     </div>
+
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Streamline User Manual">Streamline User Manual</p>
+                        </div>
+                        <a href="https://github.com/decentespresso/streamline-js/blob/main/README.md" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
+                            View
+                        </a>
+                    </div>
+                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="The full manual for this skin: every screen, setting and gesture.">
+                        The full manual for this skin: every screen, setting and gesture.
+                    </p>
                 </div>
             </div>
 
@@ -1523,68 +1550,6 @@ function initQuickstartGuideSettings() {
         if (toggle.checked) window.showHelpButton?.();
         else window.hideHelpButton?.();
     });
-}
-
-export function renderUserManualSettings() {
-    return `
-        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
-            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
-                <p class="leading-[1.2]" data-i18n-key="User Manual">User Manual</p>
-            </div>
-
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Online Help">Online Help</p>
-                        </div>
-                        <a href="https://decentespresso.com/support/submit" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
-                            Visit
-                        </a>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Get support and submit tickets for assistance">
-                        Get support and submit tickets for assistance
-                    </p>
-                </div>
-            </div>
-
-            <!-- Divider -->
-            <div class="h-0 relative w-full">
-                <hr class="border-t border-[#c9c9c9] w-full" />
-            </div>
-
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]" data-i18n-key="Tutorials">Tutorials</p>
-                        </div>
-                        <a href="https://decentespresso.com/doc/quickstart/" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
-                            View
-                        </a>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Learn how to get started with your espresso machine">
-                        Learn how to get started with your espresso machine
-                    </p>
-                </div>
-            </div>
-            <div class="content-stretch flex flex-col items-start relative w-full">
-                <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
-                    <div class="content-stretch flex items-center justify-between relative w-full">
-                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
-                            <p class="leading-[1.2]">Start writing your own skin.</p>
-                        </div>
-                        <a href="https://github.com/decentespresso/Decaid/blob/main/doc/Skins.md#skinsmd" class="bg-[#385a92] h-[72px] px-[48px] rounded-[72px] text-white text-[24px] font-bold flex items-center justify-center">
-                            View
-                        </a>
-                    </div>
-                    <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Learn how to use Decaid to create custom skins and more.">
-                        Learn how to use Decaid to create custom skins and more.
-                    </p>
-                </div>
-            </div>
-        </div>
-    `;
 }
 
 export function renderTalkToDecentSettings() {
@@ -2769,7 +2734,7 @@ export function renderSteamSettings() {
                     <div class="content-stretch flex items-center justify-between relative w-full">
                         <div class="flex items-baseline gap-[14px] font-['Inter:Bold',sans-serif] font-bold leading-[0] not-italic relative text-[var(--text-primary)] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Stop at Milk Temperature (°C)">Stop at Milk Temperature (°C)</p>
-                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${tempInputValue(30)} – ${tempInputValue(85)} ${tempUnitLabel()}</span>
+                            <span class="text-[20px] font-normal opacity-60 text-[var(--text-primary)]">${tempInputValue(30)} – ${tempInputValue(80)} ${tempUnitLabel()}</span>
                         </div>
                         <div class="flex gap-[20px] h-[72px] items-center">
                             <button aria-label="Decrease milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -2780,8 +2745,8 @@ export function renderSteamSettings() {
                             </button>
                             <div class="flex items-center justify-center" style="width: 130px;">
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" id="steamMilkStopInput" class="text-center text-[var(--text-primary)] text-[24px] font-bold bg-transparent border-none w-full"
-                                       value="${tempInputValue(milkTarget)}" step="1" min="${tempInputValue(30)}" max="${tempInputValue(85)}"
-                                       onchange="window.updateSteamSetting('stopAtTemperature', Math.max(30, Math.min(85, Math.round(window.tempInputToCelsius(this.value)) || 30)))">
+                                       value="${tempInputValue(milkTarget)}" step="1" min="${tempInputValue(30)}" max="${tempInputValue(80)}"
+                                       onchange="window.updateSteamSetting('stopAtTemperature', Math.max(30, Math.min(80, Math.round(window.tempInputToCelsius(this.value)) || 30)))">
                                 <span class="ml-1 text-[var(--text-primary)] text-[24px] font-bold" aria-hidden="true">${tempUnitLabel()}</span>
                             </div>
                             <button aria-label="Increase milk target temperature" class="w-[69px] h-[69px] bg-[var(--button-grey)] rounded-[10px] flex items-center justify-center"
@@ -5192,6 +5157,11 @@ async function loadVisualizerSettings() {
         const formContainer = document.getElementById('visualizer-form-container');
         const enabledToggle = document.getElementById('visualizer-enabled');
 
+        // The awaits above can outlive the page: leaving the Visualizer sub-page
+        // re-renders the content area and drops the form, so by the time settings
+        // arrive these lookups return null. Nothing to populate — bail.
+        if (!usernameInput || !passwordInput || !autoUploadCheckbox || !minDurationInput) return;
+
         if (savedSettings && savedSettings.Username) {
             usernameInput.value = savedSettings.Username;
         } else {
@@ -7328,7 +7298,7 @@ export async function initializeSettings() {
         const input = document.getElementById('steamMilkStopInput');
         if (input) {
             let newValue = Math.round(parseFloat(input.value)) + change;
-            newValue = Math.max(tempInputValue(30), Math.min(tempInputValue(85), newValue));
+            newValue = Math.max(tempInputValue(30), Math.min(tempInputValue(80), newValue));
             input.value = newValue;
             input.dispatchEvent(new Event('change'));
         }

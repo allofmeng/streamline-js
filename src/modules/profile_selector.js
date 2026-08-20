@@ -1,4 +1,4 @@
-import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, getActiveProfileId, translateProfileTitle, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI } from './profileManager.js';
+import { init as initProfileManager, unhideProfile,availableProfiles, assignProfile, setActiveProfile, getActiveProfileId, translateProfileTitle, deleteOrHideProfile, loadAssignments, handleProfileUpload , verifyProfileChange, renameProfile, applyWorkflowToMainPageUI, withSavedBrewTemp } from './profileManager.js';
 import { openDB } from './idb.js';
 import { logger } from './logger.js';
 import { initResizablePanels, showToast, initFullscreenHandler, updateProfileName } from './ui.js';
@@ -409,6 +409,10 @@ async function handleConfirm() {
     const grindContext = savedGrind != null ? { grinderSetting: savedGrind } : { grinderSetting: null };
     const effectiveDose  = meta.targetDoseWeight  ?? (profile.dose_weight   || 18);
     const effectiveYield = meta.targetYield        ?? parseFloat(profile.target_weight);
+    // Same saved-override fold the favourite buttons do (profileManager
+    // applyProfileToMachine) -- this page is the other way into a profile
+    // switch, and without it a brew-temp edit is lost coming through here.
+    const profileToSend = withSavedBrewTemp(profile, meta);
 
     logger.info(`Confirming and sending profile: ${profile.title}`);
     // A rejected favourite assignment has already put its error toast on screen;
@@ -446,7 +450,7 @@ async function handleConfirm() {
         // This ensures that the target weight from the profile is applied to the workflow
         if (profile.target_weight) {
             const workflowUpdate = {
-                profile,
+                profile: profileToSend,
                 context: {
                     targetDoseWeight: effectiveDose,
                     targetYield: effectiveYield,
@@ -457,7 +461,7 @@ async function handleConfirm() {
             sentworkflow = await updateWorkflow(workflowUpdate);
         } else {
             const displayYield = isNaN(effectiveYield) ? 0 : effectiveYield;
-            sentworkflow = await updateWorkflow({ profile, context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext } });
+            sentworkflow = await updateWorkflow({ profile: profileToSend, context: { targetDoseWeight: effectiveDose, targetYield: displayYield, ...grindContext } });
         }
 
         const verified = sentworkflow.profile.title === profile.title;

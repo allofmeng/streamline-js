@@ -14,8 +14,9 @@ export const STEAM_FLOW_PRESETS_BY_MODEL = {
 
 // Main-page Milk-mode stop-target presets (°C) — the temperature counterpart
 // of the Time presets (15/30/45/60 s). Applied via the same stopAtTemperature
-// path as every other milk-stop write, so values must sit inside the 30–85 °C
-// clamp shared by the tile's +/- buttons and the settings page.
+// path as every other milk-stop write, so values must sit inside the 30–80 °C
+// clamp shared by the tile's +/- buttons and the settings page (80 = the
+// documented API ceiling, rest_v1.yml SteamSettings.stopAtTemperature).
 export const MILK_STOP_PRESETS = [55, 60, 65, 70];
 
 /** Baseline steam-flow preset group for a machine-model string. */
@@ -165,4 +166,60 @@ export function resolveSteamTileMode(currentMode, milkAvailable, milkStopArmed, 
     }
     if (currentMode === 'temperature') return fallbackMode === 'off' ? 'flow' : 'time';
     return currentMode;
+}
+
+// ── Steam push sync state ────────────────────────────────────────────────────
+// A steam write goes through Rea's workflow queue, which can wedge and 503 the
+// request 30s later (decaid#634). The tile has already painted the new number
+// by then, so without tracking this it silently displays a value the machine
+// never received. This fold owns "which field is unsynced, and how many retries
+// are left"; ui.js owns the timer and the red styling.
+
+/** Retries allowed after a failed steam push before the tile stops chasing it. */
+export const STEAM_SYNC_RETRY_LIMIT = 3;
+
+/** Clean (everything the user set is on the machine) sync state. */
+export const STEAM_SYNC_SYNCED = { field: null, retriesLeft: 0 };
+
+/**
+ * Which steam tile field a push belongs to. The tile renders duration AND the
+ * milk stop in the same element (steam-duration-value) and flow in the other,
+ * so the mark follows the tile mode, not the API call that failed.
+ * @param {'time'|'flow'|'temperature'} mode  current tile mode
+ * @returns {'duration'|'flow'}
+ */
+export function steamSyncField(mode) {
+    return mode === 'flow' ? 'flow' : 'duration';
+}
+
+/**
+ * Fold one push outcome into the tile's sync state.
+ *
+ * A 'push-ok' only clears a mark left by the SAME field: a successful flow
+ * write says nothing about a duration that never landed, and clearing on it
+ * would hide the stale number again. 'retry-ok' clears unconditionally because
+ * the retry reconciles every steam field at once (api.resyncSteamFromStore).
+ * @param {{field:string|null, retriesLeft:number}} prev
+ * @param {{type:'push-ok'|'push-failed'|'retry-ok'|'retry-failed', field?:string}} event
+ * @returns {{field:string|null, retriesLeft:number}}
+ */
+export function foldSteamSyncState(prev, event) {
+    const state = prev || STEAM_SYNC_SYNCED;
+    switch (event?.type) {
+        case 'push-failed':
+            return { field: event.field, retriesLeft: STEAM_SYNC_RETRY_LIMIT };
+        case 'push-ok':
+            return state.field === event.field ? { ...STEAM_SYNC_SYNCED } : state;
+        case 'retry-ok':
+            return { ...STEAM_SYNC_SYNCED };
+        case 'retry-failed':
+            return { field: state.field, retriesLeft: Math.max(0, state.retriesLeft - 1) };
+        default:
+            return state;
+    }
+}
+
+/** Whether a retry is still owed for the current sync state. */
+export function shouldRetrySteamSync(state) {
+    return !!state && state.field !== null && state.retriesLeft > 0;
 }

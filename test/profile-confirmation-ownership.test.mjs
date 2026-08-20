@@ -12,7 +12,7 @@ function loadHarness(dependencies) {
         const {
             availableProfiles, logger, alert, showToast, sessionStorage,
             assignProfile, getTranslation, updateWorkflow, setActiveProfile,
-            applyWorkflowToMainPageUI, loadPage
+            applyWorkflowToMainPageUI, loadPage, withSavedBrewTemp
         } = dependencies;
         let selectedProfileKey = null;
         const FAV_COUNT = 5;
@@ -43,6 +43,9 @@ test('profile confirmation pins its selection and rejects overlap', async () => 
         alert() { alertCount += 1; },
         showToast() {},
         sessionStorage: { getItem: () => null, removeItem() {} },
+        // Saved brew-temp folding has its own coverage in
+        // brew-temp-override.test.mjs; here it just has to be callable.
+        withSavedBrewTemp: (profile) => profile,
         assignProfile: async () => 'unchanged',
         getTranslation: value => value,
         updateWorkflow(workflow) {

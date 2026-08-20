@@ -4,7 +4,7 @@ import { updateProfileName, updateTemperatureDisplay, updateDrinkOut, updateDrin
 import { openContextMenu } from './context-menu.js';
 import { openDB, getSetting, setSetting } from './idb.js';
 import { loadPage } from './router.js'; // Singular and correctly formatted import
-import { getTranslation } from './i18n.js';
+import { getTranslation, fitTextToBox } from './i18n.js';
 
 /**
  * Rename a profile by ID
@@ -366,6 +366,16 @@ function mutateProfileMetadata(profileId, transform) {
     });
 }
 
+// Fold the user's saved brew temperature onto a COPY of a profile. The tile's
+// editor writes every step at once (ui.js updateTemperatureValue), so one saved
+// number restores the whole profile; a profile with no saved override, or with
+// no steps, comes back untouched. Never mutates the cached record.
+export function withSavedBrewTemp(profile, metadata) {
+    const temp = metadata?.brewTemperature;
+    if (!Number.isFinite(temp) || !Array.isArray(profile?.steps)) return profile;
+    return { ...profile, steps: profile.steps.map(step => ({ ...step, temperature: temp })) };
+}
+
 export async function saveContextToActiveProfile(fields) {
     if (!activeProfileId || !availableProfiles[activeProfileId]) return;
     const profileId = activeProfileId; // pin target across the async queue wait
@@ -391,7 +401,7 @@ export async function resetActiveProfileToDefaults() {
     // reset and an in-flight edit can't clobber each other. Strip is computed
     // against the freshest metadata (spread-merge can't delete, so rebuild).
     try {
-        await mutateProfileMetadata(profileId, ({ targetDoseWeight, targetYield, grinderSetting, ...rest }) => rest);
+        await mutateProfileMetadata(profileId, ({ targetDoseWeight, targetYield, grinderSetting, brewTemperature, ...rest }) => rest);
     } catch (error) {
         logger.error('Failed to clear profile overrides:', error);
         return false;
@@ -419,6 +429,7 @@ export async function resetActiveProfileToDefaults() {
     updateDoseInDisplay(defaultDose);
     updateDrinkOut(displayYield);
     updateDrinkRatio();
+    if (profile.steps?.length > 0) updateTemperatureDisplay(profile.steps[0].temperature);
     const grindEl = document.getElementById('grind-value');
     if (grindEl) grindEl.textContent = '0';
     logger.info(`Reset profile ${activeProfileId} to its default numbers.`);
@@ -465,6 +476,7 @@ export function updateButtonUI() {
                 translatedTitle = translatedTitle.split('/').pop().trim();
             }
             button.textContent = translatedTitle || 'Untitled';
+            fitTextToBox(button); // long names wrap past the fixed 98px box
             if (activeProfileId && profileKey === activeProfileId) {
                 button.classList.remove('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
                 button.classList.add('text-white', 'bg-[var(--mimoja-blue-v2)]');
@@ -475,6 +487,7 @@ export function updateButtonUI() {
         }
         else if (button) {
             button.textContent = '';
+            fitTextToBox(button); // clears any shrink left by a previous long name
             button.classList.remove('text-white', 'bg-[var(--mimoja-blue-v2)]');
             button.classList.add('text-[var(--mimoja-blue)]', 'text-[var(--profile-button-text-color)]', 'bg-[var(--profile-button-background-color)]');
         }
@@ -554,7 +567,11 @@ async function handleProfileClick(index) {
     // yield never reaches the machine's stop and the shot runs past it. Fold the
     // override into a *copy* of the profile (don't mutate the cached record) so the
     // sent target_weight matches the number the user set.
-    const profileToSend = displayYield > 0 ? { ...profile, target_weight: displayYield } : profile;
+    // Brew temp is a saved override like dose/yield/grind -- without this the
+    // cached record's baked-in temperature would silently undo the user's edit
+    // every time they switch away and back.
+    const profileToSend = withSavedBrewTemp(
+        displayYield > 0 ? { ...profile, target_weight: displayYield } : profile, meta);
     try {
         // Skip the sendProfile call since updateWorkflow can handle sending the profile
         logger.info(`Skipping sendProfile call, using updateWorkflow directly (callId: ${callId})`);
@@ -573,8 +590,8 @@ async function handleProfileClick(index) {
             logger.info(`Profile successfully set (callId: ${callId})`);
             const translatedTitle = translateProfileTitle(profile.title);
             updateProfileName(translatedTitle);
-            if (profile.steps && profile.steps.length > 0) {
-                updateTemperatureDisplay(profile.steps[0].temperature);
+            if (profileToSend.steps && profileToSend.steps.length > 0) {
+                updateTemperatureDisplay(profileToSend.steps[0].temperature);
             }
 
             if (savedGrind != null) {

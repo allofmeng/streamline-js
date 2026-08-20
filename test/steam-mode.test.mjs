@@ -12,6 +12,11 @@ import {
     milkTelemetryText,
     milkTelemetryValue,
     steamFlowHighlightIndex,
+    STEAM_SYNC_RETRY_LIMIT,
+    STEAM_SYNC_SYNCED,
+    steamSyncField,
+    foldSteamSyncState,
+    shouldRetrySteamSync,
 } from '../src/modules/steam-mode.js';
 
 // ── resolveSteamFlowPresetsForModel ─────────────────────────────────────────
@@ -299,4 +304,63 @@ test('boot semantics: model resolution + persisted tap index yield highlight sta
     // the VALUE, index-agnostically.
     const tappedFlow = presets[1];
     assert.equal(steamFlowHighlightIndex(presets, tappedFlow), 1);
+});
+
+// ── Steam push sync state ────────────────────────────────────────────────────
+
+test('foldSteamSyncState: a failed push marks the field and arms the retries', () => {
+    const s = foldSteamSyncState(STEAM_SYNC_SYNCED, { type: 'push-failed', field: 'duration' });
+    assert.equal(s.field, 'duration');
+    assert.equal(s.retriesLeft, STEAM_SYNC_RETRY_LIMIT);
+    assert.equal(shouldRetrySteamSync(s), true);
+});
+
+test('foldSteamSyncState: a successful push of the same field clears the mark', () => {
+    const failed = foldSteamSyncState(STEAM_SYNC_SYNCED, { type: 'push-failed', field: 'duration' });
+    const ok = foldSteamSyncState(failed, { type: 'push-ok', field: 'duration' });
+    assert.deepEqual(ok, STEAM_SYNC_SYNCED);
+    assert.equal(shouldRetrySteamSync(ok), false);
+});
+
+test('foldSteamSyncState: another field succeeding does NOT clear the mark', () => {
+    // A flow write landing says nothing about a duration that never did —
+    // clearing on it would put the stale number back to normal colour.
+    const failed = foldSteamSyncState(STEAM_SYNC_SYNCED, { type: 'push-failed', field: 'duration' });
+    const other = foldSteamSyncState(failed, { type: 'push-ok', field: 'flow' });
+    assert.equal(other.field, 'duration');
+    assert.equal(other.retriesLeft, STEAM_SYNC_RETRY_LIMIT);
+});
+
+test('foldSteamSyncState: retries count down and stop at the limit', () => {
+    let s = foldSteamSyncState(STEAM_SYNC_SYNCED, { type: 'push-failed', field: 'flow' });
+    for (let i = STEAM_SYNC_RETRY_LIMIT; i > 0; i--) {
+        assert.equal(shouldRetrySteamSync(s), true);
+        s = foldSteamSyncState(s, { type: 'retry-failed' });
+    }
+    assert.equal(s.field, 'flow');          // still visibly unsynced
+    assert.equal(s.retriesLeft, 0);
+    assert.equal(shouldRetrySteamSync(s), false); // but no longer chasing it
+    // Never goes negative on a stray extra event.
+    assert.equal(foldSteamSyncState(s, { type: 'retry-failed' }).retriesLeft, 0);
+});
+
+test('foldSteamSyncState: a successful retry clears whichever field was marked', () => {
+    // resyncSteamFromStore reconciles every steam field at once, so its success
+    // is unconditional — unlike push-ok.
+    const failed = foldSteamSyncState(STEAM_SYNC_SYNCED, { type: 'push-failed', field: 'flow' });
+    assert.deepEqual(foldSteamSyncState(failed, { type: 'retry-ok' }), STEAM_SYNC_SYNCED);
+});
+
+test('foldSteamSyncState: unknown/absent events leave the state untouched', () => {
+    const failed = foldSteamSyncState(STEAM_SYNC_SYNCED, { type: 'push-failed', field: 'duration' });
+    assert.equal(foldSteamSyncState(failed, undefined), failed);
+    assert.equal(foldSteamSyncState(failed, { type: 'nonsense' }), failed);
+    assert.deepEqual(foldSteamSyncState(null, { type: 'retry-failed' }), STEAM_SYNC_SYNCED);
+});
+
+test('steamSyncField: milk stop marks the duration element it shares', () => {
+    // The tile renders duration AND milk stop in #steam-duration-value.
+    assert.equal(steamSyncField('time'), 'duration');
+    assert.equal(steamSyncField('temperature'), 'duration');
+    assert.equal(steamSyncField('flow'), 'flow');
 });

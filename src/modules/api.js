@@ -531,6 +531,13 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
             const data = JSON.parse(event.data);
             lastDeviceData = data;
             const err = data.connectionStatus?.error;
+            deviceDataListeners.forEach((fn) => {
+                try { fn(data); } catch (e) { logger.error('Device data listener failed:', e); }
+            });
+            // Errors dispatch AFTER the data listeners, not before: a subscriber
+            // that judges an error against live device state (app.js's
+            // machineLink) has to see THIS frame's device list, or it would rule
+            // on the previous one and suppress a genuine drop.
             if (err && err.timestamp !== deviceLastErrorTimestamp) {
                 deviceLastErrorTimestamp = err.timestamp;
                 logger.warn('Device connection error:', err);
@@ -538,9 +545,6 @@ export function connectDeviceWebSocket(onData, onReconnect, onDisconnect, onErro
                     try { fn(err); } catch (e) { logger.error('Device error listener failed:', e); }
                 });
             }
-            deviceDataListeners.forEach((fn) => {
-                try { fn(data); } catch (e) { logger.error('Device data listener failed:', e); }
-            });
             logger.debug('Device data:', data);
         } catch (error) {
             logger.error('Error parsing Device WebSocket message:', error);
@@ -1180,6 +1184,7 @@ async function sendShotSettings() {
 // see resyncIfDrifted.
 export const STEAM_DURATION_LAST_VALUE_KEY = 'last-steam-duration';
 export const STEAM_FLOW_LAST_VALUE_KEY = 'last-steam-flow';
+export const MILK_STOP_LAST_VALUE_KEY = 'last-milk-stop';
 export const FLUSH_DURATION_LAST_VALUE_KEY = 'last-flush-duration';
 export const HOT_WATER_VOLUME_LAST_VALUE_KEY = 'last-hot-water-volume';
 export const HOT_WATER_TEMP_LAST_VALUE_KEY = 'last-hot-water-temp';
@@ -1210,17 +1215,23 @@ export async function persistSharedValue(key, value) {
     }
 }
 
-// Boot-time resync for a main-page control. A plain GET tells us what Rea's
-// workflow record says, not whether the DE1 itself is still holding that
-// value (BLE reconnect / Rea restart can leave it stale). Re-pushing on
-// every boot unconditionally works but is wasteful and, if `fetchedValue`
-// were ever the stale one, would clobber a legitimate reading. Comparing
-// against the KV store's record of what the user last set avoids both: push
-// only when they actually disagree. The KV store (not per-device IndexedDB)
-// is the source of truth here so a phone and a tablet agree on the target;
+// Resync for a main-page control: make Rea's workflow record agree with what
+// the user last set.
+//
+// NOT about repairing the DE1 -- decaid re-applies the whole workflow (steam,
+// hot water, rinse) to the machine on every connect, so a BLE reconnect does
+// not leave the device holding stale targets (de1_controller.defaults.dart,
+// _setDe1DefaultsFor). What DOES drift is the workflow record itself: a value
+// set from another device, a push that never landed (PUT /workflow can 503,
+// see setTargetSteamDuration), or a workflow replaced wholesale. The KV store
+// is the record of intent that survives all three.
+//
+// Re-pushing unconditionally every boot would work but is wasteful and, if the
+// remembered value were the stale one, would clobber a legitimate reading --
+// so push only on actual disagreement. The KV store (not per-device IndexedDB)
+// is the source of truth so a phone and a tablet agree on the target;
 // IndexedDB is only consulted if the store can't be reached.
 export async function resyncIfDrifted(key, fetchedValue, pushFn) {
-    if (fetchedValue == null) return;
     let remembered = null;
     try {
         remembered = await getValueFromStore(SETTINGS_NAMESPACE, key);
@@ -1234,9 +1245,15 @@ export async function resyncIfDrifted(key, fetchedValue, pushFn) {
             return;
         }
     }
-    if (remembered != null && remembered !== fetchedValue) {
-        await pushFn(remembered);
-    }
+    // No record of the user ever setting this -> whatever the machine holds
+    // stands. Otherwise the remembered value wins, INCLUDING when the workflow
+    // has no value at all (fetchedValue null/undefined): a missing field is not
+    // a reason to drop what the user asked for, it is the strongest reason to
+    // push it. Milk stop keeps its own extra guard -- see
+    // resyncMilkStopIfDrifted, where 0 is a real choice rather than an absence.
+    if (remembered == null) return;
+    if (remembered === fetchedValue) return;
+    await pushFn(remembered);
 }
 
 export async function setTargetHotWaterVolume(volume) {
@@ -1269,28 +1286,58 @@ export async function setTargetSteamTemp(temp) {
     });
 }
 
+// KV first, machine second -- deliberately the reverse order of the hot-water
+// setters above. PUT /workflow can sit in Rea's request queue for 30s and come
+// back 503 (decaid#634), and persisting only on success leaves the store
+// holding the OLD value: the boot resync would then push that stale value back
+// over what the user asked for, and the tile's number would be the only trace
+// of their intent left anywhere. Writing it first makes the store the record of
+// intent, which is what resyncSteamFromStore replays when a push doesn't land.
 export async function setTargetSteamDuration(duration) {
     const value = parseFloat(duration);
-    const result = await updateWorkflow({ steamSettings: { duration: value } });
-    persistSharedValue(STEAM_DURATION_LAST_VALUE_KEY, value);
-    return result;
+    await persistSharedValue(STEAM_DURATION_LAST_VALUE_KEY, value);
+    return updateWorkflow({ steamSettings: { duration: value } });
 }
 
 export async function setTargetSteamFlow(flow) {
     const value = parseFloat(flow);
-    const result = await updateWorkflow({ steamSettings: { flow: value } });
-    persistSharedValue(STEAM_FLOW_LAST_VALUE_KEY, value);
-    return result;
+    await persistSharedValue(STEAM_FLOW_LAST_VALUE_KEY, value);
+    return updateWorkflow({ steamSettings: { flow: value } });
+}
+
+// Re-push the remembered steam values wherever Rea's workflow record disagrees
+// with them -- the same drift check loadInitialData runs at boot, hoisted into
+// a function so a failed push can retry it without waiting for a page reload.
+export async function resyncSteamFromStore() {
+    const steam = (await getWorkflow())?.steamSettings;
+    if (!steam) return;
+    await resyncIfDrifted(STEAM_DURATION_LAST_VALUE_KEY, steam.duration, setTargetSteamDuration);
+    await resyncIfDrifted(STEAM_FLOW_LAST_VALUE_KEY, steam.flow, setTargetSteamFlow);
+    await resyncMilkStopIfDrifted(steam.stopAtTemperature);
+}
+
+// Milk-stop drift check. Guarded on an armed stop: with the stop off the
+// workflow reads 0 and the remembered target would "drift" from it on every
+// boot, re-arming a stop the user switched off.
+export async function resyncMilkStopIfDrifted(stopAtTemperature) {
+    if (!(stopAtTemperature > 0)) return;
+    await resyncIfDrifted(MILK_STOP_LAST_VALUE_KEY, stopAtTemperature, setStopAtTemperature);
 }
 
 // Milk-probe auto-stop target °C (0 = off). Bengle: the steam auto-stops when
 // the milk reaches this temperature.
 export async function setStopAtTemperature(celsius) {
-    return updateWorkflow({
-        steamSettings: {
-            stopAtTemperature: parseFloat(celsius)
-        }
-    });
+    // Clamp at the choke point, not just in the UI: a value stored before the
+    // ceiling moved (the tile used to allow 85) would otherwise be replayed
+    // straight back out by the boot resync. rest_v1.yml documents range 0..80.
+    const value = Math.min(80, Math.max(0, parseFloat(celsius) || 0));
+    // Only an ARMED target is worth remembering. A 0 write means the stop was
+    // turned off -- by the user's toggle or by a probe that vanished -- and
+    // persisting it would erase the temperature they tuned; the armed/off
+    // state itself is skin-local (streamline.steamStopMode), not a KV value.
+    // KV first, machine second, for the same reason as setTargetSteamDuration.
+    if (value > 0) await persistSharedValue(MILK_STOP_LAST_VALUE_KEY, value);
+    return updateWorkflow({ steamSettings: { stopAtTemperature: value } });
 }
 
 export async function getReaSettings() {
