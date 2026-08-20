@@ -171,6 +171,18 @@ const EXIT_UNIT_MAP = { pressure: 'bar', flow: 'mL/s' };
 const EXIT_STEP_MAP = { pressure: 0.1, flow: 0.1 };
 const EXIT_MAX_MAP  = { pressure: 12,  flow: 8 };
 
+// A step with no `exit` has no exit condition, so it reads as 'off'. Both tabs
+// go through this so they agree: the grid used to default a missing exit to
+// { pressure, over, 0 } and render "Pressure is over 0.0 bar", announcing an
+// exit the step does not have and the save path would not write.
+function readExitDef(step) {
+    const e = step.exit;
+    if (!e || (e.type !== 'pressure' && e.type !== 'flow')) {
+        return { type: 'off', condition: 'over', value: 0 };
+    }
+    return { type: e.type, condition: e.condition || 'over', value: e.value ?? 0 };
+}
+
 // Single source of truth for every numeric field's bounds. The grid and text
 // tabs each used to carry their own copy, and they had drifted: weight/volume
 // clamped at 1000 in the grid but 500 in the text tab, pressure at 12 vs 16.
@@ -481,13 +493,19 @@ function createGridStepper({ value, lim, numpad, revealOnTap = false, startRevea
     display.style.minWidth = '140px';
 
     function restyle() {
-        // offWhenZero fields (the limiter) read as an outline pill at 0 — white
-        // on --secondary-button-bg was 1.75:1 in the light theme.
+        // offWhenZero fields (the limiter, the three Max limits) read as an
+        // outline pill at 0 — white on --secondary-button-bg was 1.75:1 in the
+        // light theme. Off is greyed, not just unfilled: --secondary-button-outline
+        // is the blue the live Flow/Quickly toggles wear, so a 0 g pill used to
+        // look exactly as enabled as they are.
         const on = !offWhenZero || current > 0;
-        const textCls = on ? 'text-white' : 'text-[var(--text-primary)]';
+        const textCls = on ? 'text-white' : 'text-[var(--low-contrast-white)]';
         const bg = on ? 'bg-[var(--button-primary-bg)]' : '';
         display.className = `${bg} rounded-[8px] px-[10px] py-[4px] text-[24px] font-semibold cursor-pointer select-none text-center ${textCls}`;
-        display.style.border = on ? '1px solid transparent' : '1px solid var(--secondary-button-outline)';
+        display.style.border = on ? '1px solid transparent' : '1px solid var(--border-color)';
+        // The ± dim with their pill, so a revealed-but-off field still reads off.
+        minusBtn.style.opacity = on ? '' : '0.45';
+        plusBtn.style.opacity  = on ? '' : '0.45';
     }
 
     function render() {
@@ -854,10 +872,10 @@ function renderStepCards() {
         {
             const exitCell = mkCell(R.EXIT, col, 'flex flex-col justify-center items-center px-[16px] py-[4px] gap-[8px] border-r border-b border-[var(--border-color)]');
 
-            const exitDef = step.exit || { type: 'pressure', condition: 'over', value: 0 };
-            let exitType  = exitDef.type || 'pressure';
-            let exitCond  = exitDef.condition || 'over';
-            const exitValue = exitDef.value ?? 0;
+            const exitDef = readExitDef(step);
+            let exitType  = exitDef.type;
+            let exitCond  = exitDef.condition;
+            const exitValue = exitDef.value;
 
             const TOGGLE_CLASS = 'border border-[var(--secondary-button-outline)] text-[var(--text-primary)] rounded-[8px] px-[8px] py-[2px] text-[24px] font-semibold cursor-pointer select-none';
 
@@ -1424,8 +1442,32 @@ function describeStep(step, index) {
         lines.push(makeLine([sensorToggle, getTranslation('to'), tempSpinner]));
     }
 
-    // Line 2 — Pump target
+    // Line 2 — Pump mode + ramp + target
     {
+        // Mode leads the line for the same reason it has a button in the grid:
+        // it decides the unit, the target's bounds, and which axis the limiter
+        // constrains. The summary used to show a step's most consequential
+        // property as nothing but the unit on its value, with no way to change
+        // it — the one control on the step page with no counterpart here.
+        const modeToggle = makeToggle(
+            isFlow ? getTranslation('Flow') : getTranslation('Pressure'),
+            () => {
+                const s = editorState.profile.steps[index];
+                if (isFlow) {
+                    s.pump = 'pressure';
+                    if (!s.pressure) s.pressure = PUMP_SEED_PRESSURE;
+                    delete s.flow;
+                } else {
+                    s.pump = 'flow';
+                    if (!s.flow) s.flow = PUMP_SEED_FLOW;
+                    delete s.pressure;
+                }
+                // Full tab rebuild, not just the chart: the target pill and the
+                // limiter pill both closed over the old mode's unit and bounds.
+                renderReviewTab();
+            }
+        );
+
         let transValue = step.transition || 'fast';
         const transToggle = makeToggle(
             transValue === 'fast' ? getTranslation('Quickly') : getTranslation('Slowly'),
@@ -1437,42 +1479,45 @@ function describeStep(step, index) {
             }
         );
 
-        if (isFlow) {
-            const fl = FIELD_LIMITS.flow;
-            const flowSpinner = makeValuePill(
-                step.flow ?? 0, fl, 'mL/s',
-                (val) => { editorState.profile.steps[index].flow = val; renderReviewGraph(); },
-                { fieldType: 'pe-review-flow', title: 'FLOW' }
-            );
-            lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), flowSpinner]));
-        } else {
-            const pr = FIELD_LIMITS.pressure;
-            const pressureSpinner = makeValuePill(
-                step.pressure ?? 0, pr, 'bar',
-                (val) => { editorState.profile.steps[index].pressure = val; renderReviewGraph(); },
-                { fieldType: 'pe-review-pressure', title: 'PRESSURE' }
-            );
-            lines.push(makeLine([getTranslation('Ramp'), transToggle, getTranslation('to'), pressureSpinner]));
-        }
+        const pumpLim  = isFlow ? FIELD_LIMITS.flow : FIELD_LIMITS.pressure;
+        const pumpUnit = isFlow ? 'mL/s' : 'bar';
+        const pumpSpinner = makeValuePill(
+            (isFlow ? step.flow : step.pressure) ?? 0, pumpLim, pumpUnit,
+            (val) => {
+                if (isFlow) editorState.profile.steps[index].flow = val;
+                else editorState.profile.steps[index].pressure = val;
+                renderReviewGraph();
+            },
+            isFlow
+                ? { fieldType: 'pe-review-flow', title: 'FLOW' }
+                : { fieldType: 'pe-review-pressure', title: 'PRESSURE' }
+        );
+
+        // 'Ramp' is dropped, as it was from the grid: its German (translation
+        // CSV row 1721, 'Sanfter Übergang') means *smooth transition*, so next
+        // to the transition toggle it read 'smooth transition quickly'.
+        lines.push(makeLine([modeToggle, transToggle, getTranslation('to'), pumpSpinner]));
     }
 
-    // Line 3 — Limiter (only if non-zero)
+    // Line 3 — Limiter. Always present, muted at 0, exactly like the Max line
+    // below treats its unset limits. Rendering it only when it was already
+    // non-zero meant a limiter could be edited from the summary but never
+    // added — the grid at least falls back to a '+ Limit' chip.
     {
         const limValue = step.limiter?.value ?? 0;
         const limUnit  = isFlow ? 'bar' : 'mL/s';
         const limLim   = isFlow ? FIELD_LIMITS.pressureLimit : FIELD_LIMITS.flowLimit;
-        if (limValue > 0) {
-            const limSpinner = makeValuePill(
-                limValue, limLim, limUnit,
-                (val) => {
-                    if (!editorState.profile.steps[index].limiter) editorState.profile.steps[index].limiter = { value: val, range: 0.6 };
-                    else editorState.profile.steps[index].limiter.value = val;
-                    renderReviewGraph();
-                },
-                { fieldType: 'pe-review-limit', title: 'LIMIT' }
-            );
-            lines.push(makeLine([getTranslation('Limit to'), limSpinner]));
-        }
+        const limSpinner = makeValuePill(
+            limValue, limLim, limUnit,
+            (val) => {
+                const s = editorState.profile.steps[index];
+                if (!s.limiter) s.limiter = { value: val, range: 0.6 };
+                else s.limiter.value = val;
+                renderReviewGraph();
+            },
+            { mutedWhenZero: true, fieldType: 'pe-review-limit', title: 'LIMIT' }
+        );
+        lines.push(makeLine([getTranslation('Limit to'), limSpinner]));
     }
 
     // Line 4 — Max (weight / seconds / volume)
@@ -1500,62 +1545,83 @@ function describeStep(step, index) {
         lines.push(makeLine(parts));
     }
 
-    // Line 4 — Exit condition
+    // Line 4 — Exit condition. Always present, 'off' included, so an exit can
+    // be added and cleared from here. It used to render only for a step that
+    // already had one, and its type toggle filtered 'off' out of the cycle —
+    // between them, the summary could reach an exit but never leave one.
     {
-        const exitDef = step.exit || { type: 'pressure', condition: 'over', value: 0 };
-        let exitType = exitDef.type || 'pressure';
-        let exitCond = exitDef.condition || 'over';
-        let exitValue = exitDef.value ?? 0;
+        const exitDef = readExitDef(step);
+        let exitType = exitDef.type;
+        let exitCond = exitDef.condition;
+        let exitValue = exitDef.value;
 
-        if (exitType !== 'off' && exitValue !== 0) {
-            const exitTypeToggle = makeToggle(
-                getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1)),
-                () => {
-                    const nonOff = EXIT_TYPES.filter(t => t !== 'off');
-                    const idx = nonOff.indexOf(exitType);
-                    exitType = nonOff[(idx + 1) % nonOff.length];
-                    // Carry the value into the new type's range: pressure allows
-                    // 12 bar, flow only 8 mL/s.
-                    exitValue = clamp(exitValue, 0, EXIT_MAX_MAP[exitType]);
-                    const s = editorState.profile.steps[index];
-                    if (!s.exit) s.exit = { type: exitType, condition: exitCond, value: exitValue };
-                    else { s.exit.type = exitType; s.exit.value = exitValue; }
-                    // Full tab rebuild, not just the chart. The value pill closed
-                    // over the old type's unit and bounds when it was built, so
-                    // renderReviewGraph() alone left it reading "2.0 bar" on a
-                    // flow exit — and still enforcing pressure's ceiling of 12.
-                    renderReviewTab();
-                }
-            );
+        const exitTypeToggle = makeToggle(
+            getTranslation(exitType.charAt(0).toUpperCase() + exitType.slice(1)),
+            () => {
+                exitType = EXIT_TYPES[(EXIT_TYPES.indexOf(exitType) + 1) % EXIT_TYPES.length];
+                // Carry the value into the new type's range: pressure allows
+                // 12 bar, flow only 8 mL/s. 'off' has no ceiling to clamp to.
+                exitValue = clamp(exitValue, 0, EXIT_MAX_MAP[exitType] ?? exitValue);
+                const s = editorState.profile.steps[index];
+                if (!s.exit) s.exit = { type: exitType, condition: exitCond, value: exitValue };
+                else { s.exit.type = exitType; s.exit.value = exitValue; }
+                // Full tab rebuild, not just the chart. The value pill closed
+                // over the old type's unit and bounds when it was built, so
+                // renderReviewGraph() alone left it reading "2.0 bar" on a
+                // flow exit — and still enforcing pressure's ceiling of 12.
+                renderReviewTab();
+            }
+        );
 
-            const exitCondToggle = makeToggle(
-                getTranslation(exitCond === 'over' ? 'is over' : 'is under'),
-                (span) => {
-                    exitCond = exitCond === 'over' ? 'under' : 'over';
-                    span.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
-                    if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
-                    else editorState.profile.steps[index].exit.condition = exitCond;
-                    renderReviewGraph();
-                }
-            );
-
-            const exitSpinner = makeValuePill(
-                exitValue,
-                { min: 0, max: EXIT_MAX_MAP[exitType], step: EXIT_STEP_MAP[exitType] },
-                EXIT_UNIT_MAP[exitType],
-                (val) => {
-                    exitValue = val;
-                    if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: val };
-                    else editorState.profile.steps[index].exit.value = val;
-                    renderReviewGraph();
-                }
-                ,{ fieldType: 'pe-review-exit', title: 'EXIT' }            );
-
-            lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle, exitCondToggle, exitSpinner]));
+        // 'off' has no condition and no value, so neither control is built —
+        // the same way the grid's Exit cell drops both rather than disabling
+        // them. EXIT_MAX_MAP/EXIT_UNIT_MAP have no 'off' entry to read either.
+        if (exitType === 'off') {
+            lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle]));
+            return lines;
         }
+
+        const exitCondToggle = makeToggle(
+            getTranslation(exitCond === 'over' ? 'is over' : 'is under'),
+            (span) => {
+                exitCond = exitCond === 'over' ? 'under' : 'over';
+                span.textContent = getTranslation(exitCond === 'over' ? 'is over' : 'is under');
+                if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: exitValue };
+                else editorState.profile.steps[index].exit.condition = exitCond;
+                renderReviewGraph();
+            }
+        );
+
+        const exitSpinner = makeValuePill(
+            exitValue,
+            { min: 0, max: EXIT_MAX_MAP[exitType], step: EXIT_STEP_MAP[exitType] },
+            EXIT_UNIT_MAP[exitType],
+            (val) => {
+                exitValue = val;
+                if (!editorState.profile.steps[index].exit) editorState.profile.steps[index].exit = { type: exitType, condition: exitCond, value: val };
+                else editorState.profile.steps[index].exit.value = val;
+                renderReviewGraph();
+            },
+            { fieldType: 'pe-review-exit', title: 'EXIT' }
+        );
+
+        lines.push(makeLine([getTranslation('Move on if'), exitTypeToggle, exitCondToggle, exitSpinner]));
     }
 
     return lines;
+}
+
+// 'smooth' is the firmware's Interpolate frame flag (de1app binary.tcl:929):
+// the setpoint ramps linearly from the previous frame's value to this frame's
+// target across the *whole* frame. 'fast' jumps to the target at the frame
+// boundary and holds. The old version invented a ramp of 30% of the step capped
+// at 3s, and drew it by omitting the frame's opening point — which relied on the
+// previous trace point to slope up from. Step 1 has no previous point, so on the
+// opening step — where the ramp changes the extraction most — smooth and fast
+// plotted identically.
+export function pushChannel(xArr, yArr, startT, endT, prevVal, target, transition) {
+    xArr.push(startT, endT);
+    yArr.push(transition === 'smooth' ? prevVal : target, target);
 }
 
 function renderReviewGraph() {
@@ -1578,23 +1644,6 @@ function renderReviewGraph() {
     let prevPressure = 0;
     let prevFlow = 0;
 
-    // 'smooth' ramps from the channel's last value into the new target over
-    // part of the step instead of jumping there instantly like 'fast' does.
-    function rampDuration(dur) {
-        return Math.min(dur, Math.min(3, Math.max(0.5, dur * 0.3)));
-    }
-    function pushChannel(xArr, yArr, startT, endT, prevVal, target, transition) {
-        if (transition === 'smooth' && prevVal !== target) {
-            const rampEnd = startT + rampDuration(endT - startT);
-            if (rampEnd < endT) {
-                xArr.push(rampEnd, endT);
-                yArr.push(target, target);
-                return;
-            }
-        }
-        xArr.push(startT, endT);
-        yArr.push(target, target);
-    }
 
     for (const step of (profile.steps || [])) {
         const dur = (step.seconds && step.seconds > 0) ? step.seconds : 10;
