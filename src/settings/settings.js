@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight, persistSharedValue, MILK_STOP_LAST_VALUE_KEY, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight, persistSharedValue, MILK_STOP_LAST_VALUE_KEY, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY, approvePluginUpdate } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -16,7 +16,7 @@ import { APP_VERSION, SKIN_ID } from '../version.js';
 import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
-import { ensureDye2PluginReady, getDye2VersionInfo, PLUGIN_RELEASES_PAGE } from '../modules/dyeStrip.js';
+import { ensureDye2PluginReady, getDye2VersionInfo, installDye2Plugin, offerDye2Update, checkDye2UpdatesIfDue } from '../modules/dyeStrip.js';
 import { haYamlBlocks } from '../modules/home-assistant.js';
 
 // Config for each numeric input that should get two-click numpad support
@@ -4902,7 +4902,7 @@ export function renderDye2Settings() {
                         </label>
                     </div>
 
-                    <!-- Installed plugin version vs latest GitHub release tag. -->
+                    <!-- Installed version, where Decaid tracks it from, and any update held back for asking new permissions. -->
                     <div class="content-stretch flex flex-col gap-[10px] items-start relative w-full">
                         <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
                             <p class="leading-[1.2]" data-i18n-key="Plugin Version">Plugin Version</p>
@@ -4917,23 +4917,29 @@ export function renderDye2Settings() {
     `;
 }
 
-// Paint the installed / latest version rows. Every unknown stays "—" rather than
-// being guessed: no plugin, no network, and a GitHub rate limit are all normal.
+// Paint the DYE2 plugin card. Everything shown comes from the bridge (GET
+// /plugins): Decaid tracks where the plugin came from and installs new releases
+// itself, so there is no "latest version" to fetch and nothing to compare. The
+// only state that needs a human is a pendingUpdate — an update Decaid downloaded
+// and refused to install because it asks for permissions the installed version
+// does not hold. Unknowns stay "—" rather than being guessed at.
 function renderDye2VersionInfo(info) {
     const el = document.getElementById('dye2-version-info');
     if (!el) return;
     const pill = (text, cls) =>
         `<span class="text-[20px] font-bold px-[16px] py-[6px] rounded-full ${cls}">${text}</span>`;
+    const button = (id, label) =>
+        `<button id="${id}" class="bg-[#385a92] h-[56px] px-[28px] rounded-[64px] text-white text-[22px] font-bold">${label}</button>`;
 
     let status;
-    if (!info.installed) {
+    if (!info.reachable) {
+        status = pill(getTranslation('Could not check'), 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-70');
+    } else if (!info.installed) {
         status = pill(getTranslation('Not installed'), 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-70');
     } else if (!info.loaded) {
         status = pill(getTranslation('Not loaded'), 'bg-amber-500/15 text-amber-600');
-    } else if (!info.latest) {
-        status = pill(getTranslation('Could not check'), 'bg-[var(--profile-button-outline-color)]/30 text-[var(--text-primary)] opacity-70');
-    } else if (info.outdated) {
-        status = pill(getTranslation('Update available'), 'bg-green-500/15 text-green-600');
+    } else if (info.pending) {
+        status = pill(getTranslation('Update needs approval'), 'bg-amber-500/15 text-amber-600');
     } else {
         status = pill(getTranslation('Up to date'), 'bg-[#385a92]/15 text-[#385a92]');
     }
@@ -4944,20 +4950,72 @@ function renderDye2VersionInfo(info) {
             <span class="font-bold text-[var(--text-primary)]">${value}</span>
         </div>`;
 
+    // A tracked source is a repo plus the exact release tag or commit installed;
+    // a ZIP or folder install is a snapshot Decaid cannot update.
+    const src = info.source;
+    let sourceText = '—';
+    if (src?.kind === 'github_release') sourceText = `${escapeHtml(src.repo || '')} ${escapeHtml(src.releaseTag || '')}`.trim();
+    else if (src?.kind === 'github_branch') sourceText = `${escapeHtml(src.repo || '')} ${escapeHtml(src.branch || '')}@${escapeHtml((src.commit || '').slice(0, 7))}`;
+    else if (src?.kind === 'local_zip') sourceText = getTranslation('Local ZIP');
+    else if (src?.kind === 'local_folder') sourceText = getTranslation('Local folder');
+
+    // The added permissions are the whole point of the prompt, so list them
+    // verbatim — approving is consent to those, not to "an update".
+    const pendingBlock = info.pending ? `
+        <div class="flex flex-col gap-[10px] w-full pt-[4px]">
+            <span class="text-[20px] text-[var(--text-primary)]">
+                v${escapeHtml(info.pending.version || '?')} ${getTranslation('is available but asks for new permissions')}:
+            </span>
+            <span class="text-[20px] font-bold text-[var(--text-primary)] break-words">
+                ${(info.pending.addedPermissions || []).map(escapeHtml).join(', ') || '—'}
+            </span>
+        </div>` : '';
+
     el.innerHTML = `
         <div class="flex flex-col gap-[10px] w-full">
             ${row('Installed version', info.installed ? `v${escapeHtml(info.installed)}` : '—')}
-            ${row('Latest release', info.latest ? `v${escapeHtml(info.latest)}` : '—')}
+            ${row('Source', sourceText)}
+            ${src?.lastError ? row('Last error', `<span class="text-amber-600">${escapeHtml(src.lastError)}</span>`) : ''}
+            ${pendingBlock}
             <div class="flex items-center gap-[14px] flex-wrap pt-[4px]">
                 ${status}
-                ${info.outdated ? `<button id="dye2-download-update" class="bg-[#385a92] h-[56px] px-[28px] rounded-[64px] text-white text-[22px] font-bold">${getTranslation('Download')}</button>` : ''}
+                ${info.reachable && !info.installed ? button('dye2-install-plugin', getTranslation('Install')) : ''}
+                ${info.pending ? button('dye2-approve-update', getTranslation('Approve update')) : ''}
             </div>
         </div>`;
 
-    // Same-frame nav, no _blank/window.open: the tablet webview hands the
-    // external URL to the OS browser.
-    document.getElementById('dye2-download-update')?.addEventListener('click', () => {
-        window.location.href = PLUGIN_RELEASES_PAGE;
+    const refresh = () => getDye2VersionInfo().then(renderDye2VersionInfo).catch(() => {});
+    const busy = (btn, label) => { btn.disabled = true; btn.textContent = label; };
+
+    document.getElementById('dye2-install-plugin')?.addEventListener('click', async function () {
+        busy(this, `${getTranslation('Installing')}…`);
+        try {
+            await installDye2Plugin();
+            ui.showToast(getTranslation('DYE2 plugin installed'), 2000, 'success');
+        } catch (e) {
+            logger.error('DYE2 install failed', e);
+            ui.showToast(`${getTranslation('Install failed')}: ${e.message || e}`, 4000, 'error');
+        }
+        refresh();
+    });
+
+    document.getElementById('dye2-approve-update')?.addEventListener('click', async function () {
+        busy(this, `${getTranslation('Updating')}…`);
+        try {
+            const result = await approvePluginUpdate('dye2.reaplugin');
+            ui.showToast(`${getTranslation('DYE2 updated to')} v${result?.version || '?'}`, 2500, 'success');
+        } catch (e) {
+            // 409: the release or branch moved after this permission delta was shown.
+            // Decaid has already recorded the new candidate, so re-reading shows the
+            // fresh delta to approve — retrying this call would only 409 again.
+            if (e.status === 409) {
+                ui.showToast(getTranslation('The update changed since it was shown — review it again'), 5000, 'error');
+            } else {
+                logger.error('DYE2 update approval failed', e);
+                ui.showToast(`${getTranslation('Update failed')}: ${e.message || e}`, 4000, 'error');
+            }
+        }
+        refresh();
     });
 }
 
@@ -4966,9 +5024,17 @@ function renderDye2VersionInfo(info) {
 // dyeStrip.js installs on the main page; if the header isn't mounted (e.g. deep in
 // settings on some flows) the flag still takes effect on the next dashboard load.
 function setupDye2SettingsListeners() {
+    // Opening this page is the update check — no button for it. Paint what the
+    // bridge already knows first so the card is never blank, then let the check
+    // (rate-limit aware, see checkDye2UpdatesIfDue) repaint it with the outcome.
+    // Decaid installs anything that needs no new permission on its own; what
+    // survives is a pendingUpdate, which the card renders with its Approve button.
     getDye2VersionInfo()
         .then(renderDye2VersionInfo)
-        .catch(() => renderDye2VersionInfo({ installed: null, latest: null, loaded: false, outdated: false }));
+        .catch(() => renderDye2VersionInfo({ reachable: false, installed: null, loaded: false, source: null, pending: null }));
+    checkDye2UpdatesIfDue()
+        .then(renderDye2VersionInfo)
+        .catch((e) => logger.error('DYE2 update check failed', e));
 
     const toggle = document.getElementById('dye2-enabled');
     if (!toggle) return;
@@ -4988,6 +5054,17 @@ function setupDye2SettingsListeners() {
         try { localStorage.setItem(KEY, on ? 'true' : 'false'); } catch (e) { /* private mode */ }
         if (typeof window.applyDye2Enabled === 'function') window.applyDye2Enabled(on);
         try { ui.showToast(`DYE2 ${on ? 'enabled' : 'disabled'}`, 1500, 'success'); } catch (e) { /* ui not ready */ }
+        // Switching on is the moment the user cares whether the plugin is current.
+        // Deliberately not awaited before the toggle is saved: an update check is a
+        // network round-trip and DYE2 is already usable without it.
+        if (on) {
+            offerDye2Update()
+                .then((changed) => {
+                    if (changed) ui.showToast(getTranslation('DYE2 plugin updated'), 2500, 'success');
+                    return getDye2VersionInfo().then(renderDye2VersionInfo);
+                })
+                .catch((e) => logger.error('DYE2 update offer failed', e));
+        }
     });
 }
 

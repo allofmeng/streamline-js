@@ -2508,6 +2508,46 @@ export async function disablePlugin(pluginId) {
     return response.json();
 }
 
+// Plugin distribution is Decaid's job: it records where each plugin came from
+// (.rea_source.json) and installs updates itself on its normal update cadence.
+// These three cover everything Streamline needs — no direct GitHub calls, so no
+// rate limits, and no second opinion about what "latest" means.
+export async function installPluginFromRelease(repo, { assetName, includePrerelease } = {}) {
+    const response = await fetch(`${API_BASE_URL}/plugins/install/github-release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, ...(assetName ? { assetName } : {}), ...(includePrerelease ? { includePrerelease } : {}) })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Failed to install ${repo}: ${response.status} ${response.statusText}`);
+    return body;
+}
+
+// Checks every GitHub-backed plugin. Updates that need no new permission are
+// installed by Decaid during this call; ones that do land as pendingUpdate on
+// GET /plugins, so re-read the list afterwards to see what happened.
+export async function checkPluginUpdates() {
+    const response = await fetch(`${API_BASE_URL}/plugins/update`, { method: 'POST' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `Plugin update check failed: ${response.status} ${response.statusText}`);
+    return body;
+}
+
+// Installs the exact candidate recorded in pendingUpdate. A 409 means the source
+// moved since the permission delta was shown — Decaid records the new candidate
+// as the pending update, so the caller must re-read /plugins and have the fresh
+// delta approved rather than retrying this call.
+export async function approvePluginUpdate(pluginId) {
+    const response = await fetch(`${API_BASE_URL}/plugins/${encodeURIComponent(pluginId)}/update/approve`, { method: 'POST' });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const error = new Error(body.error || `Failed to approve update for ${pluginId}: ${response.status} ${response.statusText}`);
+        error.status = response.status;
+        throw error;
+    }
+    return body;
+}
+
 export async function stopWebuiServer() {
     const response = await fetch(`${API_BASE_URL}/webui/server/stop`, { method: 'POST' });
     if (!response.ok) throw new Error(`Failed to stop WebUI server: ${response.status} ${response.statusText}`);

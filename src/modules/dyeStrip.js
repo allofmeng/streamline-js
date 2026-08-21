@@ -15,7 +15,7 @@
 // in the stored `workflow`). Legacy items without `workflow` fall back to
 // snapshot+copyMask / dashboardVariables.
 
-import { API_BASE_URL, getWorkflow, updateWorkflow, getDye2KvArray, getPlugins } from './api.js';
+import { API_BASE_URL, getWorkflow, updateWorkflow, getDye2KvArray, getPlugins, installPluginFromRelease, enablePlugin, checkPluginUpdates, approvePluginUpdate } from './api.js';
 import { applyWorkflowToMainPageUI } from './profileManager.js';
 import { logger } from './logger.js';
 import { fitTextToBox } from './i18n.js';
@@ -30,11 +30,10 @@ const ENABLED_KEY = 'streamline.dye2Enabled';
 const PLUGIN_BASE = `${API_BASE_URL}/plugins/dye2.reaplugin`; // …/api/v1/plugins/dye2.reaplugin
 const MAX_FAV_CELLS = 4; // + a trailing "VIEW ALL AUTO FAV" cell
 
-// Plugin update check (see checkPluginVersion below).
+// Plugin install / update state (see getDye2VersionInfo below).
 const PLUGIN_ID = 'dye2.reaplugin';
-const PLUGIN_LATEST_RELEASE = 'https://api.github.com/repos/decentespresso/dye2/releases/latest';
+export const PLUGIN_REPO = 'decentespresso/dye2';
 export const PLUGIN_RELEASES_PAGE = 'https://github.com/decentespresso/dye2/releases/latest';
-const NAG_KEY = 'streamline.dye2UpdateNagged'; // sessionStorage: prompt once per app run
 
 // Cell classes mirror the existing profile favourite buttons (index.html) so the
 // F/R strip is visually identical to the P strip.
@@ -363,17 +362,17 @@ function closePluginOverlay(refresh) {
     }
 }
 
-// ─── Plugin update check ───────────────────────────────────────────────────────
+// ─── Plugin install / version state ───────────────────────────────────────────
 //
 // Streamline is a read-only consumer of DYE2's KV contract, so an outdated plugin
-// shows up here as missing keys / empty strips rather than an error. Compare the
-// installed version the bridge reports (GET /plugins -> version) against the latest
-// GitHub release tag of decentespresso/dye2 and prompt once per app run. Every failure
-// mode is silent-skip: offline, GitHub rate limit, no release, plugin not installed,
-// or a bridge that reports no version — none of those mean "out of date".
+// shows up here as missing keys / empty strips rather than an error. Decaid owns
+// distribution now: it records where dye2.reaplugin came from and installs new
+// releases itself, holding back only updates that ask for new permissions (those
+// surface as pendingUpdate on GET /plugins). So there is nothing to nag about —
+// Streamline just reads the bridge and never talks to GitHub.
 //
-// The prompt is inline-styled like openPluginOverlay's overlay, not Tailwind: any
-// new utility class would need a CSS rebuild to exist in app.css (see CLAUDE.md).
+// Dialogs here are inline-styled like openPluginOverlay's overlay, not Tailwind:
+// any new utility class would need a CSS rebuild to exist in app.css (see CLAUDE.md).
 
 // ponytail: numeric compare only — dye2 tags are plain vMAJOR.MINOR.PATCH. If it
 // ever ships `-beta` tags, borrow settings.js's compareVersions, which orders them.
@@ -387,40 +386,11 @@ function isOlderVersion(a, b) {
     return false;
 }
 
-function promptPluginUpdate(installed, latest) {
-    const dlg = document.createElement('dialog');
-    dlg.id = 'dye2-update-dialog';
-    dlg.style.cssText =
-        'border:0;border-radius:24px;padding:0;background:transparent;color:var(--text-primary);';
-    dlg.innerHTML = `
-        <div style="background:var(--bgmain-color,#fff);border-radius:24px;padding:36px 40px;max-width:640px;display:flex;flex-direction:column;gap:18px;">
-            <div style="font-size:30px;font-weight:700;color:var(--mimoja-blue);">DYE2 update available</div>
-            <div style="font-size:23px;line-height:1.4;">
-                Installed <b>v${installed}</b>, latest is <b>v${latest}</b>.
-                Download the new plugin and install it from Settings to keep the dashboard strips working.
-            </div>
-            <div style="display:flex;justify-content:flex-end;gap:14px;padding-top:6px;">
-                <button id="dye2-update-later" style="padding:10px 26px;border:2px solid var(--mimoja-blue);background:transparent;color:var(--mimoja-blue);border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Later</button>
-                <button id="dye2-update-open" style="padding:10px 26px;border:0;background:var(--mimoja-blue);color:#fff;border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Download</button>
-            </div>
-        </div>`;
-    document.body.appendChild(dlg);
-    const close = () => { dlg.close(); dlg.remove(); };
-    dlg.querySelector('#dye2-update-later').addEventListener('click', close);
-    dlg.querySelector('#dye2-update-open').addEventListener('click', () => {
-        close();
-        // Same-frame nav, no _blank/window.open: in the tablet webview the host
-        // intercepts the external URL and hands it to the OS browser.
-        window.location.href = PLUGIN_RELEASES_PAGE;
-    });
-    dlg.showModal();
-}
-
 // ─── Enable-time plugin requirement gate ────────────────────────────────────
 // Toggling DYE2 on in Settings requires the plugin actually installed, loaded,
-// and at least MIN_PLUGIN_VERSION — otherwise the header lights up with no
-// data behind it. Unlike checkPluginVersion (a soft post-enable nag against
-// whatever GitHub's latest tag is), this is a hard gate against a fixed floor.
+// and at least MIN_PLUGIN_VERSION — otherwise the header lights up with no data
+// behind it. This floor is about the KV contract, not about being current: Decaid
+// keeps the plugin up to date on its own, so bump it only when the contract moves.
 const MIN_PLUGIN_VERSION = '0.1.4';
 
 export async function checkDye2PluginRequirement() {
@@ -433,100 +403,215 @@ export async function checkDye2PluginRequirement() {
     return { ok: true, installed: plugin.version };
 }
 
+// Resolves true once the plugin is installed, loaded and at the required floor —
+// so the Settings toggle can go on — and false if the user backed out or the
+// install failed. Decaid installs plugins itself now (POST
+// /plugins/install/github-release), so "missing" and "outdated" are one button,
+// not a download-and-sideload errand; the releases page stays as the fallback for
+// when that call fails (offline, GitHub down, a release with no single zip).
 function promptPluginRequired(reason, installed) {
-    const dlg = document.createElement('dialog');
-    dlg.id = 'dye2-required-dialog';
-    dlg.style.cssText =
-        'border:0;border-radius:24px;padding:0;background:transparent;color:var(--text-primary);';
-    // No install API exists yet (reaprime's /plugins/install is a 501 stub) — the
-    // only path is manual, so spell out the exact steps from dye2's own README
-    // rather than a vague "go install it".
-    const INSTALL_STEPS =
-        `Download the zip below, then install it through Decaid's Dashboard &rarr; Plugin settings. ` +
-        `Enable it there, then come back and turn DYE2 on again.`;
-    const body = {
-        missing: `The DYE2 plugin isn't installed (need v${MIN_PLUGIN_VERSION}+). ${INSTALL_STEPS}`,
-        'not-loaded': `The DYE2 plugin (v${installed || '?'}) is installed but not loaded. Open Decaid's Plugin settings and enable it, then come back and turn DYE2 on again.`,
-        outdated: `Installed DYE2 plugin is v${installed}, older than the required v${MIN_PLUGIN_VERSION}. ${INSTALL_STEPS}`,
-        unreachable: `Couldn't reach the plugin bridge to verify DYE2 is installed. Check the connection and try again.`,
-    }[reason] || `DYE2 plugin v${MIN_PLUGIN_VERSION}+ is required to enable this. ${INSTALL_STEPS}`;
-    // "not-loaded" has nothing to download — the zip is already on disk, it just
-    // needs enabling in Decaid — so that case gets a plain OK, not a Download link.
-    const hasDownload = reason !== 'not-loaded';
-    dlg.innerHTML = `
-        <div style="background:var(--bgmain-color,#fff);border-radius:24px;padding:36px 40px;max-width:640px;display:flex;flex-direction:column;gap:18px;">
-            <div style="font-size:30px;font-weight:700;color:var(--mimoja-blue);">DYE2 plugin required</div>
-            <div style="font-size:23px;line-height:1.4;">${body}</div>
-            <div style="display:flex;justify-content:flex-end;gap:14px;padding-top:6px;">
-                <button id="dye2-required-cancel" style="padding:10px 26px;border:2px solid var(--mimoja-blue);background:transparent;color:var(--mimoja-blue);border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">${hasDownload ? 'Cancel' : 'OK'}</button>
-                ${hasDownload ? `<button id="dye2-required-open" style="padding:10px 26px;border:0;background:var(--mimoja-blue);color:#fff;border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Download</button>` : ''}
-            </div>
-        </div>`;
-    document.body.appendChild(dlg);
-    const close = () => { dlg.close(); dlg.remove(); };
-    dlg.querySelector('#dye2-required-cancel').addEventListener('click', close);
-    dlg.querySelector('#dye2-required-open')?.addEventListener('click', () => {
-        close();
-        // Same-frame nav, no _blank/window.open: in the tablet webview the host
-        // intercepts the external URL and hands it to the OS browser.
-        window.location.href = PLUGIN_RELEASES_PAGE;
+    return new Promise((resolve) => {
+        const dlg = document.createElement('dialog');
+        dlg.id = 'dye2-required-dialog';
+        dlg.style.cssText =
+            'border:0;border-radius:24px;padding:0;background:transparent;color:var(--text-primary);';
+        const body = {
+            missing: `The DYE2 plugin isn't installed (need v${MIN_PLUGIN_VERSION}+). Install it from ${PLUGIN_REPO} and it will be enabled for you.`,
+            'not-loaded': `The DYE2 plugin (v${installed || '?'}) is installed but not loaded. Open Decaid's Plugin settings and enable it, then come back and turn DYE2 on again.`,
+            outdated: `Installed DYE2 plugin is v${installed}, older than the required v${MIN_PLUGIN_VERSION}. Install the current release to continue.`,
+            unreachable: `Couldn't reach the plugin bridge to verify DYE2 is installed. Check the connection and try again.`,
+        }[reason] || `DYE2 plugin v${MIN_PLUGIN_VERSION}+ is required to enable this.`;
+        // Only missing/outdated are fixable from here. "not-loaded" needs a human in
+        // Decaid's plugin settings and "unreachable" has no bridge to install through.
+        const canInstall = reason === 'missing' || reason === 'outdated';
+        dlg.innerHTML = `
+            <div style="background:var(--bgmain-color,#fff);border-radius:24px;padding:36px 40px;max-width:640px;display:flex;flex-direction:column;gap:18px;">
+                <div style="font-size:30px;font-weight:700;color:var(--mimoja-blue);">DYE2 plugin required</div>
+                <div id="dye2-required-body" style="font-size:23px;line-height:1.4;">${body}</div>
+                <div style="display:flex;justify-content:flex-end;gap:14px;padding-top:6px;">
+                    <button id="dye2-required-cancel" style="padding:10px 26px;border:2px solid var(--mimoja-blue);background:transparent;color:var(--mimoja-blue);border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">${canInstall ? 'Cancel' : 'OK'}</button>
+                    ${canInstall ? `<button id="dye2-required-install" style="padding:10px 26px;border:0;background:var(--mimoja-blue);color:#fff;border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Install</button>` : ''}
+                </div>
+            </div>`;
+        document.body.appendChild(dlg);
+
+        const close = (ok) => { dlg.close(); dlg.remove(); resolve(ok); };
+        dlg.querySelector('#dye2-required-cancel').addEventListener('click', () => close(false));
+
+        const installBtn = dlg.querySelector('#dye2-required-install');
+        installBtn?.addEventListener('click', async () => {
+            const text = dlg.querySelector('#dye2-required-body');
+            installBtn.disabled = true;
+            installBtn.textContent = 'Installing…';
+            try {
+                await installDye2Plugin();
+                const recheck = await checkDye2PluginRequirement();
+                if (recheck.ok) { close(true); return; }
+                text.textContent = `Installed v${recheck.installed || '?'}, but it still isn't usable (${recheck.reason}). Open Decaid's Plugin settings to finish enabling it.`;
+                installBtn.remove();
+                dlg.querySelector('#dye2-required-cancel').textContent = 'OK';
+            } catch (e) {
+                logger.error('dyeStrip: DYE2 install failed', e);
+                // textContent, not innerHTML: the message is a server/network error string.
+                text.textContent = `Install failed: ${e.message || e}. You can install the zip by hand from the releases page instead.`;
+                installBtn.disabled = false;
+                installBtn.textContent = 'Releases';
+                installBtn.replaceWith(installBtn.cloneNode(true)); // drop this handler
+                dlg.querySelector('#dye2-required-install').addEventListener('click', () => {
+                    close(false);
+                    // Same-frame nav, no _blank/window.open: in the tablet webview the
+                    // host intercepts the external URL and hands it to the OS browser.
+                    window.location.href = PLUGIN_RELEASES_PAGE;
+                });
+            }
+        });
+        dlg.showModal();
     });
-    dlg.showModal();
 }
 
 // Called from the Settings toggle before flipping DYE2 on. Prompts and returns
 // false if the plugin isn't ready; the caller should leave the toggle off.
 export async function ensureDye2PluginReady() {
     const check = await checkDye2PluginRequirement();
-    if (!check.ok) promptPluginRequired(check.reason, check.installed);
-    return check.ok;
+    if (check.ok) return true;
+    // The prompt can fix "missing"/"outdated" in place, so its result — not the
+    // original check — decides whether the toggle may go on.
+    return promptPluginRequired(check.reason, check.installed);
 }
 
-// Installed + latest version, for the Settings → DYE2 info row. Same two sources
-// as checkPluginVersion but with no nag, no session gate, and every failure
-// reported as null instead of silently skipped so the UI can say "unknown".
+// Everything the Settings → DYE2 card needs, straight off the bridge:
+// GET /plugins carries the installed version, the recorded `source` and, when an
+// update was held back for asking new permissions, `pendingUpdate`. An
+// unreachable bridge is reported as such rather than guessed at.
 export async function getDye2VersionInfo() {
-    const [plugins, release] = await Promise.all([
-        getPlugins().catch(() => null),
-        fetch(PLUGIN_LATEST_RELEASE, { headers: { Accept: 'application/vnd.github+json' } })
-            .then(r => (r.ok ? r.json() : null))
-            .catch(() => null),
-    ]);
-    const plugin = (plugins || []).find(p => p?.id === PLUGIN_ID);
-    const installed = plugin?.version || null;
-    const latest = release?.tag_name?.trim().replace(/^v/i, '') || null;
+    const plugins = await getPlugins().catch(() => null);
+    if (!plugins) return { reachable: false, installed: null, loaded: false, source: null, pending: null };
+    const plugin = plugins.find(p => p?.id === PLUGIN_ID);
     return {
-        installed,
-        latest,
+        reachable: true,
+        installed: plugin?.version || null,
         loaded: !!plugin?.loaded,
-        outdated: !!(installed && latest && isOlderVersion(installed, latest)),
+        source: plugin?.source || null,
+        pending: plugin?.pendingUpdate || null,
     };
 }
 
-export async function checkPluginVersion() {
+// Install from the canonical repo's latest release and enable it. Decaid installs
+// plugins with auto-load off, so the enable call is what actually starts it and
+// makes it load on the next app start.
+export async function installDye2Plugin() {
+    const result = await installPluginFromRelease(PLUGIN_REPO);
+    await enablePlugin(PLUGIN_ID);
+    logger.info(`dyeStrip: installed ${PLUGIN_ID} v${result?.version || '?'} from ${PLUGIN_REPO}`);
+    return result;
+}
+
+const CHECK_COOLDOWN_MS = 15 * 60 * 1000; // see checkDye2UpdatesIfDue
+
+// Ask Decaid to compare the installed copy against the release its recorded
+// source points at. An update that asks for no new permission is downloaded AND
+// installed inside this call — Decaid restarts the plugin on it — so afterwards
+// the bridge already reports the new version. One that asks for more becomes a
+// pendingUpdate that only an explicit approval installs.
+//
+// Decaid queries api.github.com unauthenticated: 60 requests an hour for the
+// whole tablet, shared with its own periodic check and with skin updates. Past
+// that GitHub answers 403 and the check records a lastError instead of an answer.
+// Opening a settings page or flipping a toggle is something a user can do
+// repeatedly, so honour the recorded lastChecked and skip a check that would only
+// re-ask a question Decaid asked minutes ago. Anything an earlier check already
+// found is still on the bridge to read.
+//
+// Returns the state after the check. Never throws: a failed check (offline,
+// GitHub down, rate-limited) leaves the installed plugin working and untouched.
+export async function checkDye2UpdatesIfDue() {
+    const before = await getDye2VersionInfo();
+    // An untracked copy (local ZIP or folder) has no source to check against, and
+    // updateAllPlugins skips it anyway.
+    if (!before.reachable || !before.installed || !before.source) return before;
+
+    const lastChecked = Date.parse(before.source.lastChecked || '');
+    if (Number.isFinite(lastChecked) && Date.now() - lastChecked < CHECK_COOLDOWN_MS) return before;
+
     try {
-        if (sessionStorage.getItem(NAG_KEY)) return;
-    } catch (e) { /* private mode — just prompt */ }
-    try {
-        const [plugins, release] = await Promise.all([
-            getPlugins(),
-            fetch(PLUGIN_LATEST_RELEASE, { headers: { Accept: 'application/vnd.github+json' } })
-                .then(r => (r.ok ? r.json() : null))
-                .catch(() => null),
-        ]);
-        const installed = (plugins || []).find(p => p?.id === PLUGIN_ID)?.version;
-        const latest = release?.tag_name?.trim().replace(/^v/i, '');
-        if (!installed || !latest) {
-            logger.info(`dyeStrip: version check skipped (installed=${installed || '?'}, latest=${latest || '?'})`);
-            return;
-        }
-        if (!isOlderVersion(installed, latest)) return;
-        logger.info(`dyeStrip: DYE2 plugin v${installed} is older than v${latest}`);
-        try { sessionStorage.setItem(NAG_KEY, '1'); } catch (e) { /* private mode */ }
-        promptPluginUpdate(installed, latest);
+        await checkPluginUpdates();
     } catch (e) {
-        logger.error('dyeStrip version check failed', e);
+        logger.info(`dyeStrip: update check failed (${e.message || e})`);
     }
+    const after = await getDye2VersionInfo();
+    if (after.installed && after.installed !== before.installed) {
+        logger.info(`dyeStrip: DYE2 updated v${before.installed} -> v${after.installed}`);
+    }
+    return after;
+}
+
+// Called after the DYE2 toggle goes on. Same check, plus the prompt: an update
+// held back for asking new permissions is the one thing that needs a decision,
+// and the toggle is where the user is looking. Resolves true if the plugin ended
+// up on a new version, either because Decaid installed it or because the user
+// approved the escalating one.
+//
+// Never blocks the toggle: the requirement gate already established the plugin is
+// usable, so nothing here can leave DYE2 off.
+export async function offerDye2Update() {
+    const before = await getDye2VersionInfo();
+    const after = await checkDye2UpdatesIfDue();
+    if (after.installed && after.installed !== before.installed) return true;
+    if (after.pending) return promptPluginUpdate(after);
+    return false;
+}
+
+// Resolves true if the update was installed. The added permissions are listed
+// verbatim: approving is consent to those, not to "an update", so nothing here
+// approves on the user's behalf.
+function promptPluginUpdate(info) {
+    return new Promise((resolve) => {
+        const dlg = document.createElement('dialog');
+        dlg.id = 'dye2-update-dialog';
+        dlg.style.cssText =
+            'border:0;border-radius:24px;padding:0;background:transparent;color:var(--text-primary);';
+        const permissions = (info.pending.addedPermissions || []).join(', ') || 'none listed';
+        dlg.innerHTML = `
+            <div style="background:var(--bgmain-color,#fff);border-radius:24px;padding:36px 40px;max-width:640px;display:flex;flex-direction:column;gap:18px;">
+                <div style="font-size:30px;font-weight:700;color:var(--mimoja-blue);">DYE2 update available</div>
+                <div id="dye2-update-body" style="font-size:23px;line-height:1.4;">
+                    Installed <b>v${info.installed}</b>, available <b>v${info.pending.version}</b>.
+                    It asks for permissions the installed version does not have:
+                    <b>${permissions}</b>. Update only if you trust this.
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:14px;padding-top:6px;">
+                    <button id="dye2-update-later" style="padding:10px 26px;border:2px solid var(--mimoja-blue);background:transparent;color:var(--mimoja-blue);border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Later</button>
+                    <button id="dye2-update-now" style="padding:10px 26px;border:0;background:var(--mimoja-blue);color:#fff;border-radius:20px;font-size:22px;font-weight:600;cursor:pointer;">Update</button>
+                </div>
+            </div>`;
+        document.body.appendChild(dlg);
+
+        const close = (updated) => { dlg.close(); dlg.remove(); resolve(updated); };
+        dlg.querySelector('#dye2-update-later').addEventListener('click', () => close(false));
+
+        const updateBtn = dlg.querySelector('#dye2-update-now');
+        updateBtn.addEventListener('click', async () => {
+            const text = dlg.querySelector('#dye2-update-body');
+            updateBtn.disabled = true;
+            updateBtn.textContent = 'Updating…';
+            try {
+                const result = await approvePluginUpdate(PLUGIN_ID);
+                logger.info(`dyeStrip: DYE2 approved and updated to v${result?.version || '?'}`);
+                close(true);
+            } catch (e) {
+                // 409: the release moved after this permission delta was shown. Decaid
+                // has recorded the new candidate, so the fresh delta has to be reviewed
+                // — retrying this call would only 409 again.
+                text.textContent = e.status === 409
+                    ? 'The update changed since it was shown. Open Settings → Extensions to review the new one.'
+                    : `Update failed: ${e.message || e}`;
+                if (e.status !== 409) logger.error('dyeStrip: DYE2 update approval failed', e);
+                updateBtn.remove();
+                dlg.querySelector('#dye2-update-later').textContent = 'OK';
+            }
+        });
+        dlg.showModal();
+    });
 }
 
 // ─── Toggle + init ─────────────────────────────────────────────────────────────
@@ -656,7 +741,6 @@ export async function enableDye2Ui() {
     observeControls();
     wireOnce();
     try { await loadDyeStripData(); } catch (e) { logger.error('dyeStrip load failed', e); }
-    checkPluginVersion(); // not awaited — a GitHub round-trip must not hold up the header
     let saved = 'P';
     try { saved = localStorage.getItem(MODE_KEY) || 'P'; } catch (e) { /* private mode */ }
     setStripMode(saved);
