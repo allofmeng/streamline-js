@@ -205,7 +205,11 @@
 
             <div class="border-t border-base-400 w-[480px] ml-[-36px] mr-[-24px]" role="separator"></div>
             <!-- Hot Water -->
-            <div id="hotwater-section" class="flex justify-start items-center gap-[20px]">
+            <!-- The +/- column starts at label width + gap, and every row above puts it
+                 at 150px (130+20 for Grind/Dose/Drink/Brew, 114+36 for Steam/Flush).
+                 "Hot Water" needs the wider 150px label, so the gap goes to 0 to keep
+                 the buttons on that same 150px line. -->
+            <div id="hotwater-section" class="flex justify-start items-center gap-0">
                 <div class="w-[150px]">
                     <span id="hotwater-label" class="text-[var(--left-label-text)] text-[26px] font-bold block text-nowrap" data-i18n-key="Hot Water">Hot Water</span>
                     <span id="hot-water-mode-toggle" class="w-[150px] text-[var(--low-contrast-white)] text-[20px] font-semibold text-nowrap block leading-6 cursor-pointer" role="button" tabindex="0" aria-label="Toggle Hot Water Mode">

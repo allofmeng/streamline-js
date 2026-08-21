@@ -17,6 +17,7 @@ import { setMachineModel, isBengleMachine } from './machine.js';
 import { classifyStopReason, canonicalStopReason, STOP_TARGET_WEIGHT, STOP_TARGET_VOLUME, STOP_PROFILE_ENDED } from './stop-reason.js';
 import { resolveMilkProbePresence } from './steam-mode.js';
 import { readTimeToReadyFrame, heatingSecondsLeft } from './heating-countdown.js';
+import { workflowTileValues, changedTileValues } from './workflow-watch.js';
 import { isCupWarmerOn, readCupWarmerTarget, resolvePrewarm, getCupWarmerState, setCupWarmerState, patchCupWarmerState, invalidateCupWarmerState, onCupWarmerStateChange, CUP_WARMER_TARGET_KEY } from './cup-warmer.js';
 import { initNumpadModal, attachToNumericInputs, openModal, shouldUseNumpad } from './numpad-modal.js';
 import { initTimePicker } from './time-picker-modal.js';
@@ -1319,7 +1320,10 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         // Outside the guard on purpose: a workflow with no rinseData at all is
         // exactly the case where the user's remembered value most needs
         // pushing. resyncIfDrifted no-ops when nothing was ever remembered.
+        // Repaint what the resync pushed: the tile above was painted from the
+        // workflow, which is by definition the value the push just overrode.
         api.resyncIfDrifted(api.FLUSH_DURATION_LAST_VALUE_KEY, flushtimeout?.duration, (v) => ui.updateFlushValue(v))
+            .then(v => { if (v != null) ui.updateFlushDisplay(v); })
             .catch(e => logger.warn('Flush duration resync failed:', e));
 
         // Update grind display - prefer context.grinderSetting over legacy grinderData.setting
@@ -1351,8 +1355,10 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         // absent hotWaterData still gets the remembered values. See
         // api.resyncIfDrifted.
         api.resyncIfDrifted(api.HOT_WATER_VOLUME_LAST_VALUE_KEY, hotwatersettings?.volume, api.setTargetHotWaterVolume)
+            .then(v => { if (v != null) ui.updateHotWaterDisplay({ targetHotWaterVolume: v }); })
             .catch(e => logger.warn('Hot water volume resync failed:', e));
         api.resyncIfDrifted(api.HOT_WATER_TEMP_LAST_VALUE_KEY, hotwatersettings?.targetTemperature, api.setTargetHotWaterTemp)
+            .then(v => { if (v != null) ui.updateHotWaterDisplay({ targetHotWaterTemp: v }); })
             .catch(e => logger.warn('Hot water temp resync failed:', e));
 
         // Resolve the machine model BEFORE the first updateSteamDisplay:
@@ -1383,13 +1389,18 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         if (steamsettings) {
             // Workflow steamSettings speaks {flow, duration, ...} while
             // updateSteamDisplay speaks {targetSteamFlow, targetSteamDuration},
-            // so map flow explicitly. This boot paint is the ONLY feed of the
-            // persisted flow into the tile: the shot-settings WS carries no
-            // steam flow field, and the old "restore selected preset" push in
+            // so both have to be mapped by name -- the spread alone contributes
+            // nothing, and an unmapped duration leaves steam-duration-value on
+            // its 0 default until a shot-settings frame happens to arrive.
+            // This boot paint is the ONLY feed of the persisted flow into the
+            // tile: the shot-settings WS carries no steam flow field, and the
+            // old "restore selected preset" push in
             // setSteamFlowPresetsFromMachineModel is gone (it was
             // resetting the stored flow, not painting it).
             ui.updateSteamDisplay({
                 ...steamsettings,
+                ...(typeof steamsettings.duration === 'number' && isFinite(steamsettings.duration)
+                    ? { targetSteamDuration: steamsettings.duration } : {}),
                 ...(typeof steamsettings.flow === 'number' && isFinite(steamsettings.flow)
                     ? { targetSteamFlow: steamsettings.flow } : {}),
             });
@@ -1398,10 +1409,13 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
         // user's remembered targets. The milk stop keeps its own armed-only
         // guard — 0/absent there means the stop is off, a real choice.
         api.resyncIfDrifted(api.STEAM_DURATION_LAST_VALUE_KEY, steamsettings?.duration, api.setTargetSteamDuration)
+            .then(v => { if (v != null) ui.updateSteamDisplay({ targetSteamDuration: v }); })
             .catch(e => logger.warn('Steam duration resync failed:', e));
         api.resyncIfDrifted(api.STEAM_FLOW_LAST_VALUE_KEY, steamsettings?.flow, api.setTargetSteamFlow)
+            .then(v => { if (v != null) ui.updateSteamDisplay({ targetSteamFlow: v }); })
             .catch(e => logger.warn('Steam flow resync failed:', e));
         api.resyncMilkStopIfDrifted(steamsettings?.stopAtTemperature)
+            .then(v => { if (v != null) ui.updateSteamDisplay({ stopAtTemperature: v }); })
             .catch(e => logger.warn('Milk stop resync failed:', e));
 
         // Show GHC machine controls column only for non-GHC machines, and pick steam-flow
@@ -1418,10 +1432,108 @@ if (assignedProfileRecord && assignedProfileRecord.profile &&
             await ui.setSteamFlowPresetsFromMachineModel(null);
         }
 
+        // Boot painted every tile from this document, so it is the baseline the
+        // watch diffs against -- without it the first poll would repaint
+        // everything as "changed".
+        seedWorkflowTiles(workflow);
+        startWorkflowWatch();
+
     } catch (error) {
         logger.error("Failed to load initial data:", error);
         ui.updateProfileName("Error loading profile");
     }
+}
+
+// ── Workflow watch ───────────────────────────────────────────────────────────
+//
+// Nothing pushes workflow changes to us: Decaid has no workflow WebSocket and
+// GET /workflow has no revision to poll cheaply, so a change made in Decaid's UI,
+// another skin, or a DYE2 page sits invisible on the dashboard until something
+// re-reads the document. Re-read it when the user comes back to the app, and on
+// a slow timer for a change made while they are looking at it.
+//
+// Only fields that actually moved on the server get repainted, so a poll landing
+// while the user is mid-edit cannot overwrite the value they are setting -- their
+// tile has not reached the server yet, so it reads as unchanged. A different
+// profile means a wholesale repaint, name included, since a profile switch moves
+// the brew temp and the title together.
+const WORKFLOW_POLL_MS = 60_000;
+const WORKFLOW_REFRESH_MIN_GAP_MS = 2000; // focus + visibilitychange can both fire
+// A tile's push is debounced by a second, so "the server matches my baseline" is
+// not enough to prove the user is not mid-edit: their first press can already
+// have landed while a later one is still pending. Hold off entirely while a tile
+// was touched recently -- repainting then would reassign the very variable the
+// pending push is about to send.
+const WORKFLOW_EDIT_GUARD_MS = 5000;
+let lastWorkflowTiles = null;
+let lastWorkflowRefreshAt = 0;
+let workflowWatchStarted = false;
+
+const WORKFLOW_TILE_PAINTERS = {
+    grind: v => ui.updateGrindDisplay({ grinderSetting: String(v) }),
+    dose: v => ui.updateDoseInDisplay(v),
+    yield: v => { ui.updateDrinkOut(v); ui.updateDrinkRatio(); },
+    brewTemp: v => ui.updateTemperatureDisplay(v),
+    steamDuration: v => ui.updateSteamDisplay({ targetSteamDuration: v }),
+    steamFlow: v => ui.updateSteamDisplay({ targetSteamFlow: v }),
+    milkStop: v => ui.updateSteamDisplay({ stopAtTemperature: v }),
+    hotWaterVolume: v => ui.updateHotWaterDisplay({ targetHotWaterVolume: v }),
+    hotWaterTemp: v => ui.updateHotWaterDisplay({ targetHotWaterTemp: v }),
+    flush: v => ui.updateFlushDisplay(v),
+};
+
+export function seedWorkflowTiles(workflow) {
+    lastWorkflowTiles = workflowTileValues(workflow);
+}
+
+async function refreshWorkflowTiles() {
+    // On a sub-page the tiles are not mounted, so a repaint would go nowhere and
+    // updating the snapshot would swallow the change. Skip entirely; the next
+    // tick after the user returns to the dashboard picks it up.
+    if (isSubPage()) return;
+    // Leaves the snapshot untouched so the change is re-detected on the next tick,
+    // once the user has stopped adjusting.
+    if (ui.msSinceTileInteraction() < WORKFLOW_EDIT_GUARD_MS) return;
+    const now = Date.now();
+    if (now - lastWorkflowRefreshAt < WORKFLOW_REFRESH_MIN_GAP_MS) return;
+    lastWorkflowRefreshAt = now;
+
+    let workflow;
+    try {
+        workflow = await getWorkflow();
+    } catch (e) {
+        logger.warn('Workflow refresh failed:', e);
+        return;
+    }
+    if (!workflow) return;
+
+    const tiles = workflowTileValues(workflow);
+    const changed = changedTileValues(lastWorkflowTiles, tiles);
+    lastWorkflowTiles = tiles;
+    const keys = Object.keys(changed);
+    if (keys.length === 0) return;
+
+    logger.info(`Workflow changed elsewhere: ${keys.join(', ')}`);
+    if ('profileTitle' in changed) {
+        // A profile switch moves more than the tiles: the chart's step tracking,
+        // the active-profile record and the favourite highlight all follow it.
+        // loadInitialData is the path that does all of that -- dyeStrip's
+        // refreshAfterApply picks it for the same reason -- and it re-seeds the
+        // snapshot on the way out.
+        await loadInitialData();
+        return;
+    }
+    for (const key of keys) WORKFLOW_TILE_PAINTERS[key]?.(changed[key]);
+}
+
+function startWorkflowWatch() {
+    if (workflowWatchStarted) return;
+    workflowWatchStarted = true;
+    setInterval(refreshWorkflowTiles, WORKFLOW_POLL_MS);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshWorkflowTiles();
+    });
+    window.addEventListener('focus', refreshWorkflowTiles);
 }
 
 async function isShotBlockedByNoScale() {

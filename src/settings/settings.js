@@ -1,4 +1,4 @@
-import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight, persistSharedValue, MILK_STOP_LAST_VALUE_KEY, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY, approvePluginUpdate } from '../modules/api.js';
+import {  getReaSettings, getDe1Settings, getDe1AdvancedSettings, setReaSettings, setDe1Settings, setDe1AdvancedSettings, resetDe1Settings, setMachineState, connectScaleDevice, connectDeviceWebSocket, sendDeviceCommand, awaitDeviceConnectResult, dimDisplay, restoreDisplay, isBlackScreenSaver, setBlackScreenSaver as apiSetBlackScreenSaver, rememberBrightness, getLastDisplayState, currentMachineState, signalHeartbeat, MachineState, getDeviceWebSocket, initDeviceWebSocketWithCallback, saveScaleDeviceId, getScaleDeviceId, connectDisplayWebSocket, sendDisplayCommand, connectUpdateWebSocket, sendUpdateCommand, enableWakeLock, disableWakeLock, isWakeLockEnabled, getPresenceSettings, setPresenceSettings, getPresenceSchedules, createPresenceSchedule, updatePresenceSchedule, deletePresenceSchedule, getAppInfo, getMachineInfo, getWorkflow, updateWorkflow, getAllSkins, getDefaultSkin, setDefaultSkin, updateSkins, stopWebuiServer, startWebuiServer, uploadFirmware, applyFirmware, cancelFirmwareUpdate, getFirmwareCatalog, setWaterLevels, API_BASE_URL, listWifiScales, addWifiScale, removeWifiScale, forgetDevice, getLedStrip, setLedStrip, commitLedStrip, resetLedStrip, previewLedStrip, clearLedStripPreview, getCupWarmer, setCupWarmer, setCupWarmerPrewarm, calibrateScale, tareScale, connectScaleWebSocket, setFirmwareFlashInFlight, persistSharedValue, MILK_STOP_LAST_VALUE_KEY, STEAM_DURATION_LAST_VALUE_KEY, STEAM_FLOW_LAST_VALUE_KEY, HOT_WATER_VOLUME_LAST_VALUE_KEY, HOT_WATER_TEMP_LAST_VALUE_KEY, approvePluginUpdate, getPlugins, getDecentAccountStatus, getPluginSettings, setPluginSettings, callPluginEndpoint, enablePlugin } from '../modules/api.js';
 import * as ui from '../modules/ui.js';
 import { initScaling } from '../modules/scaling.js';
 import { getSupportedLanguages, getCurrentLanguage, setLanguage, translatePage, getTranslation } from '../modules/i18n.js';
@@ -17,6 +17,7 @@ import { openNotesModal } from '../modules/notes-modal.js';
 import { openDB, getSetting, setSetting, addEmails, getAllEmails, getLatestEmailTimestamp } from '../modules/idb.js';
 import { openModal, shouldUseNumpad, initializeNumpadModal } from '../modules/numpad-modal.js';
 import { ensureDye2PluginReady, getDye2VersionInfo, installDye2Plugin, offerDye2Update, checkDye2UpdatesIfDue } from '../modules/dyeStrip.js';
+import { pluginKeywords, pluginListKeywords, subcategoryMatches } from '../modules/settings-search.js';
 import { haYamlBlocks } from '../modules/home-assistant.js';
 
 // Config for each numeric input that should get two-click numpad support
@@ -445,6 +446,7 @@ const settingsTree = {
         name: 'Extensions',
         subcategories: [
             { id: 'extention1', name: 'Visualizer', settingsCategory: 'extensions' },
+            { id: 'shotupload', name: 'Shot Uploader', settingsCategory: 'shotupload', i18nKey: 'Shot Uploader' },
             { id: 'extention2', name: 'Plugins', settingsCategory: 'plugins' },
             { id: 'dye2', name: 'DYE2', settingsCategory: 'dye2', i18nKey: 'DYE2' }
         ]
@@ -691,6 +693,8 @@ export function renderSettingsContent(category) {
             return renderLanguageSettings();
         case 'plugins':
             return renderPluginManagerSettings();
+        case 'shotupload':
+            return renderShotUploadSettings();
         case 'dye2':
             return renderDye2Settings();
         case 'extensions':
@@ -4803,6 +4807,259 @@ export function renderPluginManagerSettings() {
     `;
 }
 
+// Shot Uploader — the settings UI for the bundled shot-upload.reaplugin, which
+// posts finished shots to the user's Decent account at decentespresso.com.
+//
+// Unlike Visualizer, there are no credentials to type here: the plugin uploads
+// through Decaid's account proxy, which attaches the linked Decent login in Dart
+// and never exposes it. So this page gates on the account instead of collecting
+// one — and linking happens in the Decent app, since the bridge exposes only a
+// status read (GET /account/decent) and no login endpoint.
+export function renderShotUploadSettings() {
+    setTimeout(setupShotUploadListeners, 0);
+
+    return `
+        <div class="content-stretch flex flex-col gap-[60px] items-start relative w-full">
+            <div class="flex flex-col font-['Inter:Semi_Bold',sans-serif] font-semibold justify-center leading-[0] min-w-full not-italic relative text-[var(--text-primary)] text-[36px] text-center w-[min-content]">
+                <p class="leading-[1.2]" data-i18n-key="Shot Uploader">Shot Uploader</p>
+            </div>
+
+            <div class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                <p class="text-[24px] text-[var(--text-primary)] leading-[1.4] opacity-75" data-i18n-key="Uploads your shots to your Decent account so you can see your shot history and charts. Only your own machines are accepted.">
+                    Uploads your shots to your Decent account so you can see your shot history and charts. Only your own machines are accepted.
+                </p>
+
+                <!-- Account gate. One of these three is visible at a time; the controls
+                     below stay disabled until the account one says linked. -->
+                <div id="shotupload-account" class="w-full">
+                    <div class="flex items-center justify-center w-full py-[20px]">
+                        <span class="loading loading-spinner loading-lg text-[#385a92]"></span>
+                    </div>
+                </div>
+
+                <div id="shotupload-controls" class="content-stretch flex flex-col gap-[30px] items-start relative w-full">
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Upload shots automatically">Upload shots automatically</p>
+                            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Send each shot to your Decent account when it finishes.">
+                                Send each shot to your Decent account when it finishes.
+                            </p>
+                        </div>
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="shotupload-enabled" class="sr-only peer">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+
+                    <div class="content-stretch flex items-center justify-between relative w-full">
+                        <div class="flex flex-col font-['Inter:Bold',sans-serif] font-bold justify-center leading-[0] not-italic relative text-[#385a92] text-[30px]">
+                            <p class="leading-[1.2]" data-i18n-key="Upload existing shot history">Upload existing shot history</p>
+                            <p class="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] not-italic relative text-[var(--text-primary)] text-[24px] w-full" data-i18n-key="Send shots recorded before you turned this on, a few at a time while the machine is idle.">
+                                Send shots recorded before you turned this on, a few at a time while the machine is idle.
+                            </p>
+                        </div>
+                        <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
+                            <input type="checkbox" id="shotupload-drain" class="sr-only peer">
+                            <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
+                            <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
+                        </label>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                        <label for="shotupload-min-duration" class="text-[var(--text-primary)] text-[24px]" data-i18n-key="Minimum Shot Duration (seconds):">Minimum Shot Duration (seconds):</label>
+                        <input type="number" id="shotupload-min-duration" class="w-24 p-3 rounded-lg border border-[var(--border-color)] bg-[var(--profile-button-background-color)] text-[var(--text-primary)] text-[24px] focus:outline-none focus:ring-2 focus:ring-[var(--mimoja-blue)]" min="0" value="5">
+                    </div>
+
+                    <div class="flex items-center gap-[14px] flex-wrap w-full">
+                        <button id="shotupload-upload-now" class="bg-[#385a92] h-[56px] px-[28px] rounded-[64px] text-white text-[22px] font-bold" data-i18n-key="Upload latest shot">Upload latest shot</button>
+                        <span id="shotupload-status" class="text-[20px] text-[var(--text-primary)] opacity-60"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Every control writes straight through to the plugin's settings -- there is no
+// Save button because there is nothing to type. AutoUpload and DrainHistory are
+// both opt-in and default off in the manifest, which is the whole point of the
+// plugin: it uploads nothing until asked.
+function setupShotUploadListeners() {
+    const PLUGIN_ID = 'shot-upload.reaplugin';
+    const accountEl = document.getElementById('shotupload-account');
+    const controlsEl = document.getElementById('shotupload-controls');
+    if (!accountEl || !controlsEl) return;
+
+    const enabledToggle = document.getElementById('shotupload-enabled');
+    const drainToggle = document.getElementById('shotupload-drain');
+    const minDurationInput = document.getElementById('shotupload-min-duration');
+    const uploadNowBtn = document.getElementById('shotupload-upload-now');
+    const statusEl = document.getElementById('shotupload-status');
+
+    const notice = (title, body) => `
+        <div class="flex flex-col gap-[24px] p-[36px] rounded-[20px] border-2 border-dashed border-[var(--profile-button-outline-color)] bg-[var(--box-color)] items-center text-center">
+            <div class="flex flex-col gap-[8px]">
+                <p class="text-[26px] font-bold text-[var(--text-primary)]">${title}</p>
+                <p class="text-[22px] text-[var(--low-contrast-white)] max-w-[500px] leading-[1.4]">${body}</p>
+            </div>
+        </div>`;
+
+    const linkedBadge = `
+        <div class="flex items-center p-[20px] rounded-[14px] bg-[var(--box-color)] border border-[var(--profile-button-outline-color)] gap-[14px]">
+            <div class="w-[40px] h-[40px] rounded-full bg-[#385a92] flex items-center justify-center text-white text-[18px] font-bold">D</div>
+            <div>
+                <p class="text-[20px] font-semibold text-[var(--text-primary)]" data-i18n-key="Decent account linked">Decent account linked</p>
+            </div>
+        </div>`;
+
+    // Controls are disabled rather than hidden: the user can see what turning the
+    // feature on will offer them before they go and link an account.
+    const setControlsEnabled = (enabled) => {
+        controlsEl.style.opacity = enabled ? '1' : '0.4';
+        [enabledToggle, drainToggle, minDurationInput, uploadNowBtn]
+            .forEach(el => { if (el) el.disabled = !enabled; });
+    };
+
+    const setStatus = (text) => { if (statusEl) statusEl.textContent = text || ''; };
+
+    (async () => {
+        setControlsEnabled(false);
+
+        let account;
+        try {
+            account = await getDecentAccountStatus();
+        } catch (e) {
+            logger.warn('Decent account status unavailable:', e);
+            accountEl.innerHTML = notice(
+                getTranslation('Could not check'),
+                getTranslation("Couldn't reach the bridge to check your Decent account."));
+            return;
+        }
+
+        // getPlugins answers null when the request failed and [] when there really
+        // are none, so the two cases must not collapse into "not installed" -- that
+        // would tell a user with a working plugin to go update Decaid.
+        const plugins = await getPlugins();
+        if (!plugins) {
+            accountEl.innerHTML = notice(
+                getTranslation('Could not check'),
+                getTranslation("Couldn't reach the bridge to check the shot upload plugin."));
+            return;
+        }
+        const plugin = plugins.find(p => p?.id === PLUGIN_ID);
+        if (!plugin) {
+            accountEl.innerHTML = notice(
+                getTranslation('Shot upload plugin not installed'),
+                getTranslation('This feature ships with Decaid. Update Decaid to get it.'));
+            return;
+        }
+
+        if (!account.loggedIn) {
+            // No login endpoint exists on the bridge, so the Decent app is the only
+            // place an account can be linked.
+            accountEl.innerHTML = notice(
+                getTranslation('No Decent account linked'),
+                getTranslation('Link your Decent account in the Decent app, then come back to turn uploads on.'));
+            return;
+        }
+
+        accountEl.innerHTML = linkedBadge;
+
+        let settings;
+        try {
+            // Strict: the lenient default returns {} for a failed read, which would
+            // paint both toggles off while uploads are in fact running.
+            settings = await getPluginSettings(PLUGIN_ID, { strict: true }) || {};
+        } catch (e) {
+            logger.warn('Shot upload settings unavailable:', e);
+            accountEl.innerHTML = notice(
+                getTranslation('Could not check'),
+                getTranslation("Couldn't read the shot upload settings. Reopen this page to try again."));
+            return;
+        }
+        // The page can be left while those awaits are in flight, which drops the
+        // form -- same hazard loadVisualizerSettings guards against.
+        if (!document.getElementById('shotupload-enabled')) return;
+
+        if (enabledToggle) enabledToggle.checked = settings.AutoUpload === true;
+        if (drainToggle) drainToggle.checked = settings.DrainHistory === true;
+        if (minDurationInput && settings.LengthThreshold != null) {
+            minDurationInput.value = settings.LengthThreshold;
+        }
+        setControlsEnabled(true);
+
+        // A setting means nothing while the plugin is unloaded, so turning either
+        // switch on loads it first. Turning off leaves it loaded: the manual
+        // upload button and the status endpoint still work.
+        const saveSetting = async (patch, { needsPlugin = false } = {}) => {
+            if (needsPlugin && !plugin.loaded) {
+                await enablePlugin(PLUGIN_ID);
+                plugin.loaded = true;
+            }
+            await setPluginSettings(PLUGIN_ID, patch);
+        };
+
+        enabledToggle?.addEventListener('change', async function () {
+            const on = this.checked;
+            this.disabled = true;
+            try {
+                await saveSetting({ AutoUpload: on }, { needsPlugin: on });
+                ui.showToast(getTranslation(on ? 'Shot upload enabled' : 'Shot upload disabled'), 2000, 'success');
+            } catch (e) {
+                logger.error('Failed to change shot upload setting', e);
+                ui.showToast(`${getTranslation('Failed')}: ${e.message || e}`, 4000, 'error');
+                this.checked = !on;
+            }
+            this.disabled = false;
+        });
+
+        drainToggle?.addEventListener('change', async function () {
+            const on = this.checked;
+            this.disabled = true;
+            try {
+                await saveSetting({ DrainHistory: on }, { needsPlugin: on });
+                ui.showToast(getTranslation(on ? 'History upload enabled' : 'History upload disabled'), 2000, 'success');
+            } catch (e) {
+                logger.error('Failed to change history upload setting', e);
+                ui.showToast(`${getTranslation('Failed')}: ${e.message || e}`, 4000, 'error');
+                this.checked = !on;
+            }
+            this.disabled = false;
+        });
+
+        minDurationInput?.addEventListener('change', async function () {
+            const value = parseFloat(this.value);
+            if (!isFinite(value) || value < 0) { this.value = settings.LengthThreshold ?? 5; return; }
+            try {
+                await saveSetting({ LengthThreshold: value });
+                settings.LengthThreshold = value;
+            } catch (e) {
+                logger.error('Failed to save shot upload threshold', e);
+                ui.showToast(`${getTranslation('Failed')}: ${e.message || e}`, 4000, 'error');
+            }
+        });
+
+        uploadNowBtn?.addEventListener('click', async function () {
+            this.disabled = true;
+            setStatus(`${getTranslation('Uploading')}…`);
+            try {
+                if (!plugin.loaded) { await enablePlugin(PLUGIN_ID); plugin.loaded = true; }
+                const result = await callPluginEndpoint(PLUGIN_ID, 'upload');
+                // The endpoint answers 200 with ok:false for a shot it declined to
+                // send (too short, already uploaded), which is not a failure.
+                setStatus(result?.ok
+                    ? getTranslation('Uploaded')
+                    : `${getTranslation('Not uploaded')}: ${result?.error || getTranslation('skipped')}`);
+            } catch (e) {
+                logger.error('Shot upload failed', e);
+                setStatus(`${getTranslation('Upload failed')}: ${e.message || e}`);
+            }
+            this.disabled = false;
+        });
+    })();
+}
+
 // Render extensions settings
 export function renderExtensionsSettings() {
     // Return the HTML template
@@ -6316,6 +6573,16 @@ export async function initializeSettings() {
         }
     };
 
+    // A plugin serves a web UI only if its manifest declares an http endpoint
+    // named "ui" -- Decaid routes /api/v1/plugins/<id>/<endpoint> from that
+    // declaration, so anything else 404s. Built off API_BASE_URL, not a literal
+    // localhost, so it stays right when the bridge hostname is configured.
+    function pluginUiUrl(plugin) {
+        const endpoints = Array.isArray(plugin?.api) ? plugin.api : [];
+        const hasUi = endpoints.some(e => e?.type === 'http' && e?.id === 'ui');
+        return hasUi ? `${API_BASE_URL}/plugins/${encodeURIComponent(plugin.id)}/ui` : null;
+    }
+
     // Plugin manager
     window.loadPluginList = async function() {
         const container = document.getElementById('plugin-list-container');
@@ -6327,39 +6594,56 @@ export async function initializeSettings() {
                 container.innerHTML = `<p class="text-[24px] text-[var(--text-primary)] opacity-60" data-i18n-key="No plugins installed.">No plugins installed.</p>`;
                 return;
             }
-            container.innerHTML = plugins.map((p, i) => `
+            // Manifest text is third-party content -- plugins install from arbitrary
+            // GitHub repos -- so every field is escaped before it reaches innerHTML.
+            container.innerHTML = plugins.map((p, i) => {
+                const uiUrl = pluginUiUrl(p);
+                return `
                 ${i > 0 ? '<div class="h-0 relative w-full"><hr class="border-t border-[#c9c9c9] w-full" /></div>' : ''}
                 <div class="flex items-center justify-between w-full py-[30px] gap-[24px]">
                     <div class="flex flex-col gap-[8px] flex-1 min-w-0">
                         <div class="flex items-center gap-[12px]">
-                            <span class="font-bold text-[#385a92] text-[28px] leading-tight">${p.name || p.id}</span>
-                            <span class="text-[20px] text-[var(--text-primary)] opacity-50">v${p.version || '?'}</span>
+                            <span class="font-bold text-[#385a92] text-[28px] leading-tight">${escapeHtml(p.name || p.id)}</span>
+                            <span class="text-[20px] text-[var(--text-primary)] opacity-50">v${escapeHtml(p.version || '?')}</span>
                         </div>
-                        ${p.description ? `<p class="text-[22px] text-[var(--text-primary)] leading-[1.4] opacity-75">${p.description}</p>` : ''}
-                        <span class="text-[18px] text-[var(--text-primary)] opacity-40 font-mono">${p.id}</span>
+                        ${p.description ? `<p class="text-[22px] text-[var(--text-primary)] leading-[1.4] opacity-75">${escapeHtml(p.description)}</p>` : ''}
+                        <span class="text-[18px] text-[var(--text-primary)] opacity-40 font-mono">${escapeHtml(p.id)}</span>
+                        ${uiUrl ? `<a href="${escapeHtml(uiUrl)}" class="text-[18px] text-[#385a92] underline font-mono break-words">${escapeHtml(uiUrl)}</a>` : ''}
                     </div>
                     <div class="flex flex-col items-center gap-[6px] flex-shrink-0">
                         <label class="relative flex items-center cursor-pointer flex-shrink-0 w-[100px] h-[50px]">
-                            <input type="checkbox" id="plugin-toggle-${CSS.escape(p.id)}"
+                            <input type="checkbox"
                                    class="sr-only peer"
                                    ${p.loaded ? 'checked' : ''}
-                                   onchange="window.togglePlugin('${p.id}', this.checked)">
+                                   data-plugin-id="${escapeHtml(p.id)}">
                             <div class="absolute inset-0 rounded-full border-2 transition-colors duration-200 bg-[var(--toggle-off-bg)] border-[var(--toggle-off-border)] peer-checked:bg-[#385a92] peer-checked:border-[#385a92]"></div>
                             <div class="absolute top-1/2 left-[5px] -translate-y-1/2 peer-checked:translate-x-[46px] size-[40px] rounded-full transition-[transform,background-color] duration-200 bg-[var(--toggle-off-knob)] peer-checked:bg-white"></div>
                         </label>
                         <span class="text-[18px] text-[var(--text-primary)] opacity-60">${p.loaded ? 'Enabled' : 'Disabled'}</span>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
+
+            // Listener rather than an inline onchange: the id is manifest text, and
+            // Decaid's id rule allows an apostrophe, which would end the JS string
+            // in an inline handler. Nothing about an id can escape a data attribute.
+            container.querySelectorAll('input[data-plugin-id]').forEach(input => {
+                input.addEventListener('change', function () {
+                    window.togglePlugin(this.dataset.pluginId, this.checked, this);
+                });
+            });
         } catch (err) {
             logger.error('Failed to load plugins:', err);
             container.innerHTML = `<p class="text-[22px] text-red-500">Failed to load plugins: ${err.message}</p>`;
         }
     };
 
-    window.togglePlugin = async function(pluginId, enable) {
-        const toggle = document.getElementById(`plugin-toggle-${CSS.escape(pluginId)}`);
-        const label  = toggle?.nextElementSibling;
+    window.togglePlugin = async function(pluginId, enable, toggleEl) {
+        const toggle = toggleEl || null;
+        // The input sits inside the <label> that draws the switch; the status text
+        // is the label's sibling, not the input's (whose sibling is the track div).
+        const label  = toggle?.closest('label')?.nextElementSibling;
         if (toggle) toggle.disabled = true;
         try {
             const { enablePlugin, disablePlugin } = await import('../modules/api.js');
@@ -7475,6 +7759,37 @@ export async function initializeSettings() {
     }
 }
 
+// Pages that ARE one plugin's settings UI, so that plugin's vocabulary belongs on
+// them specifically as well as on the Plugins list.
+const PLUGIN_BACKED_SUBCATEGORIES = {
+    extention1: 'visualizer.reaplugin',
+    shotupload: 'shot-upload.reaplugin',
+    dye2: 'dye2.reaplugin',
+};
+
+let pluginKeywordsLoaded = false;
+
+// Fold the installed plugins' names, descriptions and manifest setting names into
+// the search index. Best-effort and one-shot: the nav is searchable without it,
+// so an unreachable bridge just means plugin vocabulary is missing, not an error.
+async function loadPluginSearchKeywords() {
+    if (pluginKeywordsLoaded) return;
+    const plugins = await getPlugins();
+    if (!plugins) return;
+    pluginKeywordsLoaded = true;
+
+    const extensions = settingsTree.extensions?.subcategories || [];
+    for (const subcat of extensions) {
+        const pluginId = PLUGIN_BACKED_SUBCATEGORIES[subcat.id];
+        if (pluginId) {
+            subcat.keywords = pluginKeywords(plugins.find(p => p?.id === pluginId));
+        } else if (subcat.settingsCategory === 'plugins') {
+            // The Plugins page lists them all, so it answers for all of them.
+            subcat.keywords = pluginListKeywords(plugins);
+        }
+    }
+}
+
 // Set up search functionality for settings
 function setupSettingsSearch() {
     const searchInput = document.getElementById('settings-search');
@@ -7482,6 +7797,8 @@ function setupSettingsSearch() {
         console.warn('Settings search input not found');
         return;
     }
+
+    loadPluginSearchKeywords().catch(e => logger.warn('Plugin search keywords unavailable:', e));
 
     // Store original navigation structure
     const originalMainCategories = {};
@@ -7520,11 +7837,11 @@ function setupSettingsSearch() {
                 (subcat) => !subcat.bengleOnly || isBengleMachine()
             );
 
-            // Filter subcategories that match
-            const matchingSubcategories = visibleSubcategories.filter(subcat =>
-                subcat.name.toLowerCase().includes(searchTerm) ||
-                subcat.id.toLowerCase().includes(searchTerm)
-            );
+            // Filter subcategories that match. subcategoryMatches also tests the
+            // keywords loaded from installed plugins, so "upload" reaches the page
+            // hosting the Visualizer plugin's AutoUpload setting.
+            const matchingSubcategories = visibleSubcategories.filter(
+                subcat => subcategoryMatches(subcat, searchTerm));
 
             // Include the category if either main name matches or any subcategory matches
             if (mainCategoryMatches || matchingSubcategories.length > 0) {
@@ -7757,10 +8074,8 @@ function renderFilteredSubcategories(mainCategoryKey, searchTerm) {
     // Filter subcategories that match the search term. If none match (the
     // category surfaced via its main-name match), show all subcats — matching
     // text still gets highlighted, the rest render plainly.
-    const matchingSubcategories = visibleSubcategories.filter(subcat =>
-        subcat.name.toLowerCase().includes(searchTerm) ||
-        subcat.id.toLowerCase().includes(searchTerm)
-    );
+    const matchingSubcategories = visibleSubcategories.filter(
+        subcat => subcategoryMatches(subcat, searchTerm));
     const subcategoriesToShow = matchingSubcategories.length > 0 ? matchingSubcategories : visibleSubcategories;
 
     let subcategoryItems = '';

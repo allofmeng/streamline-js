@@ -85,6 +85,14 @@ let steamApiDebounce = null;
 let hotWaterApiDebounce = null;
 const API_DEBOUNCE_MS = 1000;
 
+// When a tile last scheduled a write. The workflow watch reads this: repainting a
+// tile from the server between a debounced push and the next keypress would
+// reassign the module variable the pending push is about to send, so the user's
+// newest value is lost and the number jumps backwards.
+let lastTileInteractionAt = 0;
+function markTileInteraction() { lastTileInteractionAt = Date.now(); }
+export function msSinceTileInteraction() { return Date.now() - lastTileInteractionAt; }
+
 let grindStep = 0.1;
 
 export function flashPlusMinusButton(button) {
@@ -378,6 +386,7 @@ export function updateHotWaterDisplay(data) {
 }
 
 function scheduleHotWaterApi() {
+    markTileInteraction();
     clearTimeout(hotWaterApiDebounce);
     hotWaterApiDebounce = setTimeout(() => {
         if (hotWaterMode === 'volume') {
@@ -456,6 +465,7 @@ function setupValueAdjuster(minusBtnId, plusBtnId, valueElId, step, min, formatt
     let debounceTimer = null;
     const scheduleUpdate = (value) => {
         clearTimeout(debounceTimer);
+        markTileInteraction();
         debounceTimer = setTimeout(() => onUpdate(value), API_DEBOUNCE_MS);
     };
 
@@ -777,6 +787,7 @@ async function runSteamSyncRetry() {
 }
 
 function scheduleSteamApi() {
+    markTileInteraction();
     clearTimeout(steamApiDebounce);
     steamApiDebounce = setTimeout(() => {
         if (steamMode === 'time') {
@@ -829,8 +840,11 @@ function decrementSteam() {
     } else if (steamMode === 'temperature') {
         if (currentMilkStop > 30) currentMilkStop = Math.max(30, currentMilkStop - displayStepToCelsius(1));
     } else {
-        if (currentSteamFlow > 0.4) {
-            currentSteamFlow -= 0.1;
+        // Steps down to 0. Rounding each step keeps repeated 0.1 subtractions off
+        // float drift, which at a 0 floor lands on -0.0 (displayed "-0.0") rather
+        // than 0.0.
+        if (currentSteamFlow > 0) {
+            currentSteamFlow = Math.max(0, Math.round((currentSteamFlow - 0.1) * 10) / 10);
         }
     }
     updateSteamDisplay({ targetSteamDuration: currentSteamDuration, targetSteamFlow: currentSteamFlow });
@@ -2737,6 +2751,7 @@ export function updateTemperatureDisplay(temperature) {
 // which breaks once the display can show °F — the model must stay Celsius
 // while the button step feels like "1 degree" in whichever unit is showing.
 function scheduleBrewTempApi() {
+    markTileInteraction();
     clearTimeout(brewTempApiDebounce);
     brewTempApiDebounce = setTimeout(() => updateTemperatureValue(currentBrewTempC), API_DEBOUNCE_MS);
 }

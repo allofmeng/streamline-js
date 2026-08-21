@@ -87,7 +87,9 @@ function visibleRecipes() {
 
 function favLabel(fav) {
     const snp = fav.snapshot || {};
-    return fav.subtitle || snp.coffeeName || fav.title || 'Favourite';
+    // User-typed title wins: DYE2 always fills subtitle (roaster / coffee name), so a
+    // subtitle-first order would never show the name the user actually entered.
+    return fav.title || fav.subtitle || snp.coffeeName || 'Favourite';
 }
 
 function recipeLabel(recipe) {

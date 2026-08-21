@@ -1242,7 +1242,7 @@ export async function resyncIfDrifted(key, fetchedValue, pushFn) {
             remembered = await getSetting(key);
         } catch (e2) {
             logger.warn(`resyncIfDrifted failed for ${key}:`, e2);
-            return;
+            return null;
         }
     }
     // No record of the user ever setting this -> whatever the machine holds
@@ -1251,9 +1251,16 @@ export async function resyncIfDrifted(key, fetchedValue, pushFn) {
     // a reason to drop what the user asked for, it is the strongest reason to
     // push it. Milk stop keeps its own extra guard -- see
     // resyncMilkStopIfDrifted, where 0 is a real choice rather than an absence.
-    if (remembered == null) return;
-    if (remembered === fetchedValue) return;
+    if (remembered == null) return null;
+    if (remembered === fetchedValue) return null;
     await pushFn(remembered);
+    // Returns what was pushed so the caller can repaint its tile. Pushing alone
+    // leaves the display on the value the workflow arrived with -- the machine
+    // takes the remembered number and the tile keeps showing the drifted one.
+    // Hot water and steam duration are echoed back by a shot-settings frame and
+    // self-heal; steam flow, the milk stop and the flush duration are in no
+    // websocket payload, so nothing else ever corrects them.
+    return remembered;
 }
 
 export async function setTargetHotWaterVolume(volume) {
@@ -1320,8 +1327,8 @@ export async function resyncSteamFromStore() {
 // workflow reads 0 and the remembered target would "drift" from it on every
 // boot, re-arming a stop the user switched off.
 export async function resyncMilkStopIfDrifted(stopAtTemperature) {
-    if (!(stopAtTemperature > 0)) return;
-    await resyncIfDrifted(MILK_STOP_LAST_VALUE_KEY, stopAtTemperature, setStopAtTemperature);
+    if (!(stopAtTemperature > 0)) return null;
+    return resyncIfDrifted(MILK_STOP_LAST_VALUE_KEY, stopAtTemperature, setStopAtTemperature);
 }
 
 // Milk-probe auto-stop target °C (0 = off). Bengle: the steam auto-stops when
@@ -2037,7 +2044,11 @@ export async function getPlugins() {
     }
 }
 
-export async function getPluginSettings(pluginId) {
+// `strict` reports failures instead of flattening them into {}. The lenient
+// default keeps callers that only paint a form working, but a page that gates
+// behaviour on a setting needs to know the read failed -- otherwise a dropped
+// request renders every toggle "off" while the plugin is happily running.
+export async function getPluginSettings(pluginId, { strict = false } = {}) {
     try {
         const response = await fetch(`${API_BASE_URL}/plugins/${pluginId}/settings`);
         if (!response.ok) {
@@ -2052,6 +2063,7 @@ export async function getPluginSettings(pluginId) {
         return settings;
     } catch (error) {
         logger.error(`Error getting plugin settings for ${pluginId}:`, error);
+        if (strict) throw error;
         return {}; // Return empty object on error to prevent UI from breaking
     }
 }
@@ -2512,6 +2524,17 @@ export async function disablePlugin(pluginId) {
 // (.rea_source.json) and installs updates itself on its normal update cadence.
 // These three cover everything Streamline needs — no direct GitHub calls, so no
 // rate limits, and no second opinion about what "latest" means.
+// Whether a Decent account is linked. Linking itself happens in Decaid's own
+// settings -- the bridge exposes only this status read (GET /account/decent), no
+// login endpoint -- so pages that need an account can gate on it but must send
+// the user to the Decent app to link one.
+export async function getDecentAccountStatus() {
+    const response = await fetch(`${API_BASE_URL}/account/decent`);
+    if (!response.ok) throw new Error(`Failed to read Decent account status: ${response.status} ${response.statusText}`);
+    const body = await response.json();
+    return { loggedIn: !!body?.loggedIn };
+}
+
 export async function installPluginFromRelease(repo, { assetName, includePrerelease } = {}) {
     const response = await fetch(`${API_BASE_URL}/plugins/install/github-release`, {
         method: 'POST',

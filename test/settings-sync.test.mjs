@@ -101,6 +101,23 @@ function lift(module, patterns) {
         assert.deepEqual(pushed, [45, 45]);
     });
 
+    test('the pushed value is returned so the caller can repaint its tile', async () => {
+        // Pushing alone leaves the tile on the drifted workflow value. Steam flow,
+        // the milk stop and the flush duration are in no websocket payload, so
+        // nothing else would ever correct them.
+        const { api } = build(45);
+        assert.equal(await api.resyncIfDrifted('last-anything', 30, async () => {}), 45);
+        assert.equal(await api.resyncMilkStopIfDrifted(55), 45);
+    });
+
+    test('an agreeing value returns nothing to repaint', async () => {
+        const { api } = build(45);
+        assert.equal(await api.resyncIfDrifted('last-anything', 45, async () => {}), null);
+        assert.equal(await api.resyncMilkStopIfDrifted(45), null);
+        // A disarmed stop never reaches the comparison at all.
+        assert.equal(await api.resyncMilkStopIfDrifted(0), null);
+    });
+
     test('with nothing remembered the machine value stands', async () => {
         const pushed = [];
         const { api } = build(null);
